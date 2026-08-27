@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, HTTPException, status
 
-from avalo_backend.api.schemas import ChatRequest, ChatResponse
+from app.api.schemas import ChatRequest, ChatResponse
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 

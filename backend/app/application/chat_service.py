@@ -1,6 +1,6 @@
 """Text-chat orchestration boundary."""
 
-from avalo_backend.runtime.base import ModelRuntime
+from app.runtime.base import ModelRuntime
 
 
 class ChatService:

@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 
-from avalo_backend.api.routes import chat, health
+from app.api.routes import chat, health
 
 api_router = APIRouter()
 api_router.include_router(health.router)

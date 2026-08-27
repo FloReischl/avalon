@@ -3,8 +3,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from avalo_backend.api.router import api_router
-from avalo_backend.config import settings
+from app.api.router import api_router
+from app.config import settings
 
 
 def create_app() -> FastAPI:

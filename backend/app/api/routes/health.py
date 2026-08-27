@@ -2,8 +2,8 @@
 
 from fastapi import APIRouter
 
-from avalo_backend.api.schemas import HealthResponse
-from avalo_backend.config import settings
+from app.api.schemas import HealthResponse
+from app.config import settings
 
 router = APIRouter(tags=["health"])
 
