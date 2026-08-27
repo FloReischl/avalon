@@ -7,7 +7,7 @@ Avalo verfolgt zwei gleichwertige Ziele:
 1. Entwicklung einer nutzbaren Anwendung.
 2. Praktischer Kompetenzaufbau in AI Augmented Engineering.
 
-Nach Projekterfahrung mit GHC und Codex wird Avalo genutzt, um Aider als Command-Line-Agent mit einem lokal betriebenen Coding-LLM zu erproben. Als Implementierungsmodell dient zunächst `qwen2.5-coder:7b` über Ollama.
+Nach Projekterfahrung mit GHC und Codex wird Avalo genutzt, um Aider als Command-Line-Agent mit einem lokal betriebenen Coding-LLM zu erproben. Als Implementierungsmodell dient zunächst `qwen2.5-coder:14b-instruct` über Ollama.
 
 ## 2. Verantwortung und Rollen
 
@@ -48,7 +48,7 @@ Die Tests sollen Risiken abdecken und nicht lediglich Implementierungsdetails sp
 
 ### 3.4 Arbeitspakete für Aider
 
-Nach Abschluss von Requirements Engineering, Architektur und Testkonzept zerlegt Codex die Umsetzung in kleine, für `qwen2.5-coder:7b` beherrschbare Pakete. Ein Paket soll möglichst genau ein klar prüfbares Ergebnis erzeugen.
+Nach Abschluss von Requirements Engineering, Architektur und Testkonzept zerlegt Codex die Umsetzung in kleine, für `qwen2.5-coder:14b-instruct` beherrschbare Pakete. Ein Paket soll möglichst genau ein klar prüfbares Ergebnis erzeugen.
 
 Jeder kopierfertige Aider-Prompt enthält:
 
@@ -80,7 +80,7 @@ Erst danach folgt das nächste Paket. Commits oder externe Änderungen erfolgen 
 - Betriebssystem: Linux
 - GPU: NVIDIA GeForce RTX 4060 Laptop GPU mit 8 GB VRAM
 - Arbeitsspeicher: 32 GB RAM
-- lokales Modell: `qwen2.5-coder:7b`
+- lokales Modell: `qwen2.5-coder:14b-instruct`
 - Modellserver: Ollama
 - Implementierungsagent: Aider 0.86.2
 - vorgesehene Kontextgröße: 16.384 Tokens

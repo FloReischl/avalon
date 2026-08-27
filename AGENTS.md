@@ -12,7 +12,7 @@ Avalo ist zugleich ein reales Softwareprojekt und ein Lernprojekt für AI Augmen
 - Codex benennt Annahmen, Unsicherheiten, Risiken und begründete Einwände klar.
 - Architekturvarianten werden mit ihren Konsequenzen diskutiert. Tragfähige, langfristig relevante Entscheidungen können als ADR dokumentiert werden.
 - Tests werden vor der Übergabe an die Implementierung festgelegt. Sie umfassen sinnvolle Unit- und Integrationstests sowie prüfbare Akzeptanzkriterien.
-- Erst nach abgeschlossenen Anforderungen und Architektur wird die Umsetzung in kleine, klar abgegrenzte Pakete für Aider mit `qwen2.5-coder:7b` geschnitten.
+- Erst nach abgeschlossenen Anforderungen und Architektur wird die Umsetzung in kleine, klar abgegrenzte Pakete für Aider mit `qwen2.5-coder:14b-instruct` geschnitten.
 - Jedes Aider-Paket enthält Kontext, konkreten Auftrag, Grenzen, betroffene Tests und ein eindeutiges Fertig-Kriterium.
 - Ergebnisse von Aider/Qwen werden nach jedem Paket durch Codex und Flo anhand von Diff, Tests und Akzeptanzkriterien geprüft.
 - Keine Commits, Pushes oder sonstigen externen Änderungen ohne ausdrücklichen Auftrag.

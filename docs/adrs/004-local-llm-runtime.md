@@ -12,7 +12,7 @@ Avalos primäres Chatmodell ist Gemma 4 E4B. Text und nativer Audioinput sollen 
 - Bevorzugter Kandidat für Avalo ist aktuelles `llama.cpp` mit CUDA, `llama-server`, Gemma-4-E4B-GGUF und zugehörigem multimodalem Projektor.
 - Die Python-Anwendung greift über einen `ModelRuntime`-Adapter zu und kennt keine `llama.cpp`-Details.
 - Die Entscheidung wird erst nach einem reproduzierbaren Spike auf der RTX 4060 Laptop GPU mit 8 GB VRAM endgültig angenommen.
-- Ollama bleibt für Aider mit `qwen2.5-coder:7b-instruct` nutzbar, ist aber nicht Avalos zunächst vorgesehene Bot-Runtime.
+- Ollama bleibt für Aider mit `qwen2.5-coder:14b-instruct` nutzbar, ist aber nicht Avalos zunächst vorgesehene Bot-Runtime.
 
 ## Erfolgskriterien des Spikes
 

@@ -1,3 +1,4 @@
-- name: ollama_chat/qwen2.5-coder:7b
+#- name: ollama_chat/qwen2.5-coder:7b-instruct
+- name: ollama_chat/qwen2.5-coder:14b-instruct
   extra_params:
     num_ctx: 16384
