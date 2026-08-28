@@ -1,7 +1,6 @@
 from pathlib import Path
-
+import base64
 import httpx
-
 from app.config import settings
 from app.runtime.base import ModelRuntime
 
@@ -37,7 +36,15 @@ class OllamaRuntime(ModelRuntime):
                 response.raise_for_status()
 
                 data = response.json()
-                text = data.get("response")
+                choices = data.get("choices")
+                if choices and len(choices) > 0:
+                    message = choices[0].get("message")
+                    if message:
+                        content = message.get("content")
+                        if content:
+                            text = content
+                else:
+                    raise ValueError("Invalid Ollama response")
 
                 if not isinstance(text, str) or not text.strip():
                     raise ValueError("Invalid Ollama response")
@@ -48,4 +55,44 @@ class OllamaRuntime(ModelRuntime):
 
     async def generate_from_audio(self, audio_file: Path) -> str:
         """Generate a complete response from native audio input."""
-        raise NotImplementedError("Audio generation is not implemented yet.")
+        try:
+            with open(audio_file, "rb") as f:
+                audio_data = f.read()
+            audio_base64 = base64.b64encode(audio_data).decode("utf-8")
+
+            async with httpx.AsyncClient(timeout=120.0) as client:
+                response = await client.post(
+                    f"http://{settings.ollama_host}/v1/chat/completions",
+                    json={
+                        "model": settings.ollama_model,
+                        "messages": [
+                            {
+                                "role": "user",
+                                "content": [
+                                    {
+                                        "type": "text",
+                                        "text": "Transcribe and respond in German:",
+                                    },
+                                    {
+                                        "type": "input_audio",
+                                        "input_audio": {
+                                            "data": audio_base64,
+                                            "format": "wav",
+                                        },
+                                    },
+                                ],
+                            },
+                        ],
+                    },
+                )
+                response.raise_for_status()
+
+                data = response.json()
+                text = data.get("response")
+
+                if not isinstance(text, str) or not text.strip():
+                    raise ValueError("Invalid Ollama response")
+
+                return text
+        except (httpx.RequestError, httpx.HTTPStatusError, ValueError) as exc:
+            raise RuntimeError(f"Ollama error: {exc}") from exc
