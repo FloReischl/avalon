@@ -1,4 +1,4 @@
-from avalo_backend.config import settings
+from app.config import settings
 
 
 def test_local_api_address_is_fixed() -> None:
@@ -9,3 +9,7 @@ def test_local_api_address_is_fixed() -> None:
 def test_gemma_audio_limit_is_recorded() -> None:
     assert settings.audio_max_seconds == 30
 
+
+def test_ollama_runtime_settings_are_recorded() -> None:
+    assert settings.ollama_host == "127.0.0.1:11434"
+    assert settings.ollama_model == "gemma4:e4b-it-q4_K_M"

@@ -2,7 +2,7 @@ import asyncio
 
 from httpx import ASGITransport, AsyncClient
 
-from avalo_backend.main import create_app
+from app.main import create_app
 
 
 def test_health_reports_ready_backend() -> None:
@@ -12,5 +12,9 @@ def test_health_reports_ready_backend() -> None:
             return await client.get("/health")
 
     response = asyncio.run(request_health())
+
     assert response.status_code == 200
-    assert response.json() == {"status": "ok", "service": "Avalo Backend"}
+    assert response.json() == {
+        "status": "ok",
+        "service": "Avalo Backend",
+    }

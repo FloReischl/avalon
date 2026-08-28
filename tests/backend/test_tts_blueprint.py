@@ -1,14 +1,11 @@
-from pathlib import Path
-
 import pytest
 
-from avalo_backend.tts.chatterbox import ChatterboxTextToSpeech
+from app.tts.chatterbox import ChatterboxTextToSpeech
 
 
-@pytest.mark.skip(reason="TTS implementation follows after the TTS spike.")
-async def test_tts_creates_local_audio_file() -> None:
+@pytest.mark.anyio
+async def test_chatterbox_tts_blueprint_is_not_implemented():
     tts = ChatterboxTextToSpeech()
-    output = await tts.synthesize("Guten Tag.")
-    assert isinstance(output, Path)
-    assert output.exists()
 
+    with pytest.raises(NotImplementedError):
+        await tts.synthesize("Hallo")

@@ -2,7 +2,7 @@ import asyncio
 
 from httpx import ASGITransport, AsyncClient
 
-from avalo_backend.main import create_app
+from app.main import create_app
 
 
 def post_chat(message: str):
@@ -16,10 +16,14 @@ def post_chat(message: str):
 
 def test_chat_endpoint_explicitly_reports_stub() -> None:
     response = post_chat("Hallo")
+
     assert response.status_code == 501
-    assert response.json() == {"detail": "Text chat is not implemented yet."}
+    assert response.json() == {
+        "detail": "Text chat is not implemented yet.",
+    }
 
 
 def test_chat_rejects_empty_message() -> None:
     response = post_chat("")
+
     assert response.status_code == 422
