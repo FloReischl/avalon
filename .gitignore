@@ -25,3 +25,9 @@ src-tauri/target/debug/
 .avalo/
 *.log
 .aider*
+
+# docs
+scripts/code2prompt-adrs.md
+scripts/code2prompt-code.md
+scripts/frieda-dump.md
+scripts/prompt2code-patch.yaml
