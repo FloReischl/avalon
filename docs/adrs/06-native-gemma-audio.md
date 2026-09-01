@@ -1,4 +1,4 @@
-# ADR 006: Nativer Audioinput mit Gemma 4
+# ADR 06: Nativer Audioinput mit Gemma 4
 
 - Status: Angenommen als Ziel; technische Machbarkeit durch Spike zu bestätigen
 - Datum: 2026-08-26

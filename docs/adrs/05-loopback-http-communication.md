@@ -1,4 +1,4 @@
-# ADR 005: Lokale Kommunikation über Loopback-HTTP
+# ADR 05: Lokale Kommunikation über Loopback-HTTP
 
 - Status: Angenommen
 - Datum: 2026-08-26

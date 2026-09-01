@@ -1,4 +1,4 @@
-# ADR 003: Python-Backend mit FastAPI
+# ADR 03: Python-Backend mit FastAPI
 
 - Status: Angenommen
 - Datum: 2026-08-26

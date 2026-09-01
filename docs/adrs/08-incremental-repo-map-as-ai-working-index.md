@@ -1,4 +1,4 @@
-# ADR 008: Incremental RepoMap as AI Working Index
+# ADR 08: Incremental RepoMap as AI Working Index
 
 ## Status
 

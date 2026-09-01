@@ -1,4 +1,4 @@
-# ADR 004: Lokale LLM-Runtime für Avalo
+# ADR 04: Lokale LLM-Runtime für Avalo
 
 - Status: Vorgeschlagen; durch Runtime-Spike zu bestätigen
 - Datum: 2026-08-26

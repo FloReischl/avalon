@@ -1,4 +1,4 @@
-# ADR 001: Desktop- und Prozessarchitektur
+# ADR 01: Desktop- und Prozessarchitektur
 
 - Status: Angenommen
 - Datum: 2026-08-26

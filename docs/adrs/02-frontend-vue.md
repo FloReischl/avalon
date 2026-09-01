@@ -1,4 +1,4 @@
-# ADR 002: Frontend mit Vue 3
+# ADR 02: Frontend mit Vue 3
 
 - Status: Angenommen
 - Datum: 2026-08-26

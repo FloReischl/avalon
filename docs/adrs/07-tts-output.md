@@ -1,4 +1,4 @@
-# ADR 007: Lokale Sprachausgabe mit Chatterbox Multilingual
+# ADR 07: Lokale Sprachausgabe mit Chatterbox Multilingual
 
 - Status: Vorgeschlagen; durch TTS-Spike zu bestätigen
 - Priorität: Nach Textchat und nativem Audioinput
