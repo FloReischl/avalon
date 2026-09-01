@@ -15,13 +15,18 @@ project:
 architecture:
   desktop:
     target: Tauri
-    status: not_implemented
+    status: implemented_foundation
     responsibility:
-      - desktop shell
+      - transparent desktop shell
       - backend process lifecycle
+      - native desktop input shaping
     notes:
       - Vue runs in Tauri webview.
       - Python backend remains a separate local process.
+      - Tauri starts, monitors, and stops the backend process it owns.
+      - Backend readiness and startup diagnostics are exposed to the frontend.
+      - Current desktop input shaping is implemented for X11 using native SHAPE input regions.
+      - Avatar input regions are generated from the rendered PNG alpha channel.
 
   frontend:
     technology:
@@ -359,12 +364,20 @@ modules:
       - global styles
 
   frontend/src/App.vue:
-    role: current root UI component
-    status: scaffold
+    role: desktop companion root UI component
+    status: implemented_foundation
     relevant_to:
-      - initial frontend behavior
-      - chat UI implementation
+      - backend startup diagnostics
+      - avatar rendering
+      - idle/active companion state
+      - alpha-based avatar hit detection
+      - native input-shape generation
+      - future chat UI implementation
       - frontend tests
+    dependencies:
+      - frontend/src/services/backendLifecycle.ts
+      - frontend/src/services/inputShape.ts
+      - frontend/src/assets/avatars/frieda/standard.png
 
   frontend/src/services/backend.ts:
     role: frontend HTTP boundary for backend communication
@@ -385,6 +398,64 @@ modules:
       - backend/app/api/schemas.py
       - frontend/src/services/backend.ts
       - frontend/src/App.vue
+
+  frontend/src/services/backendLifecycle.ts:
+    role: Tauri frontend boundary for backend lifecycle state
+    responsibilities:
+      - retrieve buffered backend startup snapshot
+      - subscribe to backend status events
+      - subscribe to backend log events
+    native_counterpart:
+      - src-tauri/src/backend.rs
+
+  frontend/src/services/inputShape.ts:
+    role: Tauri frontend boundary for native window input regions
+    responsibilities:
+      - send generated input rectangles to native Tauri command
+    native_counterpart:
+      - src-tauri/src/input_shape.rs
+
+  frontend/src/assets/avatars/frieda/standard.png:
+    role: current default Frieda avatar
+    relevant_to:
+      - companion rendering
+      - alpha-derived X11 input shape
+
+  src-tauri/src/main.rs:
+    role: Tauri desktop application entry point
+    responsibilities:
+      - manage backend process lifecycle
+      - expose backend snapshot command
+      - expose native input-region command
+      - stop owned backend on application exit
+    dependencies:
+      - src-tauri/src/backend.rs
+      - src-tauri/src/input_shape.rs
+
+  src-tauri/src/backend.rs:
+    role: Tauri-managed Python backend process lifecycle
+    responsibilities:
+      - start backend through scripts/start-backend.sh
+      - disable uvicorn reload for Tauri-managed process
+      - capture backend stdout and stderr
+      - poll backend health readiness
+      - buffer lifecycle status and diagnostic logs
+      - stop owned backend process
+    status: implemented
+
+  src-tauri/src/input_shape.rs:
+    role: native X11 input-shape adapter
+    platform: X11
+    mechanism: X11 SHAPE extension input region
+    responsibilities:
+      - receive frontend-generated input rectangles
+      - resolve native Tauri Xlib or XCB window id
+      - apply rectangles as native X11 input shape
+    status: implemented_spike
+    notes:
+      - Input rectangles currently represent the rendered avatar alpha mask.
+      - Transparent pixels pass pointer input through to windows below Avalo.
+      - Other interactive UI regions must later be unioned into the native input shape.
 
 tests:
 
@@ -565,15 +636,28 @@ change_navigation:
       - backend/app/api/schemas.py
       - backend/app/api/routes/chat.py
 
-  add_tauri_shell:
+  change_desktop_shell:
     inspect:
-      - frontend/package.json
-      - frontend/src/main.ts
+      - src-tauri/src/main.rs
+      - src-tauri/src/backend.rs
+      - src-tauri/tauri.conf.json
       - frontend/src/App.vue
+      - frontend/src/styles.css
+      - tests/frontend/App.spec.ts
+    maybe_inspect:
       - scripts/start-backend.sh
-      - backend/app/config.py
-    missing_area:
-      - src-tauri does not currently exist
+      - frontend/src/services/backendLifecycle.ts
+
+  change_desktop_input_regions:
+    inspect:
+      - src-tauri/src/input_shape.rs
+      - src-tauri/src/main.rs
+      - frontend/src/services/inputShape.ts
+      - frontend/src/App.vue
+      - frontend/src/styles.css
+    notes:
+      - Preserve alpha-derived avatar hit regions unless requirements change.
+      - Interactive overlays must be included in the native input-region union.
 
 architectural_constraints:
 
@@ -631,7 +715,13 @@ known_state:
     - Ollama runtime health
     - Ollama text generation spike
     - Ollama native audio generation spike
-    - minimal Vue application scaffold
+    - Vue desktop companion foundation
+    - Tauri transparent desktop shell
+    - Tauri-managed backend process lifecycle
+    - buffered backend startup diagnostics
+    - Frieda avatar with idle/active interaction
+    - pixel-accurate avatar alpha hit detection
+    - native X11 click-through using SHAPE input regions
 
   contracts_or_stubs:
     - text chat endpoint
@@ -642,7 +732,6 @@ known_state:
     - Chatterbox TTS adapter
 
   not_present:
-    - Tauri shell
     - persistent conversation storage
     - memory
     - streaming responses

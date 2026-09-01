@@ -88,17 +88,12 @@ describe("App", () => {
     const wrapper = mount(App);
     await flushPromises();
 
-    const avatarButton = wrapper.get('[data-testid="avatar-button"]');
+    const avatarRegion = wrapper.get('[data-testid="avatar-region"]');
 
     expect(wrapper.find('[data-testid="active-panel"]').exists()).toBe(false);
+    expect(wrapper.get('[data-testid="hit-debug"]').text()).toBe("MISS");
 
-    await avatarButton.trigger("click");
-
-    expect(wrapper.get('[data-testid="active-panel"]').text()).toContain(
-      "Active",
-    );
-
-    await avatarButton.trigger("click");
+    await avatarRegion.trigger("click");
 
     expect(wrapper.find('[data-testid="active-panel"]').exists()).toBe(false);
   });

@@ -81,22 +81,18 @@ body {
   z-index: 2;
 }
 
-.avatar-button {
+.avatar-region {
   position: absolute;
   right: 1.5rem;
   bottom: 0;
   z-index: 3;
   display: block;
   width: min(42vw, 24rem);
-  padding: 0;
-  border: 0;
-  background: transparent;
-  cursor: pointer;
+  cursor: default;
 }
 
-.avatar-button:focus-visible {
-  outline: 2px solid rgba(232, 232, 234, 0.8);
-  outline-offset: 0.25rem;
+.avatar-region:has(.hit-debug.hit) {
+  cursor: pointer;
 }
 
 .avatar {
@@ -126,6 +122,22 @@ body {
   font-size: 0.8rem;
   text-transform: uppercase;
   letter-spacing: 0.08em;
+}
+
+.hit-debug {
+  position: absolute;
+  right: 0;
+  top: 0;
+  padding: 0.25rem 0.4rem;
+  background: rgba(12, 13, 16, 0.85);
+  font-family: "DejaVu Sans Mono", "Liberation Mono", monospace;
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  pointer-events: none;
+}
+
+.hit-debug.hit {
+  font-weight: 700;
 }
 
 .backend-ready-marker {

@@ -1,344 +1,217 @@
 files:
-  - path: frontend/src/App.vue
+  - path: docs/repomap.yaml
     changes:
       - mode: string-replace
         old: |2-
-          <script setup lang="ts">
-          import { onBeforeUnmount, onMounted, ref } from "vue";
-          import type { UnlistenFn } from "@tauri-apps/api/event";
-
-          import {
-            getBackendSnapshot,
-            listenToBackendLifecycle,
-          } from "./services/backendLifecycle";
-
-          const backendStatus = ref("initializing");
-          const backendLogs = ref<string[]>([]);
-          let unlisten: UnlistenFn | undefined;
-
-          function addLog(message: string) {
-            backendLogs.value.push(message);
-          }
-
-          onMounted(async () => {
-            try {
-              unlisten = await listenToBackendLifecycle({
-                onStatus: (status) => {
-                  backendStatus.value = status;
-                },
-                onLog: addLog,
-              });
-
-              const snapshot = await getBackendSnapshot();
-              backendStatus.value = snapshot.status;
-              backendLogs.value = snapshot.logs;
-            } catch (error) {
-              backendStatus.value = "failed";
-              addLog(
-                error instanceof Error
-                  ? `Failed to initialize desktop lifecycle: ${error.message}`
-                  : "Failed to initialize desktop lifecycle",
-              );
-            }
-          });
-
-          onBeforeUnmount(() => {
-            unlisten?.();
-          });
-          </script>
-
-          <template>
-            <main v-if="backendStatus !== 'ready'" class="startup-shell">
-              <section class="startup-panel">
-                <header class="startup-header">
-                  <span>AVALO // LOCAL COMPANION</span>
-                  <span data-testid="backend-status">{{ backendStatus }}</span>
-                </header>
-
-                <div class="startup-log" data-testid="startup-log">
-                  <p v-for="(line, index) in backendLogs" :key="index">
-                    <span class="prompt">&gt;</span> {{ line }}
-                  </p>
-                  <p v-if="backendLogs.length === 0">
-                    <span class="prompt">&gt;</span> Initializing Avalo …
-                  </p>
-                </div>
-              </section>
-            </main>
-
-            <main v-else class="app-shell">
-              <h1>Avalo</h1>
-              <p>Lokaler Companion – Grundgerüst</p>
-              <p class="status" data-testid="backend-status">Backend ready</p>
-            </main>
-          </template>
+            desktop:
+              target: Tauri
+              status: not_implemented
+              responsibility:
+                - desktop shell
+                - backend process lifecycle
+              notes:
+                - Vue runs in Tauri webview.
+                - Python backend remains a separate local process.
         new: |2-
-          <script setup lang="ts">
-          import { onBeforeUnmount, onMounted, ref } from "vue";
-          import type { UnlistenFn } from "@tauri-apps/api/event";
-
-          import friedaStandard from "./assets/avatars/frieda/standard.png";
-          import {
-            getBackendSnapshot,
-            listenToBackendLifecycle,
-          } from "./services/backendLifecycle";
-
-          type CompanionState = "idle" | "active";
-
-          const backendStatus = ref("initializing");
-          const backendLogs = ref<string[]>([]);
-          const companionState = ref<CompanionState>("idle");
-          let unlisten: UnlistenFn | undefined;
-
-          function addLog(message: string) {
-            backendLogs.value.push(message);
-          }
-
-          function toggleCompanion() {
-            companionState.value =
-              companionState.value === "idle" ? "active" : "idle";
-          }
-
-          onMounted(async () => {
-            try {
-              unlisten = await listenToBackendLifecycle({
-                onStatus: (status) => {
-                  backendStatus.value = status;
-                },
-                onLog: addLog,
-              });
-
-              const snapshot = await getBackendSnapshot();
-              backendStatus.value = snapshot.status;
-              backendLogs.value = snapshot.logs;
-            } catch (error) {
-              backendStatus.value = "failed";
-              addLog(
-                error instanceof Error
-                  ? `Failed to initialize desktop lifecycle: ${error.message}`
-                  : "Failed to initialize desktop lifecycle",
-              );
-            }
-          });
-
-          onBeforeUnmount(() => {
-            unlisten?.();
-          });
-          </script>
-
-          <template>
-            <main class="companion-shell">
-              <section
-                v-if="backendStatus !== 'ready'"
-                class="startup-panel"
-                data-testid="startup-panel"
-              >
-                <header class="startup-header">
-                  <span>AVALO // LOCAL COMPANION</span>
-                  <span data-testid="backend-status">{{ backendStatus }}</span>
-                </header>
-
-                <div class="startup-log" data-testid="startup-log">
-                  <p v-for="(line, index) in backendLogs" :key="index">
-                    <span class="prompt">&gt;</span> {{ line }}
-                  </p>
-                  <p v-if="backendLogs.length === 0">
-                    <span class="prompt">&gt;</span> Initializing Avalo …
-                  </p>
-                </div>
-              </section>
-
-              <section
-                v-if="backendStatus === 'ready' && companionState === 'active'"
-                class="active-panel"
-                data-testid="active-panel"
-              >
-                <strong>Avalo</strong>
-                <span>Active</span>
-              </section>
-
-              <button
-                class="avatar-button"
-                type="button"
-                aria-label="Toggle Avalo companion"
-                data-testid="avatar-button"
-                @click="toggleCompanion"
-              >
-                <img
-                  class="avatar"
-                  :src="friedaStandard"
-                  alt="Frieda"
-                  data-testid="avatar"
-                />
-              </button>
-
-              <span
-                v-if="backendStatus === 'ready'"
-                class="backend-ready-marker"
-                data-testid="backend-status"
-              >
-                Backend ready
-              </span>
-            </main>
-          </template>
-
-  - path: frontend/src/styles.css
-    changes:
-      - mode: string-replace
-        old: |2-
-          .startup-shell {
-            box-sizing: border-box;
-            min-height: 100vh;
-            padding: 2rem;
-            display: flex;
-            align-items: flex-end;
-          }
-
-          .startup-panel {
-        new: |2-
-          .companion-shell {
-            box-sizing: border-box;
-            position: relative;
-            width: 100vw;
-            height: 100vh;
-            overflow: hidden;
-          }
-
-          .startup-panel {
+            desktop:
+              target: Tauri
+              status: implemented_foundation
+              responsibility:
+                - transparent desktop shell
+                - backend process lifecycle
+                - native desktop input shaping
+              notes:
+                - Vue runs in Tauri webview.
+                - Python backend remains a separate local process.
+                - Tauri starts, monitors, and stops the backend process it owns.
+                - Backend readiness and startup diagnostics are exposed to the frontend.
+                - Current desktop input shaping is implemented for X11 using native SHAPE input regions.
+                - Avatar input regions are generated from the rendered PNG alpha channel.
 
       - mode: string-replace
         old: |2-
-          .status {
-            color: #9fa8ff;
-          }
+            frontend/src/App.vue:
+              role: current root UI component
+              status: scaffold
+              relevant_to:
+                - initial frontend behavior
+                - chat UI implementation
+                - frontend tests
         new: |2-
-          .status {
-            color: #9fa8ff;
-          }
+            frontend/src/App.vue:
+              role: desktop companion root UI component
+              status: implemented_foundation
+              relevant_to:
+                - backend startup diagnostics
+                - avatar rendering
+                - idle/active companion state
+                - alpha-based avatar hit detection
+                - native input-shape generation
+                - future chat UI implementation
+                - frontend tests
+              dependencies:
+                - frontend/src/services/backendLifecycle.ts
+                - frontend/src/services/inputShape.ts
+                - frontend/src/assets/avatars/frieda/standard.png
 
-          .startup-panel {
-            position: absolute;
-            left: 2rem;
-            bottom: 2rem;
-            z-index: 2;
-          }
-
-          .avatar-button {
-            position: absolute;
-            right: 1.5rem;
-            bottom: 0;
-            z-index: 3;
-            display: block;
-            width: min(42vw, 24rem);
-            padding: 0;
-            border: 0;
-            background: transparent;
-            cursor: pointer;
-          }
-
-          .avatar-button:focus-visible {
-            outline: 2px solid rgba(232, 232, 234, 0.8);
-            outline-offset: 0.25rem;
-          }
-
-          .avatar {
-            display: block;
-            width: 100%;
-            height: auto;
-            user-select: none;
-            -webkit-user-drag: none;
-          }
-
-          .active-panel {
-            position: absolute;
-            right: min(42vw, 25rem);
-            bottom: 5rem;
-            z-index: 2;
-            display: flex;
-            gap: 0.75rem;
-            align-items: baseline;
-            padding: 0.75rem 1rem;
-            border: 1px solid rgba(232, 232, 234, 0.35);
-            background: rgba(12, 13, 16, 0.82);
-            backdrop-filter: blur(0.5rem);
-          }
-
-          .active-panel span {
-            opacity: 0.65;
-            font-size: 0.8rem;
-            text-transform: uppercase;
-            letter-spacing: 0.08em;
-          }
-
-          .backend-ready-marker {
-            position: absolute;
-            width: 1px;
-            height: 1px;
-            overflow: hidden;
-            clip: rect(0 0 0 0);
-            clip-path: inset(50%);
-            white-space: nowrap;
-          }
-
-  - path: tests/frontend/App.spec.ts
-    changes:
       - mode: string-replace
         old: |2-
-              expect(wrapper.get('[data-testid="backend-status"]').text()).toBe(
-                "Backend ready",
-              );
-              expect(wrapper.find('[data-testid="startup-log"]').exists()).toBe(false);
-            });
+            frontend/src/types/chat.ts:
+              role: frontend text-chat contract types
+              relevant_to:
+                - frontend/backend ChatRequest and ChatResponse alignment
+              inspect_with:
+                - backend/app/api/schemas.py
+                - frontend/src/services/backend.ts
+                - frontend/src/App.vue
 
-            it.todo("sends a text message and renders the complete response");
+          tests:
         new: |2-
-              expect(wrapper.get('[data-testid="backend-status"]').text()).toBe(
-                "Backend ready",
-              );
-              expect(wrapper.find('[data-testid="startup-log"]').exists()).toBe(false);
-              expect(wrapper.get('[data-testid="avatar"]').attributes("alt")).toBe(
-                "Frieda",
-              );
-              expect(wrapper.find('[data-testid="active-panel"]').exists()).toBe(false);
-            });
+            frontend/src/types/chat.ts:
+              role: frontend text-chat contract types
+              relevant_to:
+                - frontend/backend ChatRequest and ChatResponse alignment
+              inspect_with:
+                - backend/app/api/schemas.py
+                - frontend/src/services/backend.ts
+                - frontend/src/App.vue
 
-            it("keeps Frieda visible while the backend is starting", async () => {
-              getBackendSnapshotMock.mockResolvedValue({
-                status: "waiting-for-health",
-                logs: ["Waiting for backend health endpoint"],
-              });
+            frontend/src/services/backendLifecycle.ts:
+              role: Tauri frontend boundary for backend lifecycle state
+              responsibilities:
+                - retrieve buffered backend startup snapshot
+                - subscribe to backend status events
+                - subscribe to backend log events
+              native_counterpart:
+                - src-tauri/src/backend.rs
 
-              const wrapper = mount(App);
-              await flushPromises();
+            frontend/src/services/inputShape.ts:
+              role: Tauri frontend boundary for native window input regions
+              responsibilities:
+                - send generated input rectangles to native Tauri command
+              native_counterpart:
+                - src-tauri/src/input_shape.rs
 
-              expect(wrapper.get('[data-testid="avatar"]').attributes("alt")).toBe(
-                "Frieda",
-              );
-              expect(wrapper.get('[data-testid="startup-panel"]').exists()).toBe(true);
-            });
+            frontend/src/assets/avatars/frieda/standard.png:
+              role: current default Frieda avatar
+              relevant_to:
+                - companion rendering
+                - alpha-derived X11 input shape
 
-            it("toggles between idle and active when Frieda is clicked", async () => {
-              getBackendSnapshotMock.mockResolvedValue({
-                status: "ready",
-                logs: ["Backend ready"],
-              });
+            src-tauri/src/main.rs:
+              role: Tauri desktop application entry point
+              responsibilities:
+                - manage backend process lifecycle
+                - expose backend snapshot command
+                - expose native input-region command
+                - stop owned backend on application exit
+              dependencies:
+                - src-tauri/src/backend.rs
+                - src-tauri/src/input_shape.rs
 
-              const wrapper = mount(App);
-              await flushPromises();
+            src-tauri/src/backend.rs:
+              role: Tauri-managed Python backend process lifecycle
+              responsibilities:
+                - start backend through scripts/start-backend.sh
+                - disable uvicorn reload for Tauri-managed process
+                - capture backend stdout and stderr
+                - poll backend health readiness
+                - buffer lifecycle status and diagnostic logs
+                - stop owned backend process
+              status: implemented
 
-              const avatarButton = wrapper.get('[data-testid="avatar-button"]');
+            src-tauri/src/input_shape.rs:
+              role: native X11 input-shape adapter
+              platform: X11
+              mechanism: X11 SHAPE extension input region
+              responsibilities:
+                - receive frontend-generated input rectangles
+                - resolve native Tauri Xlib or XCB window id
+                - apply rectangles as native X11 input shape
+              status: implemented_spike
+              notes:
+                - Input rectangles currently represent the rendered avatar alpha mask.
+                - Transparent pixels pass pointer input through to windows below Avalo.
+                - Other interactive UI regions must later be unioned into the native input shape.
 
-              expect(wrapper.find('[data-testid="active-panel"]').exists()).toBe(false);
+          tests:
 
-              await avatarButton.trigger("click");
+      - mode: string-replace
+        old: |2-
+            add_tauri_shell:
+              inspect:
+                - frontend/package.json
+                - frontend/src/main.ts
+                - frontend/src/App.vue
+                - scripts/start-backend.sh
+                - backend/app/config.py
+              missing_area:
+                - src-tauri does not currently exist
 
-              expect(wrapper.get('[data-testid="active-panel"]').text()).toContain(
-                "Active",
-              );
+          architectural_constraints:
+        new: |2-
+            change_desktop_shell:
+              inspect:
+                - src-tauri/src/main.rs
+                - src-tauri/src/backend.rs
+                - src-tauri/tauri.conf.json
+                - frontend/src/App.vue
+                - frontend/src/styles.css
+                - tests/frontend/App.spec.ts
+              maybe_inspect:
+                - scripts/start-backend.sh
+                - frontend/src/services/backendLifecycle.ts
 
-              await avatarButton.trigger("click");
+            change_desktop_input_regions:
+              inspect:
+                - src-tauri/src/input_shape.rs
+                - src-tauri/src/main.rs
+                - frontend/src/services/inputShape.ts
+                - frontend/src/App.vue
+                - frontend/src/styles.css
+              notes:
+                - Preserve alpha-derived avatar hit regions unless requirements change.
+                - Interactive overlays must be included in the native input-region union.
 
-              expect(wrapper.find('[data-testid="active-panel"]').exists()).toBe(false);
-            });
+          architectural_constraints:
 
-            it.todo("sends a text message and renders the complete response");
+      - mode: string-replace
+        old: |2-
+            implemented:
+              - FastAPI application startup
+              - backend health endpoint
+              - public chat request/response schemas
+              - Ollama runtime health
+              - Ollama text generation spike
+              - Ollama native audio generation spike
+              - minimal Vue application scaffold
+        new: |2-
+            implemented:
+              - FastAPI application startup
+              - backend health endpoint
+              - public chat request/response schemas
+              - Ollama runtime health
+              - Ollama text generation spike
+              - Ollama native audio generation spike
+              - Vue desktop companion foundation
+              - Tauri transparent desktop shell
+              - Tauri-managed backend process lifecycle
+              - buffered backend startup diagnostics
+              - Frieda avatar with idle/active interaction
+              - pixel-accurate avatar alpha hit detection
+              - native X11 click-through using SHAPE input regions
+
+      - mode: string-replace
+        old: |2-
+            not_present:
+              - Tauri shell
+              - persistent conversation storage
+              - memory
+              - streaming responses
+              - production packaging
+        new: |2-
+            not_present:
+              - persistent conversation storage
+              - memory
+              - streaming responses
+              - production packaging
