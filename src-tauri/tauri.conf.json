@@ -1,0 +1,30 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Avalo",
+  "version": "0.1.0",
+  "identifier": "local.avalo.app",
+  "build": 
+  {
+    "beforeDevCommand": "cd ../frontend && npm run dev",
+    "devUrl": "http://127.0.0.1:5173",
+    "beforeBuildCommand": "cd ../frontend && npm run build"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Avalo",
+        "width": 900,
+        "height": 800,
+        "resizable": true,
+        "fullscreen": false,
+        "decorations": false,
+        "transparent": true,
+        "shadow": false
+      }
+    ]
+  },
+  "bundle": {
+    "active": false
+  }
+}

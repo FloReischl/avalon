@@ -12,6 +12,7 @@ htmlcov/
 frontend/node_modules/
 frontend/dist/
 frontend/coverage/
+src-tauri/target/debug/
 *.tsbuildinfo
 
 # Editors and operating system

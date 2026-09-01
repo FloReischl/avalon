@@ -1,27 +1,106 @@
 import { flushPromises, mount } from "@vue/test-utils";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const { getBackendSnapshotMock, listenToBackendLifecycleMock } = vi.hoisted(
+  () => ({
+    getBackendSnapshotMock: vi.fn(),
+    listenToBackendLifecycleMock: vi.fn(),
+  }),
+);
+
+vi.mock("../../frontend/src/services/backendLifecycle", () => ({
+  getBackendSnapshot: getBackendSnapshotMock,
+  listenToBackendLifecycle: listenToBackendLifecycleMock,
+}));
 
 import App from "../../frontend/src/App.vue";
 
 describe("App", () => {
-  afterEach(() => {
-    vi.restoreAllMocks();
+  beforeEach(() => {
+    getBackendSnapshotMock.mockReset();
+    listenToBackendLifecycleMock.mockReset();
+    listenToBackendLifecycleMock.mockResolvedValue(() => {});
   });
 
-  it("shows the backend health status", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => ({ status: "ok", service: "Avalo Backend" }),
-      }),
-    );
+  it("shows the startup snapshot while the backend is starting", async () => {
+    getBackendSnapshotMock.mockResolvedValue({
+      status: "waiting-for-health",
+      logs: [
+        "Starting backend",
+        "Waiting for backend health endpoint",
+      ],
+    });
 
     const wrapper = mount(App);
     await flushPromises();
 
     expect(wrapper.get('[data-testid="backend-status"]').text()).toBe(
-      "Avalo Backend: ok",
+      "waiting-for-health",
     );
+    expect(wrapper.get('[data-testid="startup-log"]').text()).toContain(
+      "Starting backend",
+    );
+    expect(wrapper.get('[data-testid="startup-log"]').text()).toContain(
+      "Waiting for backend health endpoint",
+    );
+  });
+
+  it("shows the companion view when the snapshot is already ready", async () => {
+    getBackendSnapshotMock.mockResolvedValue({
+      status: "ready",
+      logs: ["Backend ready"],
+    });
+
+    const wrapper = mount(App);
+    await flushPromises();
+
+    expect(wrapper.get('[data-testid="backend-status"]').text()).toBe(
+      "Backend ready",
+    );
+    expect(wrapper.find('[data-testid="startup-log"]').exists()).toBe(false);
+    expect(wrapper.get('[data-testid="avatar"]').attributes("alt")).toBe(
+      "Frieda",
+    );
+    expect(wrapper.find('[data-testid="active-panel"]').exists()).toBe(false);
+  });
+
+  it("keeps Frieda visible while the backend is starting", async () => {
+    getBackendSnapshotMock.mockResolvedValue({
+      status: "waiting-for-health",
+      logs: ["Waiting for backend health endpoint"],
+    });
+
+    const wrapper = mount(App);
+    await flushPromises();
+
+    expect(wrapper.get('[data-testid="avatar"]').attributes("alt")).toBe(
+      "Frieda",
+    );
+    expect(wrapper.get('[data-testid="startup-panel"]').exists()).toBe(true);
+  });
+
+  it("toggles between idle and active when Frieda is clicked", async () => {
+    getBackendSnapshotMock.mockResolvedValue({
+      status: "ready",
+      logs: ["Backend ready"],
+    });
+
+    const wrapper = mount(App);
+    await flushPromises();
+
+    const avatarButton = wrapper.get('[data-testid="avatar-button"]');
+
+    expect(wrapper.find('[data-testid="active-panel"]').exists()).toBe(false);
+
+    await avatarButton.trigger("click");
+
+    expect(wrapper.get('[data-testid="active-panel"]').text()).toContain(
+      "Active",
+    );
+
+    await avatarButton.trigger("click");
+
+    expect(wrapper.find('[data-testid="active-panel"]').exists()).toBe(false);
   });
 
   it.todo("sends a text message and renders the complete response");

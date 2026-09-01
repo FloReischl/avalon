@@ -64,19 +64,19 @@ Typical patch:
       - path: backend/app/example.py
         changes:
           - mode: string-replace
-            old: |-
+            old: |2-
               return "old"
-            new: |-
+            new: |2-
               return "new"
 
           - mode: string-remove
-            old: |-
+            old: |2-
               # obsolete comment
 
       - path: backend/app/new_file.py
         changes:
           - mode: create
-            content: |
+            content: |2
               def hello():
                   return "hello"
 
@@ -85,8 +85,8 @@ Typical patch:
 - Always generate patches against the **current source state**.
 - Keep patches small and purpose-specific.
 - Multiple changes to one file belong in one file entry and execute top-to-bottom.
-- Prefer `|-` for exact snippets where a trailing newline must not be part of the match.
-- Use `|` for complete file content when the final newline should be preserved.
+- Prefer `|2-` for exact snippets where a trailing newline must not be part of the match.
+- Use `|2` for complete file content when the final newline should be preserved.
 - Never weaken an exact-match failure just to make a patch apply. Re-read the current source and regenerate the patch.
 - After every patch, run the relevant tests and inspect `git diff`.
 - A successfully applied patch is **not** evidence of correct behavior; tests and Frieda's final review remain required.
