@@ -1,6 +1,10 @@
-from pathlib import Path
+"""Ollama runtime adapter."""
+
 import base64
+from pathlib import Path
+
 import httpx
+
 from app.config import settings
 from app.runtime.base import ModelRuntime
 
@@ -36,15 +40,7 @@ class OllamaRuntime(ModelRuntime):
                 response.raise_for_status()
 
                 data = response.json()
-                choices = data.get("choices")
-                if choices and len(choices) > 0:
-                    message = choices[0].get("message")
-                    if message:
-                        content = message.get("content")
-                        if content:
-                            text = content
-                else:
-                    raise ValueError("Invalid Ollama response")
+                text = data.get("response")
 
                 if not isinstance(text, str) or not text.strip():
                     raise ValueError("Invalid Ollama response")
@@ -88,8 +84,16 @@ class OllamaRuntime(ModelRuntime):
                 response.raise_for_status()
 
                 data = response.json()
-                text = data.get("response")
+                choices = data.get("choices")
 
+                if not isinstance(choices, list) or not choices:
+                    raise ValueError("Invalid Ollama response")
+
+                message = choices[0].get("message")
+                if not isinstance(message, dict):
+                    raise ValueError("Invalid Ollama response")
+
+                text = message.get("content")
                 if not isinstance(text, str) or not text.strip():
                     raise ValueError("Invalid Ollama response")
 

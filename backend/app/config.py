@@ -1,4 +1,7 @@
+"""Central backend configuration."""
+
 from dataclasses import dataclass
+
 
 @dataclass(frozen=True, slots=True)
 class Settings:
@@ -10,8 +13,8 @@ class Settings:
     frontend_dev_origin: str = "http://127.0.0.1:5173"
     default_language: str = "de"
     audio_max_seconds: int = 30
-    ollama_host: str = "127.0.0.1:11434"  # Default Ollama host and port
-    ollama_model: str = "gemma4:e4b-it-q4_K_M"  # Default Ollama model
+    ollama_host: str = "127.0.0.1:11434"
+    ollama_model: str = "gemma4:e4b-it-q4_K_M"
 
 
 settings = Settings()

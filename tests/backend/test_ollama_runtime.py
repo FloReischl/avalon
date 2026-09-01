@@ -1,12 +1,14 @@
 """Tests for the Ollama runtime adapter."""
 
+import base64
+from pathlib import Path
+
 import pytest
 from httpx import ConnectError
 from pytest_httpx import HTTPXMock
+
 from app.config import settings
 from app.runtime.ollama import OllamaRuntime
-import base64
-from pathlib import Path
 
 @pytest.mark.asyncio
 async def test_health_returns_true_when_model_is_available(
@@ -101,15 +103,7 @@ async def test_generate_text_raises_runtime_error_for_invalid_response(
     httpx_mock.add_response(
         method="POST",
         url=f"http://{settings.ollama_host}/api/generate",
-        json={
-            "choices": [
-                {
-                    "message": {
-                        "content": "",
-                    },
-                },
-            ],
-        },
+        json={"response": ""},
     )
 
     runtime = OllamaRuntime()
@@ -188,14 +182,18 @@ async def test_generate_from_audio_raises_runtime_error_when_ollama_is_unreachab
 async def test_generate_from_audio_raises_runtime_error_for_invalid_response(
     httpx_mock: HTTPXMock,
 ) -> None:
-    with open("tests/data/german-transcription.wav", "rb") as f:
-        audio_data = f.read()
-    audio_base64 = base64.b64encode(audio_data).decode("utf-8")
-
     httpx_mock.add_response(
         method="POST",
         url=f"http://{settings.ollama_host}/v1/chat/completions",
-        json={"response": ""},
+        json={
+            "choices": [
+                {
+                    "message": {
+                        "content": "",
+                    },
+                },
+            ],
+        },
     )
 
     runtime = OllamaRuntime()
