@@ -1,0 +1,656 @@
+schema_version: 1
+
+project:
+  name: avalo
+  purpose: local desktop companion with text chat, native Gemma audio input, and local TTS
+  repomap_role: >
+    Persistent working index for Frieda. Used for impact analysis,
+    implementation planning, dependency navigation, and selecting source files
+    that must be inspected before generating changes.
+  authority: source_code
+  update_policy: >
+    Update only from final accepted implementation state. Re-analyze repository
+    when structural changes or accumulated drift make incremental maintenance unreliable.
+
+architecture:
+  desktop:
+    target: Tauri
+    status: not_implemented
+    responsibility:
+      - desktop shell
+      - backend process lifecycle
+    notes:
+      - Vue runs in Tauri webview.
+      - Python backend remains a separate local process.
+
+  frontend:
+    technology:
+      - Vue 3
+      - TypeScript
+      - Vite
+    root: frontend
+    status: scaffold
+    communicates_with: backend_http_api
+
+  backend:
+    technology:
+      - Python
+      - FastAPI
+    root: backend/app
+    status: partial
+    layers:
+      api: HTTP endpoints and public schemas
+      application: use-case orchestration
+      runtime: interchangeable local model adapters
+      audio: native audio preparation boundary
+      tts: interchangeable speech synthesis adapters
+      config: central technical configuration
+
+  communication:
+    backend_address: "127.0.0.1:8095"
+    transport: HTTP
+    text_format: JSON
+    streaming: not_implemented
+    authentication: none
+    scope: loopback_only
+
+  conversation:
+    persistence: none
+    state: in_memory
+    response_mode: complete_response
+
+key_flows:
+
+  backend_startup:
+    entry: backend/app/main.py:create_app
+    uses:
+      - backend/app/config.py:settings
+      - backend/app/api/router.py:api_router
+    behavior:
+      - creates FastAPI application
+      - configures frontend CORS origin
+      - installs API router
+
+  health:
+    endpoint: "GET /health"
+    route: backend/app/api/routes/health.py:health
+    schema: backend/app/api/schemas.py:HealthResponse
+    uses:
+      - backend/app/config.py:settings
+    status: implemented
+    semantics: backend HTTP readiness only
+
+  text_chat:
+    endpoint: "POST /api/v1/chat"
+    route: backend/app/api/routes/chat.py:create_chat_response
+    request: backend/app/api/schemas.py:ChatRequest
+    response: backend/app/api/schemas.py:ChatResponse
+    intended_application_service: backend/app/application/chat_service.py:ChatService.reply
+    intended_runtime_call: ModelRuntime.generate_text
+    status: api_stub
+    current_behavior: HTTP 501
+
+  native_audio:
+    target_flow:
+      - push-to-talk recording
+      - AudioInputPreparer.prepare
+      - ModelRuntime.generate_from_audio
+      - complete model response
+    preparation_contract: backend/app/audio/input.py:AudioInputPreparer
+    prepared_value: backend/app/audio/input.py:PreparedAudio
+    runtime_contract: backend/app/runtime/base.py:ModelRuntime.generate_from_audio
+    status: runtime_spike_only
+    constraints:
+      max_duration_seconds: 30
+      target_sample_rate_hz: 16000
+      target_channels: 1
+      initial_language: de
+      separate_stt: false
+
+  tts:
+    contract: backend/app/tts/base.py:TextToSpeech
+    candidate_adapter: backend/app/tts/chatterbox.py:ChatterboxTextToSpeech
+    target_candidate: Chatterbox Multilingual V3
+    status: stub
+    priority: after_text_and_native_audio
+
+modules:
+
+  backend/app/config.py:
+    role: central backend configuration
+    symbols:
+      Settings:
+        kind: dataclass
+        frozen: true
+        fields:
+          app_name: str
+          api_host: str
+          api_port: int
+          frontend_dev_origin: str
+          default_language: str
+          audio_max_seconds: int
+          ollama_host: str
+          ollama_model: str
+      settings:
+        kind: singleton
+        type: Settings
+    relevant_to:
+      - backend startup
+      - health endpoint
+      - Ollama runtime
+      - audio constraints
+
+  backend/app/main.py:
+    role: FastAPI application entry point
+    symbols:
+      create_app:
+        signature: "() -> FastAPI"
+      app:
+        kind: FastAPI instance
+    dependencies:
+      - backend/app/api/router.py
+      - backend/app/config.py
+    relevant_to:
+      - backend startup
+      - middleware
+      - CORS
+      - top-level routing
+
+  backend/app/api/router.py:
+    role: top-level HTTP router composition
+    symbols:
+      api_router:
+        kind: APIRouter
+    routes:
+      - health router at root
+      - chat router under /api/v1
+    dependencies:
+      - backend/app/api/routes/health.py
+      - backend/app/api/routes/chat.py
+
+  backend/app/api/schemas.py:
+    role: public backend HTTP contracts
+    symbols:
+      HealthResponse:
+        fields:
+          status: literal_ok
+          service: str
+      ChatRequest:
+        fields:
+          message: str
+        validation:
+          message_min_length: 1
+      ChatResponse:
+        fields:
+          message: str
+    relevant_to:
+      - health API
+      - text chat API
+      - frontend/backend contract
+
+  backend/app/api/routes/health.py:
+    role: backend readiness endpoint
+    symbols:
+      health:
+        signature: "() -> HealthResponse"
+    endpoint: "GET /health"
+    dependencies:
+      - backend/app/api/schemas.py:HealthResponse
+      - backend/app/config.py:settings
+    status: implemented
+
+  backend/app/api/routes/chat.py:
+    role: text chat HTTP boundary
+    symbols:
+      create_chat_response:
+        signature: "(request: ChatRequest) -> ChatResponse"
+    endpoint: "POST /api/v1/chat"
+    dependencies:
+      - backend/app/api/schemas.py:ChatRequest
+      - backend/app/api/schemas.py:ChatResponse
+    status: stub
+    current_behavior: raises HTTP 501
+    expected_future_dependency:
+      - backend/app/application/chat_service.py:ChatService
+
+  backend/app/application/chat_service.py:
+    role: text chat use-case orchestration
+    symbols:
+      ChatService:
+        constructor: "(runtime: ModelRuntime)"
+        methods:
+          reply:
+            signature: "(message: str) -> str"
+            async: true
+    dependencies:
+      - backend/app/runtime/base.py:ModelRuntime
+    status: stub
+    expected_behavior:
+      - delegate text generation to configured ModelRuntime
+      - remain independent of concrete runtime adapter
+
+  backend/app/runtime/base.py:
+    role: model runtime abstraction
+    symbols:
+      ModelRuntime:
+        kind: Protocol
+        methods:
+          health:
+            signature: "() -> bool"
+            async: true
+          generate_text:
+            signature: "(message: str) -> str"
+            async: true
+          generate_from_audio:
+            signature: "(audio_file: Path) -> str"
+            async: true
+    consumers:
+      - backend/app/application/chat_service.py
+      - concrete runtime adapters
+
+  backend/app/runtime/ollama.py:
+    role: working Ollama runtime adapter used for runtime spike
+    symbols:
+      OllamaRuntime:
+        implements: ModelRuntime
+        methods:
+          health:
+            async: true
+            endpoint: "POST /api/show"
+            result:
+              success: true
+              request_or_http_error: false
+          generate_text:
+            async: true
+            endpoint: "POST /api/generate"
+            response_contract: "response"
+            timeout_seconds: 120
+          generate_from_audio:
+            async: true
+            endpoint: "POST /v1/chat/completions"
+            response_contract: "choices[0].message.content"
+            audio_encoding: base64_wav
+            timeout_seconds: 120
+    dependencies:
+      - backend/app/config.py:settings
+      - backend/app/runtime/base.py:ModelRuntime
+      - httpx
+    status: implemented_spike
+    error_semantics:
+      remote_errors: RuntimeError
+      invalid_remote_response: RuntimeError
+      local_audio_file_errors: propagate
+    notes:
+      - Text uses Ollama native generate API.
+      - Audio uses Ollama OpenAI-compatible chat-completions API.
+      - Current adapter has passing real Ollama integration coverage.
+      - Ollama is a spike implementation; architecture still targets interchangeable runtime.
+
+  backend/app/runtime/llama_cpp.py:
+    role: planned llama.cpp runtime adapter
+    symbols:
+      LlamaCppRuntime:
+        methods:
+          health: async
+          generate_text: async
+          generate_from_audio: async
+    status: stub
+    notes:
+      - Preferred target runtime according to current runtime ADR.
+      - Runtime spike must establish Gemma 4 native audio feasibility before final adoption.
+
+  backend/app/audio/input.py:
+    role: native audio normalization and validation boundary
+    symbols:
+      PreparedAudio:
+        kind: dataclass
+        frozen: true
+        fields:
+          path: Path
+          duration_seconds: float
+          sample_rate_hz:
+            type: int
+            default: 16000
+          channels:
+            type: int
+            default: 1
+      AudioInputPreparer:
+        kind: Protocol
+        methods:
+          prepare:
+            signature: "(source: Path) -> PreparedAudio"
+            async: true
+    status: contract_only
+    expected_constraints:
+      - maximum 30 seconds
+      - 16 kHz
+      - mono
+
+  backend/app/tts/base.py:
+    role: runtime-independent TTS abstraction
+    symbols:
+      TextToSpeech:
+        kind: Protocol
+        methods:
+          synthesize:
+            signature: "(text: str) -> Path"
+            async: true
+    status: contract_only
+
+  backend/app/tts/chatterbox.py:
+    role: planned Chatterbox TTS adapter
+    symbols:
+      ChatterboxTextToSpeech:
+        methods:
+          synthesize:
+            signature: "(text: str) -> Path"
+            async: true
+    status: stub
+    dependencies:
+      - backend/app/tts/base.py:TextToSpeech
+    notes:
+      - Chatterbox Multilingual V3 is candidate pending dedicated spike.
+
+  frontend/src/main.ts:
+    role: Vue application bootstrap
+    relevant_to:
+      - frontend startup
+      - App.vue
+      - global styles
+
+  frontend/src/App.vue:
+    role: current root UI component
+    status: scaffold
+    relevant_to:
+      - initial frontend behavior
+      - chat UI implementation
+      - frontend tests
+
+  frontend/src/services/backend.ts:
+    role: frontend HTTP boundary for backend communication
+    relevant_to:
+      - health calls
+      - future chat calls
+      - backend URL/contracts
+    inspect_before:
+      - changing backend API paths
+      - changing frontend/backend transport
+      - implementing frontend chat flow
+
+  frontend/src/types/chat.ts:
+    role: frontend text-chat contract types
+    relevant_to:
+      - frontend/backend ChatRequest and ChatResponse alignment
+    inspect_with:
+      - backend/app/api/schemas.py
+      - frontend/src/services/backend.ts
+      - frontend/src/App.vue
+
+tests:
+
+  tests/backend/test_config.py:
+    covers:
+      - backend configuration defaults
+    inspect_with:
+      - backend/app/config.py
+
+  tests/backend/test_health.py:
+    covers:
+      - health endpoint behavior
+    inspect_with:
+      - backend/app/api/routes/health.py
+      - backend/app/main.py
+      - backend/app/config.py
+
+  tests/backend/test_chat_contract.py:
+    covers:
+      - public text chat API contract
+      - current 501 stub behavior
+      - request validation
+    inspect_with:
+      - backend/app/api/routes/chat.py
+      - backend/app/api/schemas.py
+    likely_change_when:
+      - text chat endpoint becomes implemented
+
+  tests/backend/test_runtime_blueprint.py:
+    covers:
+      - ModelRuntime contract / llama.cpp runtime blueprint
+    inspect_with:
+      - backend/app/runtime/base.py
+      - backend/app/runtime/llama_cpp.py
+
+  tests/backend/test_ollama_runtime.py:
+    covers:
+      - Ollama health behavior
+      - text generation happy/error paths
+      - native audio happy/error paths
+      - outbound Ollama request contracts
+    inspect_with:
+      - backend/app/runtime/ollama.py
+      - backend/app/config.py
+    important_contracts:
+      text_response: "response"
+      audio_response: "choices[0].message.content"
+
+  tests/backend/test_tts_blueprint.py:
+    covers:
+      - TTS protocol / Chatterbox blueprint
+    inspect_with:
+      - backend/app/tts/base.py
+      - backend/app/tts/chatterbox.py
+
+  tests/integration/test_ollama_integration.py:
+    covers:
+      - real configured Ollama model health
+      - real text generation
+      - real native audio request
+    external_dependency:
+      - local Ollama
+      - configured Gemma model
+      - tests/data/german-transcription.wav
+    status: active
+    known_note:
+      - uses pytest integration marker
+
+  tests/integration/test_text_chat_blueprint.py:
+    covers:
+      - intended text-chat integration
+    status: skipped
+    reason: requires local Gemma runtime selected by spike
+    likely_change_when:
+      - ChatService and chat route are wired to runtime
+
+  tests/frontend/App.spec.ts:
+    covers:
+      - current root Vue component behavior
+    inspect_with:
+      - frontend/src/App.vue
+
+test_data:
+
+  tests/data/german-transcription.wav:
+    role: native audio runtime integration fixture
+    expected_signal:
+      - integration assertion currently expects response containing "diagnostizierte"
+
+change_navigation:
+
+  implement_text_chat_backend:
+    inspect:
+      - backend/app/api/routes/chat.py
+      - backend/app/application/chat_service.py
+      - backend/app/runtime/base.py
+      - backend/app/runtime/ollama.py
+      - backend/app/api/schemas.py
+      - backend/app/main.py
+      - tests/backend/test_chat_contract.py
+      - tests/integration/test_text_chat_blueprint.py
+    maybe_inspect:
+      - backend/app/config.py
+      - tests/backend/test_ollama_runtime.py
+
+  change_public_chat_contract:
+    inspect:
+      - backend/app/api/schemas.py
+      - backend/app/api/routes/chat.py
+      - frontend/src/types/chat.ts
+      - frontend/src/services/backend.ts
+      - tests/backend/test_chat_contract.py
+      - tests/frontend/App.spec.ts
+
+  change_runtime_contract:
+    inspect:
+      - backend/app/runtime/base.py
+      - backend/app/runtime/ollama.py
+      - backend/app/runtime/llama_cpp.py
+      - backend/app/application/chat_service.py
+      - tests/backend/test_runtime_blueprint.py
+      - tests/backend/test_ollama_runtime.py
+      - tests/integration/test_ollama_integration.py
+
+  change_ollama_runtime:
+    inspect:
+      - backend/app/runtime/ollama.py
+      - backend/app/config.py
+      - tests/backend/test_ollama_runtime.py
+      - tests/integration/test_ollama_integration.py
+
+  implement_audio_preparation:
+    inspect:
+      - backend/app/audio/input.py
+      - backend/app/config.py
+      - backend/app/runtime/base.py
+      - tests/data/german-transcription.wav
+    maybe_inspect:
+      - backend/app/runtime/ollama.py
+      - backend/app/api/schemas.py
+
+  implement_audio_api:
+    inspect:
+      - backend/app/audio/input.py
+      - backend/app/runtime/base.py
+      - backend/app/api/router.py
+      - backend/app/api/schemas.py
+      - backend/app/config.py
+    maybe_inspect:
+      - backend/app/runtime/ollama.py
+      - frontend/src/services/backend.ts
+      - frontend/src/App.vue
+
+  implement_tts:
+    inspect:
+      - backend/app/tts/base.py
+      - backend/app/tts/chatterbox.py
+      - backend/app/config.py
+      - tests/backend/test_tts_blueprint.py
+    maybe_inspect:
+      - backend/app/application/chat_service.py
+
+  change_backend_network_or_cors:
+    inspect:
+      - backend/app/config.py
+      - backend/app/main.py
+      - scripts/start-backend.sh
+      - frontend/src/services/backend.ts
+      - tests/backend/test_config.py
+      - tests/backend/test_health.py
+
+  implement_frontend_chat:
+    inspect:
+      - frontend/src/App.vue
+      - frontend/src/services/backend.ts
+      - frontend/src/types/chat.ts
+      - tests/frontend/App.spec.ts
+      - backend/app/api/schemas.py
+      - backend/app/api/routes/chat.py
+
+  add_tauri_shell:
+    inspect:
+      - frontend/package.json
+      - frontend/src/main.ts
+      - frontend/src/App.vue
+      - scripts/start-backend.sh
+      - backend/app/config.py
+    missing_area:
+      - src-tauri does not currently exist
+
+architectural_constraints:
+
+  runtime_abstraction:
+    rule: application logic depends on ModelRuntime, not concrete runtime adapters
+    source:
+      - docs/adrs/04-local-llm-runtime.md
+
+  backend_boundary:
+    rule: model, audio, and TTS implementation remain in Python backend
+    source:
+      - docs/adrs/03-backend-fastapi.md
+
+  local_http:
+    rule: backend binds to fixed loopback address 127.0.0.1:8095
+    source:
+      - docs/adrs/05-loopback-http-communication.md
+
+  native_audio:
+    rule: initial audio pipeline uses direct Gemma audio input without separate STT
+    source:
+      - docs/adrs/06-native-gemma-audio.md
+
+  audio_limit:
+    rule: push-to-talk recording maximum is 30 seconds
+    source:
+      - docs/adrs/06-native-gemma-audio.md
+
+  tts_abstraction:
+    rule: TTS remains behind interchangeable Python adapter
+    source:
+      - docs/adrs/07-tts-output.md
+
+  repomap:
+    rule: >
+      RepoMap is a compact Frieda working index, not authoritative documentation.
+      Actual source files must be inspected before implementation.
+    source:
+      - docs/adrs/08-incremental-repo-map-as-ai-working-index.md
+
+  patching:
+    rule: >
+      Small localized source changes may be applied through deterministic YAML
+      patches after exact source inspection and must be reviewed from final diff
+      and test results.
+    source:
+      - docs/adrs/09-source-patching-via-prompt2code.md
+
+known_state:
+
+  implemented:
+    - FastAPI application startup
+    - backend health endpoint
+    - public chat request/response schemas
+    - Ollama runtime health
+    - Ollama text generation spike
+    - Ollama native audio generation spike
+    - minimal Vue application scaffold
+
+  contracts_or_stubs:
+    - text chat endpoint
+    - ChatService orchestration
+    - AudioInputPreparer
+    - llama.cpp runtime
+    - TTS protocol
+    - Chatterbox TTS adapter
+
+  not_present:
+    - Tauri shell
+    - persistent conversation storage
+    - memory
+    - streaming responses
+    - production packaging
+
+  open_architecture:
+    - final local LLM runtime pending runtime spike decision
+    - llama.cpp native Gemma audio feasibility
+    - Chatterbox resource and quality spike
+    - concrete audio HTTP transport/API
+    - whether user audio is surfaced as transcript
