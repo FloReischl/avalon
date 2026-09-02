@@ -27,6 +27,7 @@ architecture:
         always_on_top: true
         decorations: false
         transparent: true
+        close_behavior: exit_application
       chat:
         role: main chat window
         initially_visible: false
@@ -39,6 +40,7 @@ architecture:
       - Tauri starts, monitors, and stops the backend process it owns.
       - Backend readiness and startup diagnostics are exposed to the frontend.
       - Double-clicking the avatar shows and focuses the existing chat window.
+      - Closing the avatar window exits the application and stops the owned backend process.
       - Closing the chat window hides it instead of destroying its webview state.
       - Explicit chat-window geometry persistence is not implemented.
       - Current desktop input shaping is implemented for X11 using native SHAPE input regions.
@@ -443,7 +445,6 @@ modules:
       - avatar push-to-talk UI
       - audio recording countdown
       - chat-window opening
-      - idle/active companion state
       - alpha-based avatar hit detection
       - native input-shape generation
       - frontend tests
@@ -455,7 +456,6 @@ modules:
       - frontend/src/assets/avatars/frieda/standard.png
     interaction:
       - avatar drag starts only after pointer movement crosses a small threshold
-      - actual drag suppresses the resulting click
       - avatar double-click opens the chat window
       - double-click remains functional after moving the avatar
       - audio button enters recording UI state while pointer is held
@@ -474,6 +474,13 @@ modules:
       - New Chat aborts an active turn and clears transient state
       - implements multiline-aware Enter / Shift+Enter / Ctrl+Enter semantics
       - renders user and assistant messages through MarkdownMessage
+      - supports icon-based Send, Stop, New Chat, and composer expand/collapse actions
+      - expanded composer uses the available chat-main area without replacing the textarea
+      - preserves composer content and selection across expand/collapse
+      - renders role-specific message actions
+      - message Copy writes Markdown source as text/plain and rendered content as text/html when supported
+      - message Copy falls back to plain Markdown clipboard text
+      - Read aloud, Branch, and Edit actions are visible disabled placeholders
       - keeps user Markdown source editing in a plain monospace textarea
       - supports draggable sidebar splitter with bounded width
       - automatically follows streamed assistant output
@@ -554,6 +561,7 @@ modules:
       - render tables, lists, headings, blockquotes, and links
       - syntax-highlight fenced code with highlight.js
       - add Copy action for fenced code
+      - expose current rendered message HTML to ChatWindow for multi-format clipboard copy
       - route rendered links through externalLinks service
     dependencies:
       - markdown-it
@@ -600,6 +608,7 @@ modules:
       - expose backend snapshot command
       - expose native input-region command
       - expose chat-window show/focus command
+      - exit application when avatar window is closed
       - hide chat window instead of destroying it on close
       - stop owned backend on application exit
     dependencies:
@@ -734,7 +743,6 @@ tests:
       - backend startup lifecycle integration boundary
       - startup diagnostics rendering
       - Frieda avatar visibility during startup and ready state
-      - idle/active companion state
       - avatar interaction behavior
       - chat opening on avatar double-click
       - avatar drag threshold behavior
@@ -952,11 +960,11 @@ known_state:
     - Tauri transparent desktop shell
     - Tauri-managed backend process lifecycle
     - buffered backend startup diagnostics
-    - Frieda avatar with idle/active interaction
     - Frieda avatar drag with movement threshold
     - avatar double-click opens and focuses chat window
     - separate hidden-at-startup native chat window
     - chat-window close hides rather than destroys the window
+    - avatar close exits the application and stops the owned backend
     - avatar window always-on-top
     - pixel-accurate avatar alpha hit detection
     - native X11 click-through using SHAPE input regions
@@ -967,6 +975,10 @@ known_state:
     - fenced-code syntax highlighting and Copy action
     - external opening of Markdown links through Tauri opener or browser fallback
     - polished chat layout with user message bubbles and resizable sidebar
+    - icon-based chat composer actions
+    - expandable chat composer preserving textarea state
+    - role-specific message actions for user and assistant messages
+    - multi-format message clipboard copy with Markdown plain text and rendered HTML
     - avatar push-to-talk UI state with 30-second countdown and abort
 
   contracts_or_stubs:
