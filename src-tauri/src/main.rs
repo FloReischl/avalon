@@ -37,6 +37,7 @@ fn main() {
     let backend = BackendProcess::default();
 
     let app = tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
         .manage(backend.clone())
         .invoke_handler(tauri::generate_handler![
             get_backend_snapshot,

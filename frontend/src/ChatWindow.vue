@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { nextTick, ref, watch } from "vue";
 
+import MarkdownMessage from "./components/MarkdownMessage.vue";
 import { useTransientChat } from "./composables/useTransientChat";
 
 const {
@@ -76,6 +77,7 @@ function newChat() {
   errorMessage.value = undefined;
 }
 
+
 function handleInputKeydown(event: KeyboardEvent) {
   if (event.key !== "Enter") {
     return;
@@ -146,20 +148,25 @@ function handleInputKeydown(event: KeyboardEvent) {
           <div class="message-role">
             {{ message.role === "user" ? "Du" : "Frieda" }}
           </div>
-          <div class="message-content">{{ message.content }}</div>
+          <MarkdownMessage
+            class="message-content"
+            :content="message.content"
+          />
         </article>
       </section>
 
       <footer class="composer">
-        <textarea
-          v-model="input"
-          data-testid="chat-input"
-          aria-label="Nachricht"
-          placeholder="Nachricht an Frieda"
-          :disabled="isGenerating"
-          rows="3"
-          @keydown="handleInputKeydown"
-        />
+        <div class="composer-input">
+          <textarea
+            v-model="input"
+            data-testid="chat-input"
+            aria-label="Nachricht"
+            placeholder="Nachricht an Frieda"
+            :disabled="isGenerating"
+            rows="3"
+            @keydown="handleInputKeydown"
+          />
+        </div>
 
         <div class="composer-actions">
           <div
@@ -228,6 +235,16 @@ function handleInputKeydown(event: KeyboardEvent) {
 
 .new-chat-button {
   margin: 0 1rem 1rem;
+  padding: 0.45rem 0.75rem;
+  border: 1px solid #cccccc;
+  border-radius: 0.4rem;
+  background: #ffffff;
+  color: inherit;
+  cursor: pointer;
+}
+
+.new-chat-button:hover {
+  background: #f8f8f8;
 }
 
 .chat-history-placeholder {
@@ -237,8 +254,19 @@ function handleInputKeydown(event: KeyboardEvent) {
 }
 
 .sidebar-splitter {
+  position: relative;
   flex: 0 0 5px;
   cursor: col-resize;
+  background: transparent;
+}
+
+.sidebar-splitter::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 2px;
+  width: 1px;
   background: #d8d8d8;
 }
 
@@ -266,11 +294,21 @@ function handleInputKeydown(event: KeyboardEvent) {
 }
 
 .message-content {
-  white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 
 .message-user {
+  width: fit-content;
+  max-width: min(75%, 42rem);
+  margin-left: auto;
+  margin-right: 0;
+  padding: 0.75rem 1rem;
+  border-radius: 1rem;
+  background: #dbeafe;
+  text-align: left;
+}
+
+.message-user .message-role {
   text-align: right;
 }
 
@@ -279,19 +317,52 @@ function handleInputKeydown(event: KeyboardEvent) {
 }
 
 .composer {
-  padding: 1rem 1.5rem 1.5rem;
-  border-top: 1px solid #d8d8d8;
+  padding: 0.75rem 1.5rem 1rem;
+  border-top: 1px solid #e2e2e2;
+  background: #ffffff;
+}
+
+.composer-input {
+  height: 5.5rem;
+  overflow: hidden;
+  border: 1px solid #cccccc;
+  border-radius: 0.5rem;
+  background: #ffffff;
+}
+
+.composer-input:focus-within {
+  border-color: #8baee8;
 }
 
 .composer textarea {
   width: 100%;
-  resize: vertical;
+  height: 100%;
+  margin: 0;
+  padding: 0.75rem 0.85rem;
   box-sizing: border-box;
-  font: inherit;
+  border: 0;
+  resize: none;
+  outline: none;
+  background: transparent;
+  color: inherit;
+  font-family: ui-monospace, "Consolas", "Liberation Mono", monospace;
+  font-size: 0.95rem;
+  line-height: 1.45;
+  tab-size: 4;
 }
 
+.composer textarea::placeholder {
+  color: #999999;
+}
+
+.composer textarea:disabled {
+  background: #f5f5f5;
+  color: #777777;
+}
+
+
 .composer-actions {
-  min-height: 2.25rem;
+  min-height: 2rem;
   display: flex;
   align-items: center;
   justify-content: flex-end;
@@ -299,8 +370,28 @@ function handleInputKeydown(event: KeyboardEvent) {
   margin-top: 0.5rem;
 }
 
+.composer-actions button {
+  min-width: 4.5rem;
+  padding: 0.4rem 0.8rem;
+  border: 1px solid #cccccc;
+  border-radius: 0.4rem;
+  background: #ffffff;
+  color: inherit;
+  cursor: pointer;
+}
+
+.composer-actions button:hover:not(:disabled) {
+  background: #f2f2f2;
+}
+
+.composer-actions button:disabled {
+  color: #aaaaaa;
+  cursor: default;
+}
+
 .error-message {
   margin-right: auto;
   color: #a00000;
 }
+
 </style>
