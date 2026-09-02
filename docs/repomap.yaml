@@ -73,15 +73,20 @@ architecture:
   communication:
     backend_address: "127.0.0.1:8095"
     transport: HTTP
-    text_format: JSON
-    streaming: not_implemented
+    request_format: JSON
+    streaming_response: SSE_with_JSON_data
     authentication: none
     scope: loopback_only
 
   conversation:
     persistence: none
-    state: in_memory
-    response_mode: complete_response
+    state: transient_frontend_memory
+    response_mode: streaming
+    current_scope:
+      - no persona
+      - no memory
+      - no persisted history
+      - active turn can be aborted and rolled back client-side
 
 key_flows:
 
@@ -451,13 +456,28 @@ modules:
 
   frontend/src/ChatWindow.vue:
     role: main chat-window Vue root
-    status: placeholder
+    status: implemented_transient_chat
     current_behavior:
-      - renders initial Avalo / New Chat placeholder
+      - renders conversation sidebar and current transient chat
+      - sends messages through streaming backend client
+      - disables input while generation is active
+      - switches Send action to Stop during generation
+      - New Chat aborts an active turn and clears transient state
+      - implements multiline-aware Enter / Shift+Enter / Ctrl+Enter semantics
+      - renders user and assistant messages through MarkdownMessage
+      - keeps user Markdown source editing in a plain monospace textarea
+      - supports draggable sidebar splitter with bounded width
+      - automatically follows streamed assistant output
     relevant_to:
-      - future text chat UI
+      - transient text chat UI
       - conversation sidebar
       - current conversation view
+      - Markdown rendering
+      - streaming interaction
+      - frontend chat tests
+    dependencies:
+      - frontend/src/composables/useTransientChat.ts
+      - frontend/src/components/MarkdownMessage.vue
 
   frontend/src/services/chatWindow.ts:
     role: frontend Tauri boundary for chat-window lifecycle
@@ -475,23 +495,72 @@ modules:
 
   frontend/src/services/backend.ts:
     role: frontend HTTP boundary for backend communication
-    relevant_to:
+    responsibilities:
       - health calls
-      - future chat calls
+      - POST streaming chat requests to /api/v1/chat
+      - parse Avalo SSE chunk / done / error events
+      - expose AbortSignal cancellation to callers
+      - reject malformed or incomplete streams
+    relevant_to:
       - backend URL/contracts
+      - streaming text chat
     inspect_before:
       - changing backend API paths
       - changing frontend/backend transport
-      - implementing frontend chat flow
+      - changing public chat stream protocol
 
   frontend/src/types/chat.ts:
-    role: frontend text-chat contract types
+    role: frontend transient chat message types
+    symbols:
+      ChatMessage:
+        fields:
+          role: user_or_assistant
+          content: str
     relevant_to:
-      - frontend/backend ChatRequest and ChatResponse alignment
+      - frontend transient conversation state
+      - frontend chat rendering
     inspect_with:
-      - backend/app/api/schemas.py
+      - frontend/src/composables/useTransientChat.ts
+      - frontend/src/ChatWindow.vue
+
+  frontend/src/composables/useTransientChat.ts:
+    role: transient client-side chat-turn state machine
+    responsibilities:
+      - hold current messages and input
+      - start backend streaming generation
+      - append assistant chunks incrementally
+      - disable concurrent generation
+      - abort active generation
+      - roll back complete active turn on Stop or technical failure
+      - restore original user prompt exactly after rollback
+      - ignore stale callbacks from superseded turns
+    dependencies:
       - frontend/src/services/backend.ts
-      - frontend/src/App.vue
+      - frontend/src/types/chat.ts
+
+  frontend/src/components/MarkdownMessage.vue:
+    role: shared Markdown renderer for user and assistant messages
+    responsibilities:
+      - render standard Markdown with raw HTML disabled
+      - render tables, lists, headings, blockquotes, and links
+      - syntax-highlight fenced code with highlight.js
+      - add Copy action for fenced code
+      - route rendered links through externalLinks service
+    dependencies:
+      - markdown-it
+      - highlight.js
+      - frontend/src/services/externalLinks.ts
+    security:
+      raw_html: disabled
+
+  frontend/src/services/externalLinks.ts:
+    role: frontend boundary for opening rendered Markdown links externally
+    responsibilities:
+      - allow only http, https, mailto, and tel protocols
+      - use Tauri opener inside desktop runtime
+      - use new browser tab during browser development
+    native_dependency:
+      - tauri-plugin-opener
 
   frontend/src/services/backendLifecycle.ts:
     role: Tauri frontend boundary for backend lifecycle state
@@ -764,16 +833,24 @@ change_navigation:
   implement_frontend_chat:
     inspect:
       - frontend/src/ChatWindow.vue
+      - frontend/src/composables/useTransientChat.ts
       - frontend/src/services/backend.ts
       - frontend/src/types/chat.ts
+      - frontend/src/components/MarkdownMessage.vue
+      - frontend/src/services/externalLinks.ts
       - frontend/src/services/chatWindow.ts
       - frontend/src/main.ts
-      - tests/frontend/App.spec.ts
+      - tests/frontend/ChatWindow.spec.ts
+      - tests/frontend/useTransientChat.spec.ts
+      - tests/frontend/backend.spec.ts
+      - tests/frontend/MarkdownMessage.spec.ts
+      - tests/frontend/externalLinks.spec.ts
       - backend/app/api/schemas.py
       - backend/app/api/routes/chat.py
     maybe_inspect:
       - frontend/src/App.vue
       - src-tauri/src/main.rs
+      - src-tauri/capabilities/default.json
 
   change_desktop_shell:
     inspect:
@@ -874,6 +951,13 @@ known_state:
     - avatar window always-on-top
     - pixel-accurate avatar alpha hit detection
     - native X11 click-through using SHAPE input regions
+    - transient frontend text chat with streamed assistant responses
+    - client-side Stop / failure rollback of the complete active turn
+    - New Chat reset for transient conversations
+    - shared Markdown rendering for user and assistant messages
+    - fenced-code syntax highlighting and Copy action
+    - external opening of Markdown links through Tauri opener or browser fallback
+    - polished chat layout with user message bubbles and resizable sidebar
 
   contracts_or_stubs:
     - AudioInputPreparer

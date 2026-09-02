@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import MarkdownIt from "markdown-it";
+
 import hljs from "highlight.js";
 import "highlight.js/styles/github.css";
 
@@ -9,28 +10,28 @@ defineProps<{
   content: string;
 }>();
 
+function highlightCode(code: string, language: string): string {
+  if (language && hljs.getLanguage(language)) {
+    return hljs.highlight(code, {
+      language,
+      ignoreIllegals: true,
+    }).value;
+  }
+
+  return MarkdownIt().utils.escapeHtml(code);
+}
+
 const markdown = new MarkdownIt({
   html: false,
   linkify: true,
   breaks: false,
-  highlight(code, language) {
-    if (language && hljs.getLanguage(language)) {
-      return hljs.highlight(code, {
-        language,
-        ignoreIllegals: true,
-      }).value;
-    }
-
-    return markdown.utils.escapeHtml(code);
-  },
+  highlight: highlightCode,
 });
 
-markdown.renderer.rules.fence = (tokens, index, options) => {
+markdown.renderer.rules.fence = (tokens, index): string => {
   const token = tokens[index];
   const language = token.info.trim().split(/\s+/)[0];
-  const highlighted = options.highlight
-    ? options.highlight(token.content, language, "")
-    : markdown.utils.escapeHtml(token.content);
+  const highlighted = highlightCode(token.content, language);
   const languageClass = language
     ? ` class="hljs language-${markdown.utils.escapeHtml(language)}"`
     : ' class="hljs"';
