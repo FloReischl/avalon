@@ -131,21 +131,24 @@ key_flows:
       - cancellation propagates through service and runtime without becoming an error event
 
   native_audio:
-    target_flow:
-      - push-to-talk recording
-      - AudioInputPreparer.prepare
-      - ModelRuntime.generate_from_audio
-      - complete model response
-    preparation_contract: backend/app/audio/input.py:AudioInputPreparer
-    prepared_value: backend/app/audio/input.py:PreparedAudio
-    runtime_contract: backend/app/runtime/base.py:ModelRuntime.generate_from_audio
-    status: runtime_spike_only
-    constraints:
-      max_duration_seconds: 30
-      target_sample_rate_hz: 16000
-      target_channels: 1
-      initial_language: de
-      separate_stt: false
+      target_flow:
+        - avatar push-to-talk interaction
+        - backend-local microphone capture
+        - AudioInputPreparer.prepare
+        - ModelRuntime.generate_from_audio
+        - complete model response
+      capture_location: python_backend
+      status: capture_spike_pending
+      notes:
+        - browser/WebView microphone capture via MediaRecorder was rejected after WebKitGTK produced zero-byte chunks
+        - frontend currently implements push-to-talk UI state only
+        - concrete backend capture implementation and HTTP control API are not yet implemented
+      constraints:
+        max_duration_seconds: 30
+        target_sample_rate_hz: 16000
+        target_channels: 1
+        initial_language: de
+        separate_stt: false
 
   tts:
     contract: backend/app/tts/base.py:TextToSpeech
@@ -437,6 +440,8 @@ modules:
       - backend startup diagnostics
       - avatar rendering
       - avatar drag interaction
+      - avatar push-to-talk UI
+      - audio recording countdown
       - chat-window opening
       - idle/active companion state
       - alpha-based avatar hit detection
@@ -453,6 +458,10 @@ modules:
       - actual drag suppresses the resulting click
       - avatar double-click opens the chat window
       - double-click remains functional after moving the avatar
+      - audio button enters recording UI state while pointer is held
+      - recording UI resets on pointer release or cancellation
+      - recording UI aborts after 30 seconds
+      - current frontend audio interaction does not capture microphone data
 
   frontend/src/ChatWindow.vue:
     role: main chat-window Vue root
@@ -958,6 +967,7 @@ known_state:
     - fenced-code syntax highlighting and Copy action
     - external opening of Markdown links through Tauri opener or browser fallback
     - polished chat layout with user message bubbles and resizable sidebar
+    - avatar push-to-talk UI state with 30-second countdown and abort
 
   contracts_or_stubs:
     - AudioInputPreparer
@@ -976,3 +986,6 @@ known_state:
     - Chatterbox resource and quality spike
     - concrete audio HTTP transport/API
     - whether user audio is surfaced as transcript
+    - concrete backend-local microphone capture implementation
+    - concrete audio recording control API
+    - audio chunking / incremental Ollama processing feasibility
