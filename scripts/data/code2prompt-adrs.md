@@ -13,7 +13,7 @@ adrs
 ├── 06-native-gemma-audio.md
 ├── 07-tts-output.md
 ├── 08-incremental-repo-map-as-ai-working-index.md
-└── 09-source-patching-via-prompt2code.md
+└── 09-prompt2code-source-patching.md
 
 ```
 
@@ -579,108 +579,300 @@ mechanism.
 
 If it fails at that job, Frieda owns the virtual nose-pulling.
 ```
-`09-source-patching-via-prompt2code.md`:
+`09-prompt2code-source-patching.md`:
 
 ```md
-# ADR 09: Deterministic Source Patching via prompt2code
+# ADR 09: Deterministic Source Patching via Prompt2Code
 
-**Status:** Accepted
+**Status:** Accepted  
+**Date:** 2026-09-01
 
 ## Context
 
-Small and well-localized Avalo changes are planned and reviewed by Frieda without requiring a repository-aware coding agent.
+Avalo uses frontier-model-assisted planning and local implementation workflows.
 
-To apply such changes safely, Avalo uses `prompt2code.py` (P2C) as a deliberately simple patch executor.
+For some implementation tasks, the generated source changes are sufficiently small and deterministic that a coding agent is unnecessary. In these cases, the required operation is primarily the reliable transport of explicitly specified source changes into the local repository.
 
-P2C contains no code intelligence. Frieda is responsible for understanding the code and generating the patch; P2C is responsible only for deterministic validation and application.
+Prompt2Code (`prompt2code.py`) provides this transport layer.
+
+An earlier version used YAML patch files. Source snippets were embedded as YAML block scalars and then applied through deterministic operations.
+
+While functional, YAML introduced unnecessary complexity for exact source transport:
+
+- YAML indentation and source-code indentation interacted.
+- Block scalar semantics affected trailing newlines.
+- Exact source snippets required YAML-specific formatting such as `|2-`.
+- LLM-generated patches therefore had to satisfy both YAML syntax and source-code whitespace requirements.
+
+Prompt2Code does not require a general-purpose serialization format. Its patch format only needs to express a small set of deterministic source operations.
 
 ## Decision
 
-P2C consumes a YAML patch file and applies ordered changes relative to a target repository directory.
+Prompt2Code uses a minimal custom text format designed specifically for exact source transport.
 
-Supported operations:
+It intentionally provides no general-purpose syntax, quoting, escaping, comments, indentation handling, fuzzy matching, or code intelligence.
 
-- `string-replace` — replace one exact string
-- `string-remove` — remove one exact string
-- `create` — create a new file
-- `delete` — delete an existing file
+### Patch Structure
 
-For `string-replace` and `string-remove`, the `old` text MUST occur **exactly once**. Zero or multiple matches abort the complete patch.
+A patch contains one or more sequential changes.
 
-Changes are simulated sequentially in memory. Later changes therefore see the result of earlier changes.
+Each change starts with exactly two header lines:
 
-Only after **all changes in all files have validated successfully** are filesystem changes written.
+```text
+<relative-file-path>
+<mode>
+```
 
-P2C intentionally provides:
+Supported modes are:
 
-- no fuzzy matching
-- no automatic code interpretation
-- no intelligent conflict resolution
-- no regex patching initially
-- no partial writes after semantic validation failure
+```text
+string-replace
+string-remove
+file-create
+file-delete
+```
 
-The source code remains authoritative.
+Mode names are case-sensitive and whitespace-exact.
 
-## Workflow
+Changes are separated by the exact marker line:
 
-1. Flo and Frieda refine the change.
-2. Frieda identifies the required source files.
-3. Flo provides their current content.
-4. Frieda generates the YAML patch.
-5. Flo applies it with P2C.
-6. Flo runs the required tests and verification.
-7. Frieda reviews the resulting `git diff` and test results.
-8. If necessary, repeat with another incremental patch.
+```text
+p2c-next-change
+```
 
-Complex or poorly localized changes may instead be escalated to a repository-aware coding agent.
+The separator must occur between two complete changes. It is invalid at the beginning or end of a patch, and consecutive separators are invalid.
 
-## How-To
+### string-replace
 
-Apply a patch:
+```text
+backend/app/main.py
+string-replace
+p2c-old
+<exact old payload>
+p2c-new
+<exact new payload>
+```
 
-    python prompt2code.py \
-      --input-script patch.yaml \
-      --target-dir ~/dev/avalo
+Both payloads are required and must be non-empty.
 
-Typical patch:
+The `p2c-old` payload must occur exactly once in the current simulated file content.
 
-    files:
-      - path: backend/app/example.py
-        changes:
-          - mode: string-replace
-            old: |2-
-              return "old"
-            new: |2-
-              return "new"
+Zero or multiple matches abort the complete patch before any filesystem changes are made.
 
-          - mode: string-remove
-            old: |2-
-              # obsolete comment
+### string-remove
 
-      - path: backend/app/new_file.py
-        changes:
-          - mode: create
-            content: |2
-              def hello():
-                  return "hello"
+```text
+backend/app/main.py
+string-remove
+p2c-old
+<exact old payload>
+```
 
-### Important
+The payload is required and must be non-empty.
 
-- Always generate patches against the **current source state**.
-- Keep patches small and purpose-specific.
-- Multiple changes to one file belong in one file entry and execute top-to-bottom.
-- Prefer `|2-` for exact snippets where a trailing newline must not be part of the match.
-- Use `|2` for complete file content when the final newline should be preserved.
-- Never weaken an exact-match failure just to make a patch apply. Re-read the current source and regenerate the patch.
-- After every patch, run the relevant tests and inspect `git diff`.
-- A successfully applied patch is **not** evidence of correct behavior; tests and Frieda's final review remain required.
+The payload must occur exactly once in the current simulated file content.
+
+The matched content is removed.
+
+### file-create
+
+```text
+backend/app/new_module.py
+file-create
+p2c-new
+<complete file content>
+```
+
+The payload is required and must be non-empty.
+
+The target file must not already exist in the current simulated state.
+
+Missing parent directories are created during the write phase.
+
+### file-delete
+
+```text
+backend/app/obsolete.py
+file-delete
+```
+
+The target must exist as a regular file in the current simulated state.
+
+`file-delete` has no payload.
+
+### Payload Semantics
+
+Payload is transported without interpretation.
+
+Indentation, blank lines, and other whitespace are significant.
+
+The newline immediately separating a payload from a following marker is structural and is not part of the payload. Additional newlines before the marker are payload.
+
+At EOF, all remaining content after the payload marker belongs to the payload, including a final newline when present.
+
+For example:
+
+```text
+p2c-new
+def foo():
+    return 2
+p2c-next-change
+```
+
+does not include a newline after `return 2`.
+
+To include one:
+
+```text
+p2c-new
+def foo():
+    return 2
+
+p2c-next-change
+```
+
+The patch format uses UTF-8 and LF (`\n`) line endings.
+
+### Reserved Marker Lines
+
+The following exact lines have structural meaning:
+
+```text
+p2c-old
+p2c-new
+p2c-next-change
+```
+
+There is intentionally no escaping or quoting mechanism for representing conflicting marker lines inside payload.
+
+If such a collision becomes a real use case, the format can be extended then.
+
+### Path Safety
+
+All patch paths are interpreted relative to `--target-dir`.
+
+Paths are resolved using `pathlib`, including symlink resolution.
+
+The resolved target must remain inside the resolved `--target-dir`.
+
+Any path escaping the target directory aborts the patch.
+
+This applies to direct traversal such as:
+
+```text
+../outside.py
+```
+
+and to paths escaping through symlinks.
+
+Prompt2Code operates only on regular files. `file-delete` never deletes directories.
+
+### Simulation and Write Model
+
+Changes are processed sequentially.
+
+Multiple changes may target the same file. Each change sees the simulated result of all preceding changes.
+
+Prompt2Code performs two phases:
+
+1. Parse, validate, and simulate the complete patch in memory.
+2. Write the final state of each affected file to disk.
+
+No filesystem changes, including creation of parent directories, occur before the complete patch has successfully passed simulation.
+
+Each affected file is written at most once using its final simulated state.
+
+This provides deterministic pre-write validation without implementing a transactional filesystem.
+
+If an I/O error occurs after the write phase has started, Prompt2Code aborts but does not attempt rollback or compensation. Already written changes remain.
+
+### Diagnostics
+
+Errors identify the relative path and global change number:
+
+```text
+❌ Patch aborted: [backend/app/main.py] change #3: <reason>
+```
+
+For failed exact-match validation, the complete `p2c-old` payload is included unchanged:
+
+```text
+❌ Patch aborted: [frontend/src/App.vue] change #1: string-remove expected p2c-old to occur exactly once, found 7
+
+p2c-old:
+<span
+```
+
+Successful execution reports the final result once per affected file using relative paths:
+
+```text
+✅ Modified: frontend/src/App.vue
+✅ Created: backend/app/foo.py
+✅ Deleted: backend/app/obsolete.py
+
+🎉 Done! 3 file(s) processed successfully.
+```
+
+## Guardrails
+
+Prompt2Code deliberately does not provide:
+
+- fuzzy source matching,
+- automatic indentation adjustment,
+- code or AST interpretation,
+- implicit mode correction,
+- case-insensitive syntax,
+- comments in the patch structure,
+- partial application after validation failure,
+- filesystem rollback after write failure,
+- marker escaping,
+- binary-file support.
+
+Invalid or ambiguous input fails instead of being interpreted heuristically.
+
+## Verification
+
+The implementation is covered by a small regression suite for the behavior that is critical to the transport layer:
+
+- multiline `string-replace`,
+- `string-remove`,
+- `file-create` including parent-directory creation,
+- `file-delete`,
+- sequential changes to the same file,
+- no writes when a later change fails validation,
+- target-directory escape protection.
+
+The suite is intentionally small. Prompt2Code is a development helper, not an operational application component.
 
 ## Consequences
 
-P2C trades coding-agent flexibility for predictability and low coordination overhead.
+### Positive
 
-This works well for bounded changes whose affected code can be identified beforehand. It is intentionally unsuitable for changes requiring repository exploration, broad refactoring, or iterative debugging.
+- Source indentation and whitespace no longer interact with YAML syntax.
+- Patch generation requires very little formatting knowledge from an LLM.
+- Exact source changes remain deterministic and fail fast.
+- Sequential changes allow later operations to depend on earlier simulated changes.
+- Complete pre-write simulation prevents partially applied patches caused by validation failures.
+- `--target-dir` forms a filesystem safety boundary.
+- The implementation has no YAML dependency.
 
-> Frieda decides what to change. P2C only proves that the requested textual transformation can be applied exactly.
+### Negative
+
+- The format is intentionally specialized and not compatible with generic YAML/JSON tooling.
+- Exact reserved marker lines cannot currently be represented inside payload.
+- Exact-match operations remain sensitive to stale source context.
+- Filesystem errors during the write phase can leave a partially written patch because rollback is intentionally not implemented.
+
+## Rationale
+
+Prompt2Code is not intended to understand or edit source code intelligently.
+
+Its responsibility is narrower:
+
+> Transport explicitly specified source changes into a repository as deterministically and transparently as possible.
+
+Keeping the patch language minimal reduces both implementation complexity and the probability that an LLM-generated patch fails because of transport-format details unrelated to the source change itself.
+
+Additional syntax or intelligence should only be introduced in response to demonstrated requirements.
 
 ```

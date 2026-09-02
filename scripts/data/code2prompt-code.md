@@ -46,6 +46,9 @@ avalo
 │   │   │   └── avatars
 │   │   │       ├── frieda
 │   │   │       │   ├── large
+│   │   │       │   │   ├── Codex-Bild 2. Sept. 2026, 08_12_50.png
+│   │   │       │   │   ├── Codex-Bild 2. Sept. 2026, 08_14_52.png
+│   │   │       │   │   ├── Codex-Bild 2. Sept. 2026, 08_27_47.png
 │   │   │       │   │   ├── Codex-Bild 26. Aug. 2026, 10_59_40.png
 │   │   │       │   │   ├── Codex-Bild 27. Aug. 2026, 11_07_57.png
 │   │   │       │   │   ├── Codex-Bild 27. Aug. 2026, 11_18_21.png
@@ -87,13 +90,15 @@ avalo
 │   │   │       │   │   ├── Codex-Bild_27._Aug._2026__14_16_06-removebg-preview.png
 │   │   │       │   │   └── Gemini_Generated_Image_d1ox75d1ox75d1ox-removebg-preview.png
 │   │   │       │   ├── standard.png
+│   │   │       │   ├── standard1.png
 │   │   │       │   └── standard2.png
 │   │   │       └── odin
 │   │   │           ├── large
 │   │   │           │   ├── Codex-Bild 1. Sept. 2026, 16_07_29.png
 │   │   │           │   └── Codex-Bild 1. Sept. 2026, 16_09_50.png
-│   │   │           └── small
-│   │   │               └── Codex-Bild 1. Sept. 2026, 16_09_50.png
+│   │   │           ├── small
+│   │   │           │   └── Codex-Bild 1. Sept. 2026, 16_09_50.png
+│   │   │           └── standard.png
 │   │   ├── env.d.ts
 │   │   ├── main.ts
 │   │   ├── services
@@ -3871,8 +3876,14 @@ class ChatterboxTextToSpeech:
 
 ```vue
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, useTemplateRef } from "vue";
+import {
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  useTemplateRef,
+} from "vue";
 import type { UnlistenFn } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import friedaStandard from "./assets/avatars/frieda/standard.png";
 import {
@@ -3890,43 +3901,18 @@ const backendStatus = ref("initializing");
 const backendLogs = ref<string[]>([]);
 const companionState = ref<CompanionState>("idle");
 const avatarImage = useTemplateRef<HTMLImageElement>("avatarImage");
-const avatarHit = ref(false);
-let avatarAlphaContext: CanvasRenderingContext2D | null = null;
-let avatarPixelWidth = 0;
-let avatarPixelHeight = 0;
+let suppressNextAvatarClick = false;
 let unlisten: UnlistenFn | undefined;
 
 function addLog(message: string) {
   backendLogs.value.push(message);
 }
 
-function toggleCompanion() {
-  companionState.value =
-    companionState.value === "idle" ? "active" : "idle";
+function activateCompanion() {
+  companionState.value = "active";
 }
 
-function initializeAvatarAlphaMask() {
-  const image = avatarImage.value;
-  if (!image || image.naturalWidth === 0 || image.naturalHeight === 0) {
-    return;
-  }
-
-  const canvas = document.createElement("canvas");
-  canvas.width = image.naturalWidth;
-  canvas.height = image.naturalHeight;
-
-  const context = canvas.getContext("2d", {
-    willReadFrequently: true,
-  });
-  if (!context) {
-    return;
-  }
-
-  context.drawImage(image, 0, 0);
-  avatarAlphaContext = context;
-  avatarPixelWidth = image.naturalWidth;
-  avatarPixelHeight = image.naturalHeight;
-
+function initializeAvatar() {
   void applyAvatarInputShape();
 }
 
@@ -4028,58 +4014,28 @@ async function applyAvatarInputShape() {
   }
 }
 
-function updateAvatarHit(event: PointerEvent) {
-  const image = avatarImage.value;
-  if (
-    !image ||
-    !avatarAlphaContext ||
-    avatarPixelWidth === 0 ||
-    avatarPixelHeight === 0
-  ) {
-    avatarHit.value = false;
+async function handleAvatarPointerDown(event: PointerEvent) {
+  if (event.button !== 0) {
     return;
   }
 
-  const bounds = image.getBoundingClientRect();
-  if (
-    bounds.width === 0 ||
-    bounds.height === 0 ||
-    event.clientX < bounds.left ||
-    event.clientX >= bounds.right ||
-    event.clientY < bounds.top ||
-    event.clientY >= bounds.bottom
-  ) {
-    avatarHit.value = false;
-    return;
+  suppressNextAvatarClick = true;
+
+  try {
+    await getCurrentWindow().startDragging();
+  } catch (error) {
+    suppressNextAvatarClick = false;
+    console.error("[window-drag] failed to start window drag", error);
   }
-
-  const pixelX = Math.min(
-    avatarPixelWidth - 1,
-    Math.floor(
-      ((event.clientX - bounds.left) / bounds.width) * avatarPixelWidth,
-    ),
-  );
-  const pixelY = Math.min(
-    avatarPixelHeight - 1,
-    Math.floor(
-      ((event.clientY - bounds.top) / bounds.height) * avatarPixelHeight,
-    ),
-  );
-
-  const alpha = avatarAlphaContext.getImageData(
-    pixelX,
-    pixelY,
-    1,
-    1,
-  ).data[3];
-
-  avatarHit.value = alpha > 16;
 }
 
 function handleAvatarClick() {
-  if (avatarHit.value) {
-    toggleCompanion();
+  if (suppressNextAvatarClick) {
+    suppressNextAvatarClick = false;
+    return;
   }
+
+  activateCompanion();
 }
 
 onMounted(async () => {
@@ -4143,8 +4099,10 @@ onBeforeUnmount(() => {
     <div
       class="avatar-region"
       data-testid="avatar-region"
-      @pointermove="updateAvatarHit"
-      @pointerleave="avatarHit = false"
+      @pointerdown="handleAvatarPointerDown"
+      
+      
+      
       @click="handleAvatarClick"
     >
       <img
@@ -4153,16 +4111,8 @@ onBeforeUnmount(() => {
         :src="friedaStandard"
         alt="Frieda"
         data-testid="avatar"
-        @load="initializeAvatarAlphaMask"
+        @load="initializeAvatar"
       />
-
-      <span
-        class="hit-debug"
-        :class="{ hit: avatarHit }"
-        data-testid="hit-debug"
-      >
-        {{ avatarHit ? "HIT" : "MISS" }}
-      </span>
     </div>
 
     <span
@@ -4375,11 +4325,12 @@ body {
   z-index: 3;
   display: block;
   width: min(42vw, 24rem);
-  cursor: default;
+  cursor: grab;
+  touch-action: none;
 }
 
-.avatar-region:has(.hit-debug.hit) {
-  cursor: pointer;
+.avatar-region:active {
+  cursor: grabbing;
 }
 
 .avatar {
@@ -4411,21 +4362,7 @@ body {
   letter-spacing: 0.08em;
 }
 
-.hit-debug {
-  position: absolute;
-  right: 0;
-  top: 0;
-  padding: 0.25rem 0.4rem;
-  background: rgba(12, 13, 16, 0.85);
-  font-family: "DejaVu Sans Mono", "Liberation Mono", monospace;
-  font-size: 0.7rem;
-  letter-spacing: 0.08em;
-  pointer-events: none;
-}
 
-.hit-debug.hit {
-  font-weight: 700;
-}
 
 .backend-ready-marker {
   position: absolute;
@@ -9185,7 +9122,7 @@ fn main() {
   "identifier": "default",
   "description": "Default capability for Avalo",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": ["core:default", "core:window:allow-start-dragging"]
 }
 ```
 `src-tauri/gen/schemas/acl-manifests.json`:
@@ -9196,7 +9133,7 @@ fn main() {
 `src-tauri/gen/schemas/capabilities.json`:
 
 ```json
-{"default":{"identifier":"default","description":"Default capability for Avalo","local":true,"windows":["main"],"permissions":["core:default"]}}
+{"default":{"identifier":"default","description":"Default capability for Avalo","local":true,"windows":["main"],"permissions":["core:default","core:window:allow-start-dragging"]}}
 ```
 `src-tauri/gen/schemas/desktop-schema.json`:
 
@@ -14754,7 +14691,7 @@ describe("App", () => {
     expect(wrapper.get('[data-testid="startup-panel"]').exists()).toBe(true);
   });
 
-  it("toggles between idle and active when Frieda is clicked", async () => {
+  it("activates Frieda when clicked and keeps her active on subsequent clicks", async () => {
     getBackendSnapshotMock.mockResolvedValue({
       status: "ready",
       logs: ["Backend ready"],
@@ -14766,11 +14703,10 @@ describe("App", () => {
     const avatarRegion = wrapper.get('[data-testid="avatar-region"]');
 
     expect(wrapper.find('[data-testid="active-panel"]').exists()).toBe(false);
-    expect(wrapper.get('[data-testid="hit-debug"]').text()).toBe("MISS");
 
     await avatarRegion.trigger("click");
 
-    expect(wrapper.find('[data-testid="active-panel"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="active-panel"]').exists()).toBe(true);
   });
 
   it.todo("sends a text message and renders the complete response");
