@@ -108,11 +108,22 @@ key_flows:
     endpoint: "POST /api/v1/chat"
     route: backend/app/api/routes/chat.py:create_chat_response
     request: backend/app/api/schemas.py:ChatRequest
-    response: backend/app/api/schemas.py:ChatResponse
-    intended_application_service: backend/app/application/chat_service.py:ChatService.reply
-    intended_runtime_call: ModelRuntime.generate_text
-    status: api_stub
-    current_behavior: HTTP 501
+    response_media_type: text/event-stream
+    application_service: backend/app/services/chat.py:ChatService.stream_response
+    runtime_call: ModelRuntime.generate_text_stream
+    status: implemented
+    stream_protocol:
+      chunk:
+        data: '{"text": "<chunk>"}'
+      done:
+        data: "{}"
+      error:
+        data: "{}"
+    semantics:
+      - successful stream emits zero or more chunk events followed by done
+      - runtime failure emits error and no done event
+      - runtime error details are not exposed in the public stream
+      - cancellation propagates through service and runtime without becoming an error event
 
   native_audio:
     target_flow:
@@ -204,9 +215,6 @@ modules:
           message: str
         validation:
           message_min_length: 1
-      ChatResponse:
-        fields:
-          message: str
     relevant_to:
       - health API
       - text chat API
@@ -224,34 +232,49 @@ modules:
     status: implemented
 
   backend/app/api/routes/chat.py:
-    role: text chat HTTP boundary
+    role: text chat HTTP streaming boundary
     symbols:
+      get_chat_service:
+        role: request-scoped ChatService composition using OllamaRuntime
+      format_sse_event:
+        role: Avalo SSE event serialization
+      stream_chat_response:
+        signature: "(service: ChatService, message: str) -> AsyncIterator[str]"
+        role: translate service chunks and runtime failures into Avalo SSE events
       create_chat_response:
-        signature: "(request: ChatRequest) -> ChatResponse"
+        signature: "(request: ChatRequest, service: ChatService) -> StreamingResponse"
     endpoint: "POST /api/v1/chat"
+    response_media_type: text/event-stream
     dependencies:
       - backend/app/api/schemas.py:ChatRequest
-      - backend/app/api/schemas.py:ChatResponse
-    status: stub
-    current_behavior: raises HTTP 501
-    expected_future_dependency:
-      - backend/app/application/chat_service.py:ChatService
+      - backend/app/services/chat.py:ChatService
+      - backend/app/runtime/ollama.py:OllamaRuntime
+    status: implemented
+    stream_events:
+      - chunk
+      - done
+      - error
+    cancellation:
+      - asyncio cancellation is not converted to an error event
+      - cancellation propagates into ChatService and ModelRuntime
 
-  backend/app/application/chat_service.py:
-    role: text chat use-case orchestration
+  backend/app/services/chat.py:
+    role: text chat use-case boundary
     symbols:
       ChatService:
         constructor: "(runtime: ModelRuntime)"
         methods:
-          reply:
-            signature: "(message: str) -> str"
-            async: true
+          stream_response:
+            signature: "(message: str) -> AsyncIterator[str]"
     dependencies:
       - backend/app/runtime/base.py:ModelRuntime
-    status: stub
-    expected_behavior:
-      - delegate text generation to configured ModelRuntime
+    status: implemented
+    behavior:
+      - delegate streaming text generation to configured ModelRuntime
       - remain independent of concrete runtime adapter
+    future_scope:
+      - conversation/context orchestration may grow here
+      - no persistence, persona, memory, or history yet
 
   backend/app/runtime/base.py:
     role: model runtime abstraction
@@ -265,11 +288,13 @@ modules:
           generate_text:
             signature: "(message: str) -> str"
             async: true
+          generate_text_stream:
+            signature: "(message: str) -> AsyncIterator[str]"
           generate_from_audio:
             signature: "(audio_file: Path) -> str"
             async: true
     consumers:
-      - backend/app/application/chat_service.py
+      - backend/app/services/chat.py
       - concrete runtime adapters
 
   backend/app/runtime/ollama.py:
@@ -287,7 +312,15 @@ modules:
           generate_text:
             async: true
             endpoint: "POST /api/generate"
+            request_streaming: false
             response_contract: "response"
+            timeout_seconds: 120
+          generate_text_stream:
+            kind: async_generator
+            endpoint: "POST /api/generate"
+            request_streaming: true
+            remote_format: Ollama NDJSON
+            yielded_value: non-empty response strings
             timeout_seconds: 120
           generate_from_audio:
             async: true
@@ -304,10 +337,14 @@ modules:
       remote_errors: RuntimeError
       invalid_remote_response: RuntimeError
       local_audio_file_errors: propagate
+      cancellation: propagate
     notes:
-      - Text uses Ollama native generate API.
+      - Text uses Ollama native generate API for complete and streaming responses.
+      - Ollama NDJSON remains internal to the runtime adapter.
       - Audio uses Ollama OpenAI-compatible chat-completions API.
-      - Current adapter has passing real Ollama integration coverage.
+      - Streaming cancellation exits the HTTP response and client contexts.
+      - Current adapter has passing real Ollama integration coverage for normal streaming.
+      - Abort/cancellation is covered deterministically without real Ollama integration.
       - Ollama is a spike implementation; architecture still targets interchangeable runtime.
 
   backend/app/runtime/llama_cpp.py:
@@ -550,14 +587,23 @@ tests:
 
   tests/backend/test_chat_contract.py:
     covers:
-      - public text chat API contract
-      - current 501 stub behavior
+      - public SSE text chat API contract
+      - chunk ordering and done event
+      - runtime failure mapped to error event without done
       - request validation
+      - cancellation propagation without SSE error conversion
     inspect_with:
       - backend/app/api/routes/chat.py
       - backend/app/api/schemas.py
-    likely_change_when:
-      - text chat endpoint becomes implemented
+      - backend/app/services/chat.py
+
+  tests/backend/test_chat_service.py:
+    covers:
+      - ChatService streaming delegation
+      - runtime chunk ordering
+    inspect_with:
+      - backend/app/services/chat.py
+      - backend/app/runtime/base.py
 
   tests/backend/test_runtime_blueprint.py:
     covers:
@@ -569,7 +615,10 @@ tests:
   tests/backend/test_ollama_runtime.py:
     covers:
       - Ollama health behavior
-      - text generation happy/error paths
+      - complete text generation happy/error paths
+      - streaming text generation happy/error paths
+      - empty streaming chunks skipped
+      - streaming HTTP lifecycle cleanup on cancellation
       - native audio happy/error paths
       - outbound Ollama request contracts
     inspect_with:
@@ -577,6 +626,7 @@ tests:
       - backend/app/config.py
     important_contracts:
       text_response: "response"
+      stream_chunk_response: "response"
       audio_response: "choices[0].message.content"
 
   tests/backend/test_tts_blueprint.py:
@@ -589,7 +639,8 @@ tests:
   tests/integration/test_ollama_integration.py:
     covers:
       - real configured Ollama model health
-      - real text generation
+      - real complete text generation
+      - real streaming text generation
       - real native audio request
     external_dependency:
       - local Ollama
@@ -598,14 +649,7 @@ tests:
     status: active
     known_note:
       - uses pytest integration marker
-
-  tests/integration/test_text_chat_blueprint.py:
-    covers:
-      - intended text-chat integration
-    status: skipped
-    reason: requires local Gemma runtime selected by spike
-    likely_change_when:
-      - ChatService and chat route are wired to runtime
+      - cancellation is intentionally not covered by real Ollama integration
 
   tests/frontend/App.spec.ts:
     covers:
@@ -639,16 +683,17 @@ change_navigation:
   implement_text_chat_backend:
     inspect:
       - backend/app/api/routes/chat.py
-      - backend/app/application/chat_service.py
+      - backend/app/services/chat.py
       - backend/app/runtime/base.py
       - backend/app/runtime/ollama.py
       - backend/app/api/schemas.py
       - backend/app/main.py
       - tests/backend/test_chat_contract.py
-      - tests/integration/test_text_chat_blueprint.py
+      - tests/backend/test_chat_service.py
+      - tests/backend/test_ollama_runtime.py
+      - tests/integration/test_ollama_integration.py
     maybe_inspect:
       - backend/app/config.py
-      - tests/backend/test_ollama_runtime.py
 
   change_public_chat_contract:
     inspect:
@@ -664,7 +709,7 @@ change_navigation:
       - backend/app/runtime/base.py
       - backend/app/runtime/ollama.py
       - backend/app/runtime/llama_cpp.py
-      - backend/app/application/chat_service.py
+      - backend/app/services/chat.py
       - tests/backend/test_runtime_blueprint.py
       - tests/backend/test_ollama_runtime.py
       - tests/integration/test_ollama_integration.py
@@ -809,9 +854,13 @@ known_state:
   implemented:
     - FastAPI application startup
     - backend health endpoint
-    - public chat request/response schemas
+    - public chat request schema
+    - streaming text chat SSE endpoint
+    - ChatService streaming boundary
+    - ModelRuntime streaming text contract
     - Ollama runtime health
-    - Ollama text generation spike
+    - Ollama complete text generation spike
+    - Ollama streaming text generation spike
     - Ollama native audio generation spike
     - Vue desktop companion foundation
     - Tauri transparent desktop shell
@@ -827,8 +876,6 @@ known_state:
     - native X11 click-through using SHAPE input regions
 
   contracts_or_stubs:
-    - text chat endpoint
-    - ChatService orchestration
     - AudioInputPreparer
     - llama.cpp runtime
     - TTS protocol
@@ -837,7 +884,6 @@ known_state:
   not_present:
     - persistent conversation storage
     - memory
-    - streaming responses
     - production packaging
 
   open_architecture:

@@ -3,7 +3,3 @@ export interface ChatMessage {
   content: string;
 }
 
-export interface ChatResponse {
-  message: string;
-}
-

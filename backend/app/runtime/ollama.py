@@ -1,6 +1,8 @@
 """Ollama runtime adapter."""
 
 import base64
+import json
+from collections.abc import AsyncIterator
 from pathlib import Path
 
 import httpx
@@ -46,6 +48,36 @@ class OllamaRuntime(ModelRuntime):
                     raise ValueError("Invalid Ollama response")
 
                 return text
+        except (httpx.RequestError, httpx.HTTPStatusError, ValueError) as exc:
+            raise RuntimeError(f"Ollama error: {exc}") from exc
+
+    async def generate_text_stream(self, message: str) -> AsyncIterator[str]:
+        """Generate response text incrementally from Ollama."""
+        try:
+            async with httpx.AsyncClient(timeout=120.0) as client:
+                async with client.stream(
+                    "POST",
+                    f"http://{settings.ollama_host}/api/generate",
+                    json={
+                        "model": settings.ollama_model,
+                        "prompt": message,
+                        "stream": True,
+                    },
+                ) as response:
+                    response.raise_for_status()
+
+                    async for line in response.aiter_lines():
+                        if not line.strip():
+                            continue
+
+                        data = json.loads(line)
+                        text = data.get("response")
+
+                        if not isinstance(text, str):
+                            raise ValueError("Invalid Ollama stream response")
+
+                        if text:
+                            yield text
         except (httpx.RequestError, httpx.HTTPStatusError, ValueError) as exc:
             raise RuntimeError(f"Ollama error: {exc}") from exc
 
