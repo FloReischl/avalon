@@ -33,6 +33,56 @@ describe("ChatWindow", () => {
     ).toContain("width: 280px");
   });
 
+  it("renders composer actions as labelled icon buttons", () => {
+    const wrapper = mount(ChatWindow);
+
+    const newChatButton = wrapper.get('[data-testid="new-chat"]');
+    const sendButton = wrapper.get('[data-testid="send-chat"]');
+    const expandButton = wrapper.get('[data-testid="toggle-composer"]');
+
+    expect(newChatButton.attributes("aria-label")).toBe("Neuer Chat");
+    expect(newChatButton.attributes("title")).toBe("Neuer Chat");
+    expect(newChatButton.text()).toBe("");
+
+    expect(sendButton.attributes("aria-label")).toBe("Nachricht senden");
+    expect(sendButton.attributes("title")).toBe("Nachricht senden");
+    expect(sendButton.text()).toBe("");
+
+    expect(expandButton.attributes("aria-label")).toBe("Eingabe vergrößern");
+    expect(expandButton.attributes("title")).toBe("Eingabe vergrößern");
+    expect(expandButton.text()).toBe("");
+  });
+
+  it("expands and collapses the composer without replacing its input", async () => {
+    const wrapper = mount(ChatWindow);
+    const input = wrapper.get('[data-testid="chat-input"]');
+    const inputElement = input.element as HTMLTextAreaElement;
+
+    await input.setValue("Zeile 1\nZeile 2");
+    inputElement.setSelectionRange(4, 4);
+
+    await wrapper.get('[data-testid="toggle-composer"]').trigger("click");
+
+    expect(
+      wrapper.get('[data-testid="messages"]').attributes("style"),
+    ).toContain("display: none");
+    expect(wrapper.get(".composer").classes()).toContain("composer--expanded");
+    expect(wrapper.get('[data-testid="toggle-composer"]').attributes("aria-label")).toBe(
+      "Eingabe verkleinern",
+    );
+    expect(wrapper.get('[data-testid="chat-input"]').element).toBe(inputElement);
+    expect(inputElement.value).toBe("Zeile 1\nZeile 2");
+    expect(inputElement.selectionStart).toBe(4);
+
+    await wrapper.get('[data-testid="toggle-composer"]').trigger("click");
+
+    expect(
+      wrapper.get('[data-testid="messages"]').attributes("style") ?? "",
+    ).not.toContain("display: none");
+    expect(wrapper.get(".composer").classes()).not.toContain("composer--expanded");
+    expect(wrapper.get('[data-testid="chat-input"]').element).toBe(inputElement);
+  });
+
   it("resizes the sidebar and constrains its width", async () => {
     const originalInnerWidth = window.innerWidth;
     Object.defineProperty(window, "innerWidth", {
@@ -158,7 +208,12 @@ describe("ChatWindow", () => {
       wrapper.get('[data-testid="chat-input"]').attributes("disabled"),
     ).toBeDefined();
     expect(wrapper.find('[data-testid="send-chat"]').exists()).toBe(false);
-    expect(wrapper.get('[data-testid="stop-chat"]').exists()).toBe(true);
+
+    const stopButton = wrapper.get('[data-testid="stop-chat"]');
+    expect(stopButton.exists()).toBe(true);
+    expect(stopButton.attributes("aria-label")).toBe("Antwort stoppen");
+    expect(stopButton.attributes("title")).toBe("Antwort stoppen");
+    expect(stopButton.text()).toBe("");
   });
 
   it("stops and rolls back the current turn", async () => {

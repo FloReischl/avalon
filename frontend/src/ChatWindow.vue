@@ -16,6 +16,7 @@ const {
 
 
 const messagesElement = ref<HTMLElement>();
+const isComposerExpanded = ref(false);
 
 const DEFAULT_SIDEBAR_WIDTH_PX = 280;
 const MIN_SIDEBAR_WIDTH_PX = 220;
@@ -60,6 +61,10 @@ watch(
   },
   { deep: true },
 );
+
+function toggleComposerExpanded() {
+  isComposerExpanded.value = !isComposerExpanded.value;
+}
 
 function newChat() {
   if (isGenerating.value) {
@@ -112,12 +117,21 @@ function handleInputKeydown(event: KeyboardEvent) {
       </header>
 
       <button
-        class="new-chat-button"
+        class="new-chat-button icon-button"
         type="button"
         data-testid="new-chat"
+        aria-label="Neuer Chat"
+        title="Neuer Chat"
         @click="newChat"
       >
-        New Chat
+        <svg
+          viewBox="0 0 24 24"
+          aria-hidden="true"
+        >
+          <path
+            d="M12 5v14M5 12h14"
+          />
+        </svg>
       </button>
 
       <div class="chat-history-placeholder">
@@ -135,6 +149,7 @@ function handleInputKeydown(event: KeyboardEvent) {
 
     <section class="chat-main">
       <section
+        v-show="!isComposerExpanded"
         ref="messagesElement"
         class="messages"
         data-testid="messages"
@@ -157,8 +172,35 @@ function handleInputKeydown(event: KeyboardEvent) {
         </article>
       </section>
 
-      <footer class="composer">
+      <footer
+        class="composer"
+        :class="{ 'composer--expanded': isComposerExpanded }"
+      >
         <div class="composer-input">
+          <button
+            class="composer-expand-button icon-button"
+            type="button"
+            data-testid="toggle-composer"
+            :aria-label="isComposerExpanded ? 'Eingabe verkleinern' : 'Eingabe vergrößern'"
+            :title="isComposerExpanded ? 'Eingabe verkleinern' : 'Eingabe vergrößern'"
+            @click="toggleComposerExpanded"
+          >
+            <svg
+              v-if="!isComposerExpanded"
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+            >
+              <path d="M9 4H4v5M15 4h5v5M9 20H4v-5M15 20h5v-5" />
+            </svg>
+            <svg
+              v-else
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+            >
+              <path d="M4 9h5V4M20 9h-5V4M4 15h5v5M20 15h-5v5" />
+            </svg>
+          </button>
+
           <textarea
             v-model="input"
             data-testid="chat-input"
@@ -183,23 +225,37 @@ function handleInputKeydown(event: KeyboardEvent) {
 
           <button
             v-if="isGenerating"
+            class="icon-button"
             type="button"
             data-testid="stop-chat"
             aria-label="Antwort stoppen"
+            title="Antwort stoppen"
             @click="stop"
           >
-            Stop
+            <svg
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+            >
+              <rect x="7" y="7" width="10" height="10" />
+            </svg>
           </button>
 
           <button
             v-else
+            class="icon-button"
             type="button"
             data-testid="send-chat"
             aria-label="Nachricht senden"
+            title="Nachricht senden"
             :disabled="input.length === 0"
             @click="send"
           >
-            Send
+            <svg
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+            >
+              <path d="M12 19V5M6 11l6-6 6 6" />
+            </svg>
           </button>
         </div>
       </footer>
@@ -238,7 +294,17 @@ function handleInputKeydown(event: KeyboardEvent) {
 
 .new-chat-button {
   margin: 0 1rem 1rem;
-  padding: 0.45rem 0.75rem;
+}
+
+.icon-button {
+  width: 2.25rem;
+  height: 2.25rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  padding: 0.4rem;
+  box-sizing: border-box;
   border: 1px solid #cccccc;
   border-radius: 0.4rem;
   background: #ffffff;
@@ -246,8 +312,23 @@ function handleInputKeydown(event: KeyboardEvent) {
   cursor: pointer;
 }
 
-.new-chat-button:hover {
-  background: #f8f8f8;
+.icon-button svg {
+  width: 1.1rem;
+  height: 1.1rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.icon-button:hover:not(:disabled) {
+  background: #f2f2f2;
+}
+
+.icon-button:disabled {
+  color: #aaaaaa;
+  cursor: default;
 }
 
 .chat-history-placeholder {
@@ -326,11 +407,32 @@ function handleInputKeydown(event: KeyboardEvent) {
 }
 
 .composer-input {
+  position: relative;
   height: 5.5rem;
   overflow: hidden;
   border: 1px solid #cccccc;
   border-radius: 0.5rem;
   background: #ffffff;
+}
+
+.composer--expanded {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.composer--expanded .composer-input {
+  flex: 1;
+  min-height: 0;
+  height: auto;
+}
+
+.composer-expand-button {
+  position: absolute;
+  z-index: 1;
+  top: 0.5rem;
+  right: 0.5rem;
 }
 
 .composer-input:focus-within {
@@ -341,7 +443,7 @@ function handleInputKeydown(event: KeyboardEvent) {
   width: 100%;
   height: 100%;
   margin: 0;
-  padding: 0.75rem 0.85rem;
+  padding: 0.75rem 3.5rem 0.75rem 0.85rem;
   box-sizing: border-box;
   border: 0;
   resize: none;
@@ -372,26 +474,6 @@ function handleInputKeydown(event: KeyboardEvent) {
   gap: 1rem;
   margin-top: 0.5rem;
 }
-
-.composer-actions button {
-  min-width: 4.5rem;
-  padding: 0.4rem 0.8rem;
-  border: 1px solid #cccccc;
-  border-radius: 0.4rem;
-  background: #ffffff;
-  color: inherit;
-  cursor: pointer;
-}
-
-.composer-actions button:hover:not(:disabled) {
-  background: #f2f2f2;
-}
-
-.composer-actions button:disabled {
-  color: #aaaaaa;
-  cursor: default;
-}
-
 
 .error-message {
   margin-right: auto;
