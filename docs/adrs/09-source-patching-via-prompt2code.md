@@ -290,8 +290,3 @@ Its responsibility is narrower:
 Keeping the patch language minimal reduces both implementation complexity and the probability that an LLM-generated patch fails because of transport-format details unrelated to the source change itself.
 
 Additional syntax or intelligence should only be introduced in response to demonstrated requirements.
-```
-
-Damit ist ADR 09 auch wieder synchron mit der Realität — inklusive unserer heutigen Erkenntnis: **Ein dummer Transport-Layer darf stolz darauf sein, dumm zu sein.** 😏
-
-Und **jetzt**: 23:irgendwas, Architekturamt geschlossen. Morgen darf Local Frieda wieder Dinge kaputtmachen. 🤡

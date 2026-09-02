@@ -11,4 +11,4 @@ file_list=$(echo "$file_list" | paste -sd, -)
 code2prompt ~/dev/avalo \
   --include="$file_list" \
   -F markdown \
-  --output-file=./frieda-dump.md
+  --output-file=./data/code2prompt-file-list.md

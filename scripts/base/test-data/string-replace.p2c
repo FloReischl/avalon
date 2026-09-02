@@ -1,0 +1,8 @@
+app.py
+string-replace
+p2c-old
+def foo():
+    return 1
+p2c-new
+def foo():
+    return 2
