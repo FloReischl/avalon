@@ -19,7 +19,6 @@ import {
 import { showChatWindow } from "./services/chatWindow";
 import { startAvatarWindowDrag } from "./services/windowDrag";
 
-type CompanionState = "idle" | "active";
 type AudioState = "idle" | "recording";
 
 const MAX_AUDIO_SECONDS = 30;
@@ -27,13 +26,11 @@ const AVATAR_DRAG_THRESHOLD_PX = 5;
 
 const backendStatus = ref("initializing");
 const backendLogs = ref<string[]>([]);
-const companionState = ref<CompanionState>("idle");
 const audioState = ref<AudioState>("idle");
 const remainingRecordingSeconds = ref(MAX_AUDIO_SECONDS);
 const avatarImage = useTemplateRef<HTMLImageElement>("avatarImage");
 const audioButton = useTemplateRef<HTMLButtonElement>("audioButton");
 
-let suppressNextAvatarClick = false;
 let avatarPointerStart: { x: number; y: number } | undefined;
 let recordingTimer: number | undefined;
 let audioPointerHeld = false;
@@ -41,10 +38,6 @@ let unlisten: UnlistenFn | undefined;
 
 function addLog(message: string) {
   backendLogs.value.push(message);
-}
-
-function activateCompanion() {
-  companionState.value = "active";
 }
 
 function initializeAvatar() {
@@ -249,27 +242,16 @@ async function handleAvatarPointerMove(event: PointerEvent) {
   }
 
   avatarPointerStart = undefined;
-  suppressNextAvatarClick = true;
 
   try {
     await startAvatarWindowDrag();
   } catch (error) {
-    suppressNextAvatarClick = false;
     console.error("[window-drag] failed to start window drag", error);
   }
 }
 
 function handleAvatarPointerUp() {
   avatarPointerStart = undefined;
-}
-
-function handleAvatarClick() {
-  if (suppressNextAvatarClick) {
-    suppressNextAvatarClick = false;
-    return;
-  }
-
-  activateCompanion();
 }
 
 async function handleAvatarDoubleClick() {
@@ -331,15 +313,6 @@ onBeforeUnmount(() => {
       </div>
     </section>
 
-    <section
-      v-if="backendStatus === 'ready' && companionState === 'active'"
-      class="active-panel"
-      data-testid="active-panel"
-    >
-      <strong>Avalo</strong>
-      <span>Active</span>
-    </section>
-
     <div
       class="avatar-region"
       data-testid="avatar-region"
@@ -347,7 +320,6 @@ onBeforeUnmount(() => {
       @pointermove="handleAvatarPointerMove"
       @pointerup="handleAvatarPointerUp"
       @pointercancel="handleAvatarPointerUp"
-      @click="handleAvatarClick"
       @dblclick="handleAvatarDoubleClick"
     >
       <img

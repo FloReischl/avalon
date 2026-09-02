@@ -62,7 +62,9 @@ fn main() {
             ..
         } = &event
         {
-            if label == "chat" {
+            if label == "main" {
+                app_handle.exit(0);
+            } else if label == "chat" {
                 api.prevent_close();
 
                 if let Some(window) = app_handle.get_webview_window("chat") {

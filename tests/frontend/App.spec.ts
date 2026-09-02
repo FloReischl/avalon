@@ -100,25 +100,6 @@ describe("App", () => {
     expect(wrapper.get('[data-testid="startup-panel"]').exists()).toBe(true);
   });
 
-  it("activates Frieda when clicked and keeps her active on subsequent clicks", async () => {
-    getBackendSnapshotMock.mockResolvedValue({
-      status: "ready",
-      logs: ["Backend ready"],
-    });
-
-    const wrapper = mount(App);
-    await flushPromises();
-
-    const avatarRegion = wrapper.get('[data-testid="avatar-region"]');
-
-    expect(wrapper.find('[data-testid="active-panel"]').exists()).toBe(false);
-
-    await avatarRegion.trigger("click");
-
-    expect(wrapper.find('[data-testid="active-panel"]').exists()).toBe(true);
-    expect(showChatWindowMock).not.toHaveBeenCalled();
-  });
-
   it("opens the chat window when Frieda is double-clicked", async () => {
     getBackendSnapshotMock.mockResolvedValue({
       status: "ready",
@@ -178,8 +159,6 @@ describe("App", () => {
     await flushPromises();
 
     expect(startDraggingMock).toHaveBeenCalledTimes(1);
-
-    await avatarRegion.trigger("click");
 
     await avatarRegion.trigger("pointerdown", {
       button: 0,

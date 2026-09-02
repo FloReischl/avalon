@@ -8,3 +8,8 @@ todo
 - textfeld expandable 
 - message icons (copy, read aloud, split from here)
 - save/search/persona/instructions
+
+add
+- window icons
+- window text
+- wysiwyg?
