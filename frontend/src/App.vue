@@ -6,7 +6,6 @@ import {
   useTemplateRef,
 } from "vue";
 import type { UnlistenFn } from "@tauri-apps/api/event";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import friedaStandard from "./assets/avatars/frieda/standard.png";
 import {
@@ -17,6 +16,8 @@ import {
   setWindowInputRegions,
   type InputRegionRect,
 } from "./services/inputShape";
+import { showChatWindow } from "./services/chatWindow";
+import { startAvatarWindowDrag } from "./services/windowDrag";
 
 type CompanionState = "idle" | "active";
 
@@ -24,7 +25,10 @@ const backendStatus = ref("initializing");
 const backendLogs = ref<string[]>([]);
 const companionState = ref<CompanionState>("idle");
 const avatarImage = useTemplateRef<HTMLImageElement>("avatarImage");
+const AVATAR_DRAG_THRESHOLD_PX = 5;
+
 let suppressNextAvatarClick = false;
+let avatarPointerStart: { x: number; y: number } | undefined;
 let unlisten: UnlistenFn | undefined;
 
 function addLog(message: string) {
@@ -137,19 +141,42 @@ async function applyAvatarInputShape() {
   }
 }
 
-async function handleAvatarPointerDown(event: PointerEvent) {
+function handleAvatarPointerDown(event: PointerEvent) {
   if (event.button !== 0) {
     return;
   }
 
+  avatarPointerStart = {
+    x: event.clientX,
+    y: event.clientY,
+  };
+}
+
+async function handleAvatarPointerMove(event: PointerEvent) {
+  if (!avatarPointerStart) {
+    return;
+  }
+
+  const deltaX = event.clientX - avatarPointerStart.x;
+  const deltaY = event.clientY - avatarPointerStart.y;
+
+  if (Math.hypot(deltaX, deltaY) < AVATAR_DRAG_THRESHOLD_PX) {
+    return;
+  }
+
+  avatarPointerStart = undefined;
   suppressNextAvatarClick = true;
 
   try {
-    await getCurrentWindow().startDragging();
+    await startAvatarWindowDrag();
   } catch (error) {
     suppressNextAvatarClick = false;
     console.error("[window-drag] failed to start window drag", error);
   }
+}
+
+function handleAvatarPointerUp() {
+  avatarPointerStart = undefined;
 }
 
 function handleAvatarClick() {
@@ -159,6 +186,14 @@ function handleAvatarClick() {
   }
 
   activateCompanion();
+}
+
+async function handleAvatarDoubleClick() {
+  try {
+    await showChatWindow();
+  } catch (error) {
+    console.error("[chat-window] failed to show chat window", error);
+  }
 }
 
 onMounted(async () => {
@@ -223,10 +258,11 @@ onBeforeUnmount(() => {
       class="avatar-region"
       data-testid="avatar-region"
       @pointerdown="handleAvatarPointerDown"
-      
-      
-      
+      @pointermove="handleAvatarPointerMove"
+      @pointerup="handleAvatarPointerUp"
+      @pointercancel="handleAvatarPointerUp"
       @click="handleAvatarClick"
+      @dblclick="handleAvatarDoubleClick"
     >
       <img
         ref="avatarImage"

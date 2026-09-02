@@ -27,7 +27,4 @@ src-tauri/target/debug/
 .aider*
 
 # docs
-scripts/code2prompt-adrs.md
-scripts/code2prompt-code.md
-scripts/frieda-dump.md
-scripts/prompt2code-patch.yaml
+scripts/data/

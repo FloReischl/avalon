@@ -20,7 +20,21 @@
         "fullscreen": false,
         "decorations": false,
         "transparent": true,
-        "shadow": false
+        "shadow": false,
+        "alwaysOnTop": true
+      },
+      {
+        "label": "chat",
+        "title": "Avalo",
+        "width": 1100,
+        "height": 800,
+        "minWidth": 700,
+        "minHeight": 500,
+        "resizable": true,
+        "fullscreen": false,
+        "decorations": true,
+        "transparent": false,
+        "visible": false
       }
     ]
   },

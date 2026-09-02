@@ -17,14 +17,30 @@ architecture:
     target: Tauri
     status: implemented_foundation
     responsibility:
-      - transparent desktop shell
+      - transparent avatar desktop shell
+      - normal chat desktop window
       - backend process lifecycle
       - native desktop input shaping
+    windows:
+      main:
+        role: avatar companion window
+        always_on_top: true
+        decorations: false
+        transparent: true
+      chat:
+        role: main chat window
+        initially_visible: false
+        decorations: true
+        resizable: true
+        close_behavior: hide
     notes:
-      - Vue runs in Tauri webview.
+      - Vue runs in Tauri webviews.
       - Python backend remains a separate local process.
       - Tauri starts, monitors, and stops the backend process it owns.
       - Backend readiness and startup diagnostics are exposed to the frontend.
+      - Double-clicking the avatar shows and focuses the existing chat window.
+      - Closing the chat window hides it instead of destroying its webview state.
+      - Explicit chat-window geometry persistence is not implemented.
       - Current desktop input shaping is implemented for X11 using native SHAPE input regions.
       - Avatar input regions are generated from the rendered PNG alpha channel.
 
@@ -34,8 +50,11 @@ architecture:
       - TypeScript
       - Vite
     root: frontend
-    status: scaffold
+    status: implemented_foundation
     communicates_with: backend_http_api
+    window_roots:
+      main: frontend/src/App.vue
+      chat: frontend/src/ChatWindow.vue
 
   backend:
     technology:
@@ -357,27 +376,65 @@ modules:
       - Chatterbox Multilingual V3 is candidate pending dedicated spike.
 
   frontend/src/main.ts:
-    role: Vue application bootstrap
+    role: Vue application bootstrap and Tauri window-root selector
+    behavior:
+      - mounts ChatWindow.vue for Tauri window label chat
+      - mounts App.vue otherwise
+      - preserves browser development without requiring a Tauri runtime
     relevant_to:
       - frontend startup
+      - desktop window composition
       - App.vue
+      - ChatWindow.vue
       - global styles
 
   frontend/src/App.vue:
-    role: desktop companion root UI component
+    role: avatar companion root UI component
     status: implemented_foundation
     relevant_to:
       - backend startup diagnostics
       - avatar rendering
+      - avatar drag interaction
+      - chat-window opening
       - idle/active companion state
       - alpha-based avatar hit detection
       - native input-shape generation
-      - future chat UI implementation
       - frontend tests
     dependencies:
       - frontend/src/services/backendLifecycle.ts
       - frontend/src/services/inputShape.ts
+      - frontend/src/services/chatWindow.ts
+      - frontend/src/services/windowDrag.ts
       - frontend/src/assets/avatars/frieda/standard.png
+    interaction:
+      - avatar drag starts only after pointer movement crosses a small threshold
+      - actual drag suppresses the resulting click
+      - avatar double-click opens the chat window
+      - double-click remains functional after moving the avatar
+
+  frontend/src/ChatWindow.vue:
+    role: main chat-window Vue root
+    status: placeholder
+    current_behavior:
+      - renders initial Avalo / New Chat placeholder
+    relevant_to:
+      - future text chat UI
+      - conversation sidebar
+      - current conversation view
+
+  frontend/src/services/chatWindow.ts:
+    role: frontend Tauri boundary for chat-window lifecycle
+    responsibilities:
+      - invoke native command that shows and focuses the chat window
+    native_counterpart:
+      - src-tauri/src/main.rs
+
+  frontend/src/services/windowDrag.ts:
+    role: frontend Tauri boundary for avatar-window dragging
+    responsibilities:
+      - start native drag of the current avatar window
+    consumers:
+      - frontend/src/App.vue
 
   frontend/src/services/backend.ts:
     role: frontend HTTP boundary for backend communication
@@ -427,10 +484,28 @@ modules:
       - manage backend process lifecycle
       - expose backend snapshot command
       - expose native input-region command
+      - expose chat-window show/focus command
+      - hide chat window instead of destroying it on close
       - stop owned backend on application exit
     dependencies:
       - src-tauri/src/backend.rs
       - src-tauri/src/input_shape.rs
+
+  src-tauri/tauri.conf.json:
+    role: Tauri desktop window configuration
+    windows:
+      main:
+        role: avatar window
+        always_on_top: true
+        decorations: false
+        transparent: true
+      chat:
+        role: chat window
+        initially_visible: false
+        decorations: true
+        resizable: true
+        min_size: "700x500"
+        initial_size: "1100x800"
 
   src-tauri/src/backend.rs:
     role: Tauri-managed Python backend process lifecycle
@@ -539,12 +614,18 @@ tests:
       - Frieda avatar visibility during startup and ready state
       - idle/active companion state
       - avatar interaction behavior
+      - chat opening on avatar double-click
+      - avatar drag threshold behavior
+      - double-click remaining functional after avatar drag
     inspect_with:
       - frontend/src/App.vue
       - frontend/src/services/backendLifecycle.ts
+      - frontend/src/services/chatWindow.ts
+      - frontend/src/services/windowDrag.ts
     likely_change_when:
       - frontend chat UI is implemented
       - companion interaction behavior changes
+      - avatar drag behavior changes
 
 test_data:
 
@@ -637,19 +718,28 @@ change_navigation:
 
   implement_frontend_chat:
     inspect:
-      - frontend/src/App.vue
+      - frontend/src/ChatWindow.vue
       - frontend/src/services/backend.ts
       - frontend/src/types/chat.ts
+      - frontend/src/services/chatWindow.ts
+      - frontend/src/main.ts
       - tests/frontend/App.spec.ts
       - backend/app/api/schemas.py
       - backend/app/api/routes/chat.py
+    maybe_inspect:
+      - frontend/src/App.vue
+      - src-tauri/src/main.rs
 
   change_desktop_shell:
     inspect:
       - src-tauri/src/main.rs
       - src-tauri/src/backend.rs
       - src-tauri/tauri.conf.json
+      - frontend/src/main.ts
       - frontend/src/App.vue
+      - frontend/src/ChatWindow.vue
+      - frontend/src/services/chatWindow.ts
+      - frontend/src/services/windowDrag.ts
       - frontend/src/styles.css
       - tests/frontend/App.spec.ts
     maybe_inspect:
@@ -708,11 +798,11 @@ architectural_constraints:
 
   patching:
     rule: >
-      Small localized source changes may be applied through deterministic YAML
-      patches after exact source inspection and must be reviewed from final diff
-      and test results.
+      Small localized source changes may be applied through Prompt2Code's
+      deterministic custom text format after exact source inspection and must
+      be reviewed from final diff and test results.
     source:
-      - docs/adrs/09-source-patching-via-prompt2code.md
+      - docs/adrs/09-prompt2code-source-patching.md
 
 known_state:
 
@@ -728,6 +818,11 @@ known_state:
     - Tauri-managed backend process lifecycle
     - buffered backend startup diagnostics
     - Frieda avatar with idle/active interaction
+    - Frieda avatar drag with movement threshold
+    - avatar double-click opens and focuses chat window
+    - separate hidden-at-startup native chat window
+    - chat-window close hides rather than destroys the window
+    - avatar window always-on-top
     - pixel-accurate avatar alpha hit detection
     - native X11 click-through using SHAPE input regions
 
