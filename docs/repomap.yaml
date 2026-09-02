@@ -534,9 +534,17 @@ tests:
 
   tests/frontend/App.spec.ts:
     covers:
-      - current root Vue component behavior
+      - backend startup lifecycle integration boundary
+      - startup diagnostics rendering
+      - Frieda avatar visibility during startup and ready state
+      - idle/active companion state
+      - avatar interaction behavior
     inspect_with:
       - frontend/src/App.vue
+      - frontend/src/services/backendLifecycle.ts
+    likely_change_when:
+      - frontend chat UI is implemented
+      - companion interaction behavior changes
 
 test_data:
 

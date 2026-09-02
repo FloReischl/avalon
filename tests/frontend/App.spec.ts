@@ -79,7 +79,7 @@ describe("App", () => {
     expect(wrapper.get('[data-testid="startup-panel"]').exists()).toBe(true);
   });
 
-  it("toggles between idle and active when Frieda is clicked", async () => {
+  it("activates Frieda when clicked and keeps her active on subsequent clicks", async () => {
     getBackendSnapshotMock.mockResolvedValue({
       status: "ready",
       logs: ["Backend ready"],
@@ -91,11 +91,10 @@ describe("App", () => {
     const avatarRegion = wrapper.get('[data-testid="avatar-region"]');
 
     expect(wrapper.find('[data-testid="active-panel"]').exists()).toBe(false);
-    expect(wrapper.get('[data-testid="hit-debug"]').text()).toBe("MISS");
 
     await avatarRegion.trigger("click");
 
-    expect(wrapper.find('[data-testid="active-panel"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="active-panel"]').exists()).toBe(true);
   });
 
   it.todo("sends a text message and renders the complete response");

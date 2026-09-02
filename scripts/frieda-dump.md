@@ -4,378 +4,541 @@ Source Tree:
 
 ```txt
 avalo
+├── frontend
+│   └── src
+│       ├── App.vue
+│       └── styles.css
 └── src-tauri
-    ├── Cargo.toml
-    └── src
-        ├── backend.rs
-        └── main.rs
+    └── capabilities
+        └── default.json
 
 ```
 
-`src-tauri/Cargo.toml`:
+`frontend/src/App.vue`:
 
-```toml
-[package]
-name = "avalo"
-version = "0.1.0"
-description = "Avalo local desktop companion"
-edition = "2021"
+```vue
+<script setup lang="ts">
+import {
+  computed,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  useTemplateRef,
+} from "vue";
+import type { UnlistenFn } from "@tauri-apps/api/event";
 
-[build-dependencies]
-tauri-build = { version = "=2.6.3", features = [] }
+import friedaStandard from "./assets/avatars/frieda/standard.png";
+import {
+  getBackendSnapshot,
+  listenToBackendLifecycle,
+} from "./services/backendLifecycle";
+import {
+  setWindowInputRegions,
+  type InputRegionRect,
+} from "./services/inputShape";
 
-[dependencies]
-serde = { version = "1", features = ["derive"] }
-tauri = { version = "=2.11.5", features = [] }
+type CompanionState = "idle" | "active";
+
+const backendStatus = ref("initializing");
+const backendLogs = ref<string[]>([]);
+const companionState = ref<CompanionState>("idle");
+const avatarImage = useTemplateRef<HTMLImageElement>("avatarImage");
+const avatarRegion = useTemplateRef<HTMLDivElement>("avatarRegion");
+const avatarPosition = ref<{ x: number; y: number } | null>(null);
+const avatarStyle = computed(() =>
+  avatarPosition.value
+    ? {
+        left: `${avatarPosition.value.x}px`,
+        top: `${avatarPosition.value.y}px`,
+      }
+    : undefined,
+);
+
+const minimumVisibleAvatarPixels = 48;
+const dragThresholdPixels = 3;
+
+let dragState:
+  | {
+      pointerId: number;
+      pointerStartX: number;
+      pointerStartY: number;
+      avatarStartX: number;
+      avatarStartY: number;
+      dragging: boolean;
+    }
+  | undefined;
+let suppressNextAvatarClick = false;
+let unlisten: UnlistenFn | undefined;
+
+function addLog(message: string) {
+  backendLogs.value.push(message);
+}
+
+function activateCompanion() {
+  companionState.value = "active";
+}
+
+function initializeAvatar() {
+  const region = avatarRegion.value;
+  if (!region) {
+    return;
+  }
+
+  const bounds = region.getBoundingClientRect();
+  avatarPosition.value = {
+    x: bounds.left,
+    y: bounds.top,
+  };
+
+  void nextTick(applyAvatarInputShape);
+}
+
+async function applyAvatarInputShape() {
+  const image = avatarImage.value;
+  if (!image) {
+    return;
+  }
+
+  const bounds = image.getBoundingClientRect();
+  if (bounds.width <= 0 || bounds.height <= 0) {
+    return;
+  }
+
+  const scale = window.devicePixelRatio || 1;
+  const renderedWidth = Math.max(1, Math.round(bounds.width * scale));
+  const renderedHeight = Math.max(1, Math.round(bounds.height * scale));
+  const offsetX = Math.round(bounds.left * scale);
+  const offsetY = Math.round(bounds.top * scale);
+
+  const canvas = document.createElement("canvas");
+  canvas.width = renderedWidth;
+  canvas.height = renderedHeight;
+
+  const context = canvas.getContext("2d", {
+    willReadFrequently: true,
+  });
+  if (!context) {
+    return;
+  }
+
+  context.drawImage(image, 0, 0, renderedWidth, renderedHeight);
+  const pixels = context.getImageData(
+    0,
+    0,
+    renderedWidth,
+    renderedHeight,
+  ).data;
+
+  const rectangles: InputRegionRect[] = [];
+  let activeRuns = new Map<string, InputRegionRect>();
+
+  for (let y = 0; y < renderedHeight; y += 1) {
+    const nextRuns = new Map<string, InputRegionRect>();
+    let x = 0;
+
+    while (x < renderedWidth) {
+      const alpha = pixels[(y * renderedWidth + x) * 4 + 3];
+
+      if (alpha <= 16) {
+        x += 1;
+        continue;
+      }
+
+      const runStart = x;
+      x += 1;
+
+      while (
+        x < renderedWidth &&
+        pixels[(y * renderedWidth + x) * 4 + 3] > 16
+      ) {
+        x += 1;
+      }
+
+      const runWidth = x - runStart;
+      const absoluteX = offsetX + runStart;
+      const absoluteY = offsetY + y;
+      const key = `${absoluteX}:${runWidth}`;
+      const existing = activeRuns.get(key);
+
+      if (
+        existing &&
+        existing.y + existing.height === absoluteY
+      ) {
+        existing.height += 1;
+        nextRuns.set(key, existing);
+      } else {
+        const rectangle: InputRegionRect = {
+          x: absoluteX,
+          y: absoluteY,
+          width: runWidth,
+          height: 1,
+        };
+        rectangles.push(rectangle);
+        nextRuns.set(key, rectangle);
+      }
+    }
+
+    activeRuns = nextRuns;
+  }
+
+  try {
+    await setWindowInputRegions(rectangles);
+    console.info(
+      `[input-shape] applied ${rectangles.length} avatar rectangles`,
+    );
+  } catch (error) {
+    console.error("[input-shape] failed to apply X11 input shape", error);
+  }
+}
+
+function clampAvatarPosition(x: number, y: number) {
+  const region = avatarRegion.value;
+  if (!region) {
+    return { x, y };
+  }
+
+  const width = region.offsetWidth;
+  const height = region.offsetHeight;
+
+  return {
+    x: Math.min(
+      window.innerWidth - minimumVisibleAvatarPixels,
+      Math.max(minimumVisibleAvatarPixels - width, x),
+    ),
+    y: Math.min(
+      window.innerHeight - minimumVisibleAvatarPixels,
+      Math.max(minimumVisibleAvatarPixels - height, y),
+    ),
+  };
+}
+
+function handleAvatarPointerDown(event: PointerEvent) {
+  const region = avatarRegion.value;
+  if (!region || event.button !== 0) {
+    return;
+  }
+
+  const bounds = region.getBoundingClientRect();
+  dragState = {
+    pointerId: event.pointerId,
+    pointerStartX: event.clientX,
+    pointerStartY: event.clientY,
+    avatarStartX: bounds.left,
+    avatarStartY: bounds.top,
+    dragging: false,
+  };
+
+  region.setPointerCapture(event.pointerId);
+}
+
+function handleAvatarPointerMove(event: PointerEvent) {
+  if (!dragState || dragState.pointerId !== event.pointerId) {
+    return;
+  }
+
+  const deltaX = event.clientX - dragState.pointerStartX;
+  const deltaY = event.clientY - dragState.pointerStartY;
+
+  if (
+    !dragState.dragging &&
+    Math.hypot(deltaX, deltaY) < dragThresholdPixels
+  ) {
+    return;
+  }
+
+  dragState.dragging = true;
+  suppressNextAvatarClick = true;
+  avatarPosition.value = clampAvatarPosition(
+    dragState.avatarStartX + deltaX,
+    dragState.avatarStartY + deltaY,
+  );
+
+  void nextTick(applyAvatarInputShape);
+}
+
+function handleAvatarPointerUp(event: PointerEvent) {
+  const region = avatarRegion.value;
+  if (
+    !region ||
+    !dragState ||
+    dragState.pointerId !== event.pointerId
+  ) {
+    return;
+  }
+
+  if (region.hasPointerCapture(event.pointerId)) {
+    region.releasePointerCapture(event.pointerId);
+  }
+
+  dragState = undefined;
+}
+
+function handleAvatarPointerCancel(event: PointerEvent) {
+  const region = avatarRegion.value;
+  if (
+    region &&
+    region.hasPointerCapture(event.pointerId)
+  ) {
+    region.releasePointerCapture(event.pointerId);
+  }
+
+  dragState = undefined;
+  suppressNextAvatarClick = false;
+}
+
+function handleAvatarClick() {
+  if (suppressNextAvatarClick) {
+    suppressNextAvatarClick = false;
+    return;
+  }
+
+  activateCompanion();
+}
+
+onMounted(async () => {
+  try {
+    unlisten = await listenToBackendLifecycle({
+      onStatus: (status) => {
+        backendStatus.value = status;
+      },
+      onLog: addLog,
+    });
+
+    const snapshot = await getBackendSnapshot();
+    backendStatus.value = snapshot.status;
+    backendLogs.value = snapshot.logs;
+  } catch (error) {
+    backendStatus.value = "failed";
+    addLog(
+      error instanceof Error
+        ? `Failed to initialize desktop lifecycle: ${error.message}`
+        : "Failed to initialize desktop lifecycle",
+    );
+  }
+});
+
+onBeforeUnmount(() => {
+  unlisten?.();
+});
+</script>
+
+<template>
+  <main class="companion-shell">
+    <section
+      v-if="backendStatus !== 'ready'"
+      class="startup-panel"
+      data-testid="startup-panel"
+    >
+      <header class="startup-header">
+        <span>AVALO // LOCAL COMPANION</span>
+        <span data-testid="backend-status">{{ backendStatus }}</span>
+      </header>
+
+      <div class="startup-log" data-testid="startup-log">
+        <p v-for="(line, index) in backendLogs" :key="index">
+          <span class="prompt">&gt;</span> {{ line }}
+        </p>
+        <p v-if="backendLogs.length === 0">
+          <span class="prompt">&gt;</span> Initializing Avalo …
+        </p>
+      </div>
+    </section>
+
+    <section
+      v-if="backendStatus === 'ready' && companionState === 'active'"
+      class="active-panel"
+      data-testid="active-panel"
+    >
+      <strong>Avalo</strong>
+      <span>Active</span>
+    </section>
+
+    <div
+      ref="avatarRegion"
+      class="avatar-region"
+      :style="avatarStyle"
+      data-testid="avatar-region"
+      @pointerdown="handleAvatarPointerDown"
+      @pointermove="handleAvatarPointerMove"
+      @pointerup="handleAvatarPointerUp"
+      @pointercancel="handleAvatarPointerCancel"
+      @click="handleAvatarClick"
+    >
+      <img
+        ref="avatarImage"
+        class="avatar"
+        :src="friedaStandard"
+        alt="Frieda"
+        data-testid="avatar"
+        @load="initializeAvatar"
+      />
+    </div>
+
+    <span
+      v-if="backendStatus === 'ready'"
+      class="backend-ready-marker"
+      data-testid="backend-status"
+    >
+      Backend ready
+    </span>
+  </main>
+</template>
+
 
 ```
-`src-tauri/src/backend.rs`:
+`frontend/src/styles.css`:
 
-```rs
-use std::{
-    io::{BufRead, BufReader, Read, Write},
-    net::{SocketAddr, TcpStream},
-    path::PathBuf,
-    process::{Child, Command, Stdio},
-    sync::{Arc, Mutex},
-    thread,
-    time::Duration,
-};
-
-use serde::Serialize;
-use tauri::{AppHandle, Emitter};
-
-const BACKEND_ADDRESS: &str = "127.0.0.1:8095";
-const HEALTH_ATTEMPTS: usize = 50;
-const HEALTH_RETRY_DELAY: Duration = Duration::from_millis(200);
-const HEALTH_IO_TIMEOUT: Duration = Duration::from_millis(250);
-
-#[derive(Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BackendSnapshot {
-    pub status: String,
-    pub logs: Vec<String>,
+```css
+:root {
+  font-family: Inter, system-ui, sans-serif;
+  color: #e8e8ea;
+  background: transparent;
 }
 
-impl Default for BackendSnapshot {
-    fn default() -> Self {
-        Self {
-            status: "initializing".to_string(),
-            logs: Vec::new(),
-        }
-    }
+html,
+body,
+#app {
+  width: 100%;
+  min-height: 100%;
+  margin: 0;
+  background: transparent;
 }
 
-#[derive(Clone, Default)]
-pub struct BackendProcess {
-    child: Arc<Mutex<Option<Child>>>,
-    snapshot: Arc<Mutex<BackendSnapshot>>,
+body {
+  min-height: 100vh;
 }
 
-impl BackendProcess {
-    pub fn start(&self, app: AppHandle) -> Result<(), String> {
-        let script = backend_script_path();
-
-        emit_status(&app, self, "starting");
-        emit_log(
-            &app,
-            self,
-            format!("Starting backend: {}", script.display()),
-        );
-
-        let mut child = Command::new(&script)
-            .env("AVALO_TAURI_MANAGED", "1")
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(|error| {
-                format!(
-                    "Failed to start backend via {}: {error}",
-                    script.display()
-                )
-            })?;
-
-        if let Some(stdout) = child.stdout.take() {
-            forward_output(app.clone(), self.clone(), "stdout", stdout);
-        }
-
-        if let Some(stderr) = child.stderr.take() {
-            forward_output(app.clone(), self.clone(), "stderr", stderr);
-        }
-
-        {
-            let mut stored_child = self
-                .child
-                .lock()
-                .map_err(|_| "Backend process lock is poisoned".to_string())?;
-            *stored_child = Some(child);
-        }
-
-        let process = self.clone();
-        thread::spawn(move || wait_for_readiness(app, process));
-
-        Ok(())
-    }
-
-    pub fn stop(&self) {
-        let Ok(mut stored_child) = self.child.lock() else {
-            return;
-        };
-
-        let Some(mut child) = stored_child.take() else {
-            return;
-        };
-
-        let _ = child.kill();
-        let _ = child.wait();
-    }
-
-    pub fn snapshot(&self) -> Result<BackendSnapshot, String> {
-        self.snapshot
-            .lock()
-            .map(|snapshot| snapshot.clone())
-            .map_err(|_| "Backend snapshot lock is poisoned".to_string())
-    }
-
-    fn set_status(&self, status: &str) {
-        if let Ok(mut snapshot) = self.snapshot.lock() {
-            snapshot.status = status.to_string();
-        }
-    }
-
-    fn add_log(&self, message: &str) {
-        if let Ok(mut snapshot) = self.snapshot.lock() {
-            snapshot.logs.push(message.to_string());
-        }
-    }
-
-    fn exit_status(&self) -> Option<String> {
-        let Ok(mut stored_child) = self.child.lock() else {
-            return Some("backend process lock is poisoned".to_string());
-        };
-
-        let child = stored_child.as_mut()?;
-
-        match child.try_wait() {
-            Ok(Some(status)) => Some(status.to_string()),
-            Ok(None) => None,
-            Err(error) => Some(format!("could not inspect backend process: {error}")),
-        }
-    }
+.companion-shell {
+  box-sizing: border-box;
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
 }
 
-fn backend_script_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("scripts")
-        .join("start-backend.sh")
+.startup-panel {
+  box-sizing: border-box;
+  width: min(46rem, 100%);
+  max-height: 60vh;
+  overflow: hidden;
+  border: 1px solid rgba(232, 232, 234, 0.45);
+  background: rgba(12, 13, 16, 0.88);
+  font-family: "DejaVu Sans Mono", "Liberation Mono", monospace;
+  box-shadow: 0 0 2rem rgba(0, 0, 0, 0.35);
 }
 
-fn forward_output<R>(
-    app: AppHandle,
-    process: BackendProcess,
-    stream: &'static str,
-    reader: R,
-)
-where
-    R: Read + Send + 'static,
+.startup-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.7rem 0.9rem;
+  border-bottom: 1px solid rgba(232, 232, 234, 0.25);
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.startup-log {
+  box-sizing: border-box;
+  max-height: calc(60vh - 2.5rem);
+  overflow-y: auto;
+  padding: 0.8rem 0.9rem;
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.startup-log p {
+  margin: 0 0 0.25rem;
+  overflow-wrap: anywhere;
+}
+
+.prompt {
+  opacity: 0.55;
+}
+
+.app-shell {
+  width: min(42rem, calc(100% - 3rem));
+  margin: 15vh auto;
+}
+
+.status {
+  color: #9fa8ff;
+}
+
+.startup-panel {
+  position: absolute;
+  left: 2rem;
+  bottom: 2rem;
+  z-index: 2;
+}
+
+.avatar-region {
+  position: absolute;
+  right: 1.5rem;
+  bottom: 0;
+  z-index: 3;
+  display: block;
+  width: min(42vw, 24rem);
+  cursor: grab;
+  touch-action: none;
+}
+
+.avatar-region:active {
+  cursor: grabbing;
+}
+
+.avatar {
+  display: block;
+  width: 100%;
+  height: auto;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.active-panel {
+  position: absolute;
+  right: min(42vw, 25rem);
+  bottom: 5rem;
+  z-index: 2;
+  display: flex;
+  gap: 0.75rem;
+  align-items: baseline;
+  padding: 0.75rem 1rem;
+  border: 1px solid rgba(232, 232, 234, 0.35);
+  background: rgba(12, 13, 16, 0.82);
+  backdrop-filter: blur(0.5rem);
+}
+
+.active-panel span {
+  opacity: 0.65;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+
+
+.backend-ready-marker {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+
+```
+`src-tauri/capabilities/default.json`:
+
+```json
 {
-    thread::spawn(move || {
-        for line in BufReader::new(reader).lines() {
-            match line {
-                Ok(line) => {
-                    println!("[backend:{stream}] {line}");
-                    emit_log(
-                        &app,
-                        &process,
-                        format!("[{stream}] {line}"),
-                    );
-                }
-                Err(error) => {
-                    emit_log(
-                        &app,
-                        &process,
-                        format!("[{stream}] Failed to read backend output: {error}"),
-                    );
-                    break;
-                }
-            }
-        }
-    });
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Default capability for Avalo",
+  "windows": ["main"],
+  "permissions": ["core:default"]
 }
-
-fn wait_for_readiness(app: AppHandle, process: BackendProcess) {
-    emit_status(&app, &process, "waiting-for-health");
-    emit_log(
-        &app,
-        &process,
-        "Waiting for backend health endpoint".to_string(),
-    );
-
-    for _ in 0..HEALTH_ATTEMPTS {
-        if backend_is_healthy(BACKEND_ADDRESS) {
-            emit_log(&app, &process, "Backend ready".to_string());
-            emit_status(&app, &process, "ready");
-            return;
-        }
-
-        if let Some(status) = process.exit_status() {
-            emit_log(
-                &app,
-                &process,
-                format!("Backend exited before becoming ready: {status}"),
-            );
-            emit_status(&app, &process, "failed");
-            return;
-        }
-
-        thread::sleep(HEALTH_RETRY_DELAY);
-    }
-
-    emit_log(
-        &app,
-        &process,
-        "Backend health check timed out after 10 seconds".to_string(),
-    );
-    emit_status(&app, &process, "failed");
-}
-
-fn backend_is_healthy(address: &str) -> bool {
-    let Ok(socket_address) = address.parse::<SocketAddr>() else {
-        return false;
-    };
-
-    let Ok(mut stream) =
-        TcpStream::connect_timeout(&socket_address, HEALTH_IO_TIMEOUT)
-    else {
-        return false;
-    };
-
-    let _ = stream.set_read_timeout(Some(HEALTH_IO_TIMEOUT));
-    let _ = stream.set_write_timeout(Some(HEALTH_IO_TIMEOUT));
-
-    if stream
-        .write_all(
-            b"GET /health HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n",
-        )
-        .is_err()
-    {
-        return false;
-    }
-
-    let mut response = String::new();
-    if stream.read_to_string(&mut response).is_err() {
-        return false;
-    }
-
-    response.starts_with("HTTP/1.1 200") || response.starts_with("HTTP/1.0 200")
-}
-
-fn emit_status(app: &AppHandle, process: &BackendProcess, status: &str) {
-    process.set_status(status);
-    println!("[backend] status={status}");
-    let _ = app.emit("backend-status", status);
-}
-
-fn emit_log(app: &AppHandle, process: &BackendProcess, message: String) {
-    process.add_log(&message);
-    println!("[backend] {message}");
-    let _ = app.emit("backend-log", message);
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::net::TcpListener;
-
-    #[test]
-    fn backend_script_resolves_from_project_root() {
-        let script = backend_script_path();
-
-        assert!(script.ends_with("scripts/start-backend.sh"));
-        assert!(script.is_file());
-    }
-
-    #[test]
-    fn health_check_accepts_http_200() {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let address = listener.local_addr().unwrap();
-
-        let server = thread::spawn(move || {
-            let (mut stream, _) = listener.accept().unwrap();
-            let mut request = [0_u8; 512];
-            let _ = stream.read(&mut request);
-            stream
-                .write_all(
-                    b"HTTP/1.1 200 OK\r\nContent-Length: 15\r\nConnection: close\r\n\r\n{\"status\":\"ok\"}",
-                )
-                .unwrap();
-        });
-
-        assert!(backend_is_healthy(&address.to_string()));
-        server.join().unwrap();
-    }
-
-    #[test]
-    fn health_check_rejects_non_200_response() {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let address = listener.local_addr().unwrap();
-
-        let server = thread::spawn(move || {
-            let (mut stream, _) = listener.accept().unwrap();
-            let mut request = [0_u8; 512];
-            let _ = stream.read(&mut request);
-            stream
-                .write_all(
-                    b"HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
-                )
-                .unwrap();
-        });
-
-        assert!(!backend_is_healthy(&address.to_string()));
-        server.join().unwrap();
-    }
-}
-
-```
-`src-tauri/src/main.rs`:
-
-```rs
-mod backend;
-
-use backend::{BackendProcess, BackendSnapshot};
-use tauri::Manager;
-
-#[tauri::command]
-fn get_backend_snapshot(
-    backend: tauri::State<'_, BackendProcess>,
-) -> Result<BackendSnapshot, String> {
-    backend.snapshot()
-}
-
-fn main() {
-    let backend = BackendProcess::default();
-
-    let app = tauri::Builder::default()
-        .manage(backend.clone())
-        .invoke_handler(tauri::generate_handler![get_backend_snapshot])
-        .setup(move |app| {
-            backend
-                .start(app.handle().clone())
-                .map_err(std::io::Error::other)?;
-            Ok(())
-        })
-        .build(tauri::generate_context!())
-        .expect("error while building Avalo");
-
-    app.run(|app_handle, event| {
-        if matches!(
-            event,
-            tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit
-        ) {
-            app_handle.state::<BackendProcess>().stop();
-        }
-    });
-}
-
 ```

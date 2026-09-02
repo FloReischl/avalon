@@ -1,6 +1,12 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, useTemplateRef } from "vue";
+import {
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  useTemplateRef,
+} from "vue";
 import type { UnlistenFn } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import friedaStandard from "./assets/avatars/frieda/standard.png";
 import {
@@ -18,43 +24,18 @@ const backendStatus = ref("initializing");
 const backendLogs = ref<string[]>([]);
 const companionState = ref<CompanionState>("idle");
 const avatarImage = useTemplateRef<HTMLImageElement>("avatarImage");
-const avatarHit = ref(false);
-let avatarAlphaContext: CanvasRenderingContext2D | null = null;
-let avatarPixelWidth = 0;
-let avatarPixelHeight = 0;
+let suppressNextAvatarClick = false;
 let unlisten: UnlistenFn | undefined;
 
 function addLog(message: string) {
   backendLogs.value.push(message);
 }
 
-function toggleCompanion() {
-  companionState.value =
-    companionState.value === "idle" ? "active" : "idle";
+function activateCompanion() {
+  companionState.value = "active";
 }
 
-function initializeAvatarAlphaMask() {
-  const image = avatarImage.value;
-  if (!image || image.naturalWidth === 0 || image.naturalHeight === 0) {
-    return;
-  }
-
-  const canvas = document.createElement("canvas");
-  canvas.width = image.naturalWidth;
-  canvas.height = image.naturalHeight;
-
-  const context = canvas.getContext("2d", {
-    willReadFrequently: true,
-  });
-  if (!context) {
-    return;
-  }
-
-  context.drawImage(image, 0, 0);
-  avatarAlphaContext = context;
-  avatarPixelWidth = image.naturalWidth;
-  avatarPixelHeight = image.naturalHeight;
-
+function initializeAvatar() {
   void applyAvatarInputShape();
 }
 
@@ -156,58 +137,28 @@ async function applyAvatarInputShape() {
   }
 }
 
-function updateAvatarHit(event: PointerEvent) {
-  const image = avatarImage.value;
-  if (
-    !image ||
-    !avatarAlphaContext ||
-    avatarPixelWidth === 0 ||
-    avatarPixelHeight === 0
-  ) {
-    avatarHit.value = false;
+async function handleAvatarPointerDown(event: PointerEvent) {
+  if (event.button !== 0) {
     return;
   }
 
-  const bounds = image.getBoundingClientRect();
-  if (
-    bounds.width === 0 ||
-    bounds.height === 0 ||
-    event.clientX < bounds.left ||
-    event.clientX >= bounds.right ||
-    event.clientY < bounds.top ||
-    event.clientY >= bounds.bottom
-  ) {
-    avatarHit.value = false;
-    return;
+  suppressNextAvatarClick = true;
+
+  try {
+    await getCurrentWindow().startDragging();
+  } catch (error) {
+    suppressNextAvatarClick = false;
+    console.error("[window-drag] failed to start window drag", error);
   }
-
-  const pixelX = Math.min(
-    avatarPixelWidth - 1,
-    Math.floor(
-      ((event.clientX - bounds.left) / bounds.width) * avatarPixelWidth,
-    ),
-  );
-  const pixelY = Math.min(
-    avatarPixelHeight - 1,
-    Math.floor(
-      ((event.clientY - bounds.top) / bounds.height) * avatarPixelHeight,
-    ),
-  );
-
-  const alpha = avatarAlphaContext.getImageData(
-    pixelX,
-    pixelY,
-    1,
-    1,
-  ).data[3];
-
-  avatarHit.value = alpha > 16;
 }
 
 function handleAvatarClick() {
-  if (avatarHit.value) {
-    toggleCompanion();
+  if (suppressNextAvatarClick) {
+    suppressNextAvatarClick = false;
+    return;
   }
+
+  activateCompanion();
 }
 
 onMounted(async () => {
@@ -271,8 +222,10 @@ onBeforeUnmount(() => {
     <div
       class="avatar-region"
       data-testid="avatar-region"
-      @pointermove="updateAvatarHit"
-      @pointerleave="avatarHit = false"
+      @pointerdown="handleAvatarPointerDown"
+      
+      
+      
       @click="handleAvatarClick"
     >
       <img
@@ -281,16 +234,8 @@ onBeforeUnmount(() => {
         :src="friedaStandard"
         alt="Frieda"
         data-testid="avatar"
-        @load="initializeAvatarAlphaMask"
+        @load="initializeAvatar"
       />
-
-      <span
-        class="hit-debug"
-        :class="{ hit: avatarHit }"
-        data-testid="hit-debug"
-      >
-        {{ avatarHit ? "HIT" : "MISS" }}
-      </span>
     </div>
 
     <span

@@ -88,11 +88,12 @@ body {
   z-index: 3;
   display: block;
   width: min(42vw, 24rem);
-  cursor: default;
+  cursor: grab;
+  touch-action: none;
 }
 
-.avatar-region:has(.hit-debug.hit) {
-  cursor: pointer;
+.avatar-region:active {
+  cursor: grabbing;
 }
 
 .avatar {
@@ -124,21 +125,7 @@ body {
   letter-spacing: 0.08em;
 }
 
-.hit-debug {
-  position: absolute;
-  right: 0;
-  top: 0;
-  padding: 0.25rem 0.4rem;
-  background: rgba(12, 13, 16, 0.85);
-  font-family: "DejaVu Sans Mono", "Liberation Mono", monospace;
-  font-size: 0.7rem;
-  letter-spacing: 0.08em;
-  pointer-events: none;
-}
 
-.hit-debug.hit {
-  font-weight: 700;
-}
 
 .backend-ready-marker {
   position: absolute;
