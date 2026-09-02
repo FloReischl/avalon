@@ -150,6 +150,154 @@ describe("ChatWindow", () => {
     ).toContain("Hallo Flo");
   });
 
+  it("renders role-specific message actions", async () => {
+    streamChatMessageMock.mockImplementation(
+      async (_message, handlers) => {
+        handlers.onChunk("Antwort");
+      },
+    );
+
+    const wrapper = mount(ChatWindow);
+
+    await wrapper.get('[data-testid="chat-input"]').setValue("Frage");
+    await wrapper.get('[data-testid="send-chat"]').trigger("click");
+    await flushPromises();
+
+    const userActions = wrapper.get(
+      '[data-testid="message-actions-user"]',
+    );
+    const assistantActions = wrapper.get(
+      '[data-testid="message-actions-assistant"]',
+    );
+
+    expect(userActions.find('[data-testid="copy-message"]').exists()).toBe(true);
+    expect(userActions.find('[data-testid="edit-message"]').exists()).toBe(true);
+    expect(userActions.find('[data-testid="read-aloud-message"]').exists()).toBe(false);
+    expect(userActions.find('[data-testid="branch-message"]').exists()).toBe(false);
+
+    expect(assistantActions.find('[data-testid="copy-message"]').exists()).toBe(true);
+    expect(assistantActions.find('[data-testid="read-aloud-message"]').exists()).toBe(true);
+    expect(assistantActions.find('[data-testid="branch-message"]').exists()).toBe(true);
+    expect(assistantActions.find('[data-testid="edit-message"]').exists()).toBe(false);
+
+    expect(
+      assistantActions.get('[data-testid="read-aloud-message"]').attributes("disabled"),
+    ).toBeDefined();
+    expect(
+      assistantActions.get('[data-testid="branch-message"]').attributes("disabled"),
+    ).toBeDefined();
+    expect(
+      userActions.get('[data-testid="edit-message"]').attributes("disabled"),
+    ).toBeDefined();
+  });
+
+  it("copies Markdown source and rendered HTML together", async () => {
+    streamChatMessageMock.mockImplementation(
+      async (_message, handlers) => {
+        handlers.onChunk("**fett**");
+      },
+    );
+
+    const write = vi.fn().mockResolvedValue(undefined);
+    const writeText = vi.fn().mockResolvedValue(undefined);
+
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        write,
+        writeText,
+      },
+    });
+
+    class BlobMock {
+      parts: unknown[];
+      type: string;
+
+      constructor(
+        parts: unknown[],
+        options?: BlobPropertyBag,
+      ) {
+        this.parts = parts;
+        this.type = options?.type ?? "";
+      }
+    }
+
+    class ClipboardItemMock {
+      data: Record<string, BlobMock>;
+
+      constructor(data: Record<string, BlobMock>) {
+        this.data = data;
+      }
+    }
+
+    vi.stubGlobal("Blob", BlobMock);
+    vi.stubGlobal("ClipboardItem", ClipboardItemMock);
+
+    try {
+      const wrapper = mount(ChatWindow);
+
+      await wrapper.get('[data-testid="chat-input"]').setValue("Frage");
+      await wrapper.get('[data-testid="send-chat"]').trigger("click");
+      await flushPromises();
+
+      await wrapper
+        .get('[data-testid="message-actions-assistant"]')
+        .get('[data-testid="copy-message"]')
+        .trigger("click");
+
+      expect(write).toHaveBeenCalledTimes(1);
+      expect(writeText).not.toHaveBeenCalled();
+
+      const clipboardItem = write.mock.calls[0][0][0] as ClipboardItemMock;
+
+      expect(
+        clipboardItem.data["text/plain"].parts.join(""),
+      ).toBe("**fett**");
+      expect(
+        clipboardItem.data["text/plain"].type,
+      ).toBe("text/plain");
+
+      expect(
+        clipboardItem.data["text/html"].parts.join(""),
+      ).toContain("<strong>fett</strong>");
+      expect(
+        clipboardItem.data["text/html"].type,
+      ).toBe("text/html");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("falls back to plain Markdown copy when multi-format clipboard is unavailable", async () => {
+    streamChatMessageMock.mockImplementation(
+      async (_message, handlers) => {
+        handlers.onChunk("**fett**");
+      },
+    );
+
+    const writeText = vi.fn().mockResolvedValue(undefined);
+
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText,
+      },
+    });
+
+    const wrapper = mount(ChatWindow);
+
+    await wrapper.get('[data-testid="chat-input"]').setValue("Frage");
+    await wrapper.get('[data-testid="send-chat"]').trigger("click");
+    await flushPromises();
+
+    await wrapper
+      .get('[data-testid="message-actions-assistant"]')
+      .get('[data-testid="copy-message"]')
+      .trigger("click");
+
+    expect(writeText).toHaveBeenCalledWith("**fett**");
+  });
+
   it("keeps Enter as newline behavior once the input contains a newline", async () => {
     const wrapper = mount(ChatWindow);
     const input = wrapper.get('[data-testid="chat-input"]');

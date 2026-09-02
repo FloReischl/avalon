@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { ref } from "vue";
+
 import MarkdownIt from "markdown-it";
 
 import hljs from "highlight.js";
@@ -9,6 +11,16 @@ import { openExternalLink } from "../services/externalLinks";
 defineProps<{
   content: string;
 }>();
+
+const rootElement = ref<HTMLElement>();
+
+function getRenderedHtml(): string {
+  return rootElement.value?.innerHTML ?? "";
+}
+
+defineExpose({
+  getRenderedHtml,
+});
 
 function highlightCode(code: string, language: string): string {
   if (language && hljs.getLanguage(language)) {
@@ -82,6 +94,7 @@ async function handleClick(event: MouseEvent) {
 
 <template>
   <div
+    ref="rootElement"
     class="markdown-message"
     data-testid="markdown-message"
     @click="handleClick"

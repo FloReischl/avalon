@@ -18,6 +18,12 @@ const {
 const messagesElement = ref<HTMLElement>();
 const isComposerExpanded = ref(false);
 
+type MarkdownMessageInstance = {
+  getRenderedHtml: () => string;
+};
+
+const messageRenderers = new Map<number, MarkdownMessageInstance>();
+
 const DEFAULT_SIDEBAR_WIDTH_PX = 280;
 const MIN_SIDEBAR_WIDTH_PX = 220;
 const MAX_SIDEBAR_WIDTH_RATIO = 0.45;
@@ -61,6 +67,45 @@ watch(
   },
   { deep: true },
 );
+
+function setMessageRenderer(index: number, instance: unknown) {
+  const renderer = instance as MarkdownMessageInstance | null;
+
+  if (renderer?.getRenderedHtml) {
+    messageRenderers.set(index, renderer);
+    return;
+  }
+
+  messageRenderers.delete(index);
+}
+
+async function copyMessage(index: number, content: string) {
+  const renderedHtml = messageRenderers.get(index)?.getRenderedHtml() ?? "";
+  const clipboard = navigator.clipboard;
+
+  if (
+    clipboard?.write
+    && typeof ClipboardItem !== "undefined"
+  ) {
+    const item = new ClipboardItem({
+      "text/plain": new Blob(
+        [content],
+        { type: "text/plain" },
+      ),
+      "text/html": new Blob(
+        [renderedHtml],
+        { type: "text/html" },
+      ),
+    });
+
+    await clipboard.write([item]);
+    return;
+  }
+
+  if (clipboard?.writeText) {
+    await clipboard.writeText(content);
+  }
+}
 
 function toggleComposerExpanded() {
   isComposerExpanded.value = !isComposerExpanded.value;
@@ -166,9 +211,88 @@ function handleInputKeydown(event: KeyboardEvent) {
             {{ message.role === "user" ? "Du" : "Frieda" }}
           </div>
           <MarkdownMessage
+            :ref="(instance) => setMessageRenderer(index, instance)"
             class="message-content"
             :content="message.content"
           />
+
+          <div
+            class="message-actions"
+            :data-testid="`message-actions-${message.role}`"
+          >
+            <button
+              class="message-action-button icon-button"
+              type="button"
+              data-testid="copy-message"
+              aria-label="Nachricht kopieren"
+              title="Nachricht kopieren"
+              @click="copyMessage(index, message.content)"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <rect x="9" y="9" width="10" height="10" rx="2" />
+                <path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2" />
+              </svg>
+            </button>
+
+            <button
+              v-if="message.role === 'assistant'"
+              class="message-action-button icon-button"
+              type="button"
+              data-testid="read-aloud-message"
+              aria-label="Vorlesen"
+              title="Vorlesen"
+              disabled
+            >
+              <svg
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path d="M11 5 6 9H3v6h3l5 4V5Z" />
+                <path d="M15 9a4 4 0 0 1 0 6M17.5 6.5a8 8 0 0 1 0 11" />
+              </svg>
+            </button>
+
+            <button
+              v-if="message.role === 'assistant'"
+              class="message-action-button icon-button"
+              type="button"
+              data-testid="branch-message"
+              aria-label="Neuen Chat ab hier starten"
+              title="Neuen Chat ab hier starten"
+              disabled
+            >
+              <svg
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <circle cx="6" cy="5" r="2" />
+                <circle cx="18" cy="7" r="2" />
+                <circle cx="18" cy="17" r="2" />
+                <path d="M8 5h2a4 4 0 0 1 4 4v4a4 4 0 0 0 4 4M14 10a4 4 0 0 1 4-3" />
+              </svg>
+            </button>
+
+            <button
+              v-if="message.role === 'user'"
+              class="message-action-button icon-button"
+              type="button"
+              data-testid="edit-message"
+              aria-label="Nachricht bearbeiten"
+              title="Nachricht bearbeiten"
+              disabled
+            >
+              <svg
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path d="M4 20h4l11-11-4-4L4 16v4Z" />
+                <path d="m13 7 4 4" />
+              </svg>
+            </button>
+          </div>
         </article>
       </section>
 
@@ -379,6 +503,25 @@ function handleInputKeydown(event: KeyboardEvent) {
 
 .message-content {
   overflow-wrap: anywhere;
+}
+
+.message-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-top: 0.4rem;
+}
+
+.message-action-button {
+  width: 1.9rem;
+  height: 1.9rem;
+  padding: 0.35rem;
+  border-color: transparent;
+  background: transparent;
+}
+
+.message-user .message-actions {
+  justify-content: flex-end;
 }
 
 .message-user {

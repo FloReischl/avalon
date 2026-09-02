@@ -54,6 +54,18 @@ describe("MarkdownMessage", () => {
     expect(wrapper.get("[data-copy-code]").text()).toBe("Copy");
   });
 
+  it("exposes the rendered message HTML", () => {
+    const wrapper = mount(MarkdownMessage, {
+      props: {
+        content: "**fett**",
+      },
+    });
+
+    expect(wrapper.vm.getRenderedHtml()).toContain(
+      "<strong>fett</strong>",
+    );
+  });
+
   it("copies the original code text", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
 
