@@ -13,3 +13,4 @@ add
 - window icons
 - window text
 - wysiwyg?
+- "Nachricht an Frieda" -> "Dein Prompt"
