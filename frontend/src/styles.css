@@ -84,7 +84,7 @@ body {
 .avatar-region {
   position: absolute;
   right: 1.5rem;
-  bottom: 0;
+  bottom: 4.25rem;
   z-index: 3;
   display: block;
   width: min(42vw, 24rem);
@@ -102,6 +102,66 @@ body {
   height: auto;
   user-select: none;
   -webkit-user-drag: none;
+}
+
+.audio-control {
+  position: absolute;
+  right: 1.5rem;
+  bottom: 0.75rem;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+  width: min(42vw, 24rem);
+}
+
+.audio-button {
+  display: grid;
+  width: 3rem;
+  height: 3rem;
+  padding: 0;
+  place-items: center;
+  border: 1px solid rgba(120, 180, 255, 0.75);
+  border-radius: 50%;
+  color: #dbeeff;
+  background: rgba(20, 105, 210, 0.9);
+  box-shadow: 0 0.25rem 1rem rgba(0, 75, 180, 0.35);
+  cursor: pointer;
+}
+
+.audio-button:hover {
+  background: rgba(30, 125, 235, 0.95);
+}
+
+.audio-button:active {
+  transform: scale(0.94);
+}
+
+.audio-button--recording,
+.audio-button--recording:hover {
+  border-color: rgba(255, 150, 150, 0.85);
+  background: rgba(205, 55, 65, 0.95);
+  box-shadow: 0 0.25rem 1rem rgba(180, 30, 45, 0.45);
+}
+
+.audio-countdown {
+  min-width: 2ch;
+  padding: 0.1rem 0.35rem;
+  border-radius: 0.35rem;
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  color: #f5f7fa;
+  background: rgba(12, 13, 16, 0.72);
+  backdrop-filter: blur(0.25rem);
+}
+
+
+.audio-icon {
+  width: 1.5rem;
+  height: 1.5rem;
+  fill: currentColor;
 }
 
 .active-panel {

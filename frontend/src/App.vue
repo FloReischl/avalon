@@ -20,15 +20,23 @@ import { showChatWindow } from "./services/chatWindow";
 import { startAvatarWindowDrag } from "./services/windowDrag";
 
 type CompanionState = "idle" | "active";
+type AudioState = "idle" | "recording";
+
+const MAX_AUDIO_SECONDS = 30;
+const AVATAR_DRAG_THRESHOLD_PX = 5;
 
 const backendStatus = ref("initializing");
 const backendLogs = ref<string[]>([]);
 const companionState = ref<CompanionState>("idle");
+const audioState = ref<AudioState>("idle");
+const remainingRecordingSeconds = ref(MAX_AUDIO_SECONDS);
 const avatarImage = useTemplateRef<HTMLImageElement>("avatarImage");
-const AVATAR_DRAG_THRESHOLD_PX = 5;
+const audioButton = useTemplateRef<HTMLButtonElement>("audioButton");
 
 let suppressNextAvatarClick = false;
 let avatarPointerStart: { x: number; y: number } | undefined;
+let recordingTimer: number | undefined;
+let audioPointerHeld = false;
 let unlisten: UnlistenFn | undefined;
 
 function addLog(message: string) {
@@ -41,6 +49,68 @@ function activateCompanion() {
 
 function initializeAvatar() {
   void applyAvatarInputShape();
+}
+
+function clearRecordingTimer() {
+  if (recordingTimer !== undefined) {
+    window.clearInterval(recordingTimer);
+    recordingTimer = undefined;
+  }
+}
+
+function removeRecordingEndListeners() {
+  window.removeEventListener("pointerup", finishAudioRecording);
+  window.removeEventListener("pointercancel", abortAudioRecording);
+}
+
+function resetAudioRecordingState() {
+  clearRecordingTimer();
+  removeRecordingEndListeners();
+  audioState.value = "idle";
+  remainingRecordingSeconds.value = MAX_AUDIO_SECONDS;
+}
+
+function finishAudioRecording() {
+  audioPointerHeld = false;
+
+  if (audioState.value !== "recording") {
+    return;
+  }
+
+  resetAudioRecordingState();
+}
+
+function abortAudioRecording() {
+  audioPointerHeld = false;
+
+  if (audioState.value !== "recording") {
+    return;
+  }
+
+  resetAudioRecordingState();
+}
+
+function startAudioRecording(event: PointerEvent) {
+  if (event.button !== 0 || audioPointerHeld || audioState.value === "recording") {
+    return;
+  }
+
+  event.preventDefault();
+  audioPointerHeld = true;
+
+  window.addEventListener("pointerup", finishAudioRecording);
+  window.addEventListener("pointercancel", abortAudioRecording);
+
+  audioState.value = "recording";
+  remainingRecordingSeconds.value = MAX_AUDIO_SECONDS;
+
+  recordingTimer = window.setInterval(() => {
+    remainingRecordingSeconds.value -= 1;
+
+    if (remainingRecordingSeconds.value <= 0) {
+      abortAudioRecording();
+    }
+  }, 1000);
 }
 
 async function applyAvatarInputShape() {
@@ -131,10 +201,24 @@ async function applyAvatarInputShape() {
     activeRuns = nextRuns;
   }
 
+  const button = audioButton.value;
+  if (button) {
+    const buttonBounds = button.getBoundingClientRect();
+
+    if (buttonBounds.width > 0 && buttonBounds.height > 0) {
+      rectangles.push({
+        x: Math.round(buttonBounds.left * scale),
+        y: Math.round(buttonBounds.top * scale),
+        width: Math.max(1, Math.round(buttonBounds.width * scale)),
+        height: Math.max(1, Math.round(buttonBounds.height * scale)),
+      });
+    }
+  }
+
   try {
     await setWindowInputRegions(rectangles);
     console.info(
-      `[input-shape] applied ${rectangles.length} avatar rectangles`,
+      `[input-shape] applied ${rectangles.length} input rectangles`,
     );
   } catch (error) {
     console.error("[input-shape] failed to apply X11 input shape", error);
@@ -219,6 +303,8 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
+  audioPointerHeld = false;
+  resetAudioRecordingState();
   unlisten?.();
 });
 </script>
@@ -272,6 +358,39 @@ onBeforeUnmount(() => {
         data-testid="avatar"
         @load="initializeAvatar"
       />
+    </div>
+
+    <div class="audio-control">
+      <button
+        ref="audioButton"
+        class="audio-button"
+        :class="{ 'audio-button--recording': audioState === 'recording' }"
+        type="button"
+        aria-label="Push to talk"
+        :aria-pressed="audioState === 'recording'"
+        data-testid="audio-button"
+        @pointerdown="startAudioRecording"
+        @pointerup="finishAudioRecording"
+        @pointercancel="abortAudioRecording"
+      >
+        <svg
+          class="audio-icon"
+          viewBox="0 0 24 24"
+          aria-hidden="true"
+        >
+          <path
+            d="M12 15a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21H8v2h8v-2h-3v-2.08A7 7 0 0 0 19 12h-2Z"
+          />
+        </svg>
+      </button>
+      <span
+        v-if="audioState === 'recording'"
+        class="audio-countdown"
+        data-testid="audio-countdown"
+      >
+        {{ remainingRecordingSeconds }}
+      </span>
+
     </div>
 
     <span

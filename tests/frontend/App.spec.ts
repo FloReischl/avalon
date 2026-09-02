@@ -1,5 +1,5 @@
 import { flushPromises, mount } from "@vue/test-utils";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
   getBackendSnapshotMock,
@@ -37,6 +37,10 @@ describe("App", () => {
     listenToBackendLifecycleMock.mockResolvedValue(() => {});
     showChatWindowMock.mockResolvedValue(undefined);
     startDraggingMock.mockResolvedValue(undefined);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it("shows the startup snapshot while the backend is starting", async () => {
@@ -192,6 +196,59 @@ describe("App", () => {
     await avatarRegion.trigger("dblclick");
 
     expect(showChatWindowMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows push-to-talk recording state only while the audio button is held", async () => {
+    getBackendSnapshotMock.mockResolvedValue({
+      status: "ready",
+      logs: ["Backend ready"],
+    });
+
+    const wrapper = mount(App);
+    await flushPromises();
+
+    const audioButton = wrapper.get('[data-testid="audio-button"]');
+
+    expect(wrapper.find('[data-testid="audio-countdown"]').exists()).toBe(false);
+
+    await audioButton.trigger("pointerdown", { button: 0 });
+
+    expect(audioButton.classes()).toContain("audio-button--recording");
+    expect(audioButton.attributes("aria-pressed")).toBe("true");
+    expect(wrapper.get('[data-testid="audio-countdown"]').text()).toBe("30");
+
+    await audioButton.trigger("pointerup");
+
+    expect(audioButton.classes()).not.toContain("audio-button--recording");
+    expect(audioButton.attributes("aria-pressed")).toBe("false");
+    expect(wrapper.find('[data-testid="audio-countdown"]').exists()).toBe(false);
+  });
+
+  it("aborts push-to-talk when the 30 second limit is reached", async () => {
+    vi.useFakeTimers();
+
+    getBackendSnapshotMock.mockResolvedValue({
+      status: "ready",
+      logs: ["Backend ready"],
+    });
+
+    const wrapper = mount(App);
+    await flushPromises();
+
+    const audioButton = wrapper.get('[data-testid="audio-button"]');
+    await audioButton.trigger("pointerdown", { button: 0 });
+
+    vi.advanceTimersByTime(29_000);
+    await wrapper.vm.$nextTick();
+
+    expect(wrapper.get('[data-testid="audio-countdown"]').text()).toBe("1");
+    expect(audioButton.classes()).toContain("audio-button--recording");
+
+    vi.advanceTimersByTime(1_000);
+    await wrapper.vm.$nextTick();
+
+    expect(audioButton.classes()).not.toContain("audio-button--recording");
+    expect(wrapper.find('[data-testid="audio-countdown"]').exists()).toBe(false);
   });
 
   it.todo("sends a text message and renders the complete response");

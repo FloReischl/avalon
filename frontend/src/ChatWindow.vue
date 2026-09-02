@@ -2,6 +2,7 @@
 import { nextTick, ref, watch } from "vue";
 
 import MarkdownMessage from "./components/MarkdownMessage.vue";
+
 import { useTransientChat } from "./composables/useTransientChat";
 
 const {
@@ -12,6 +13,7 @@ const {
   send,
   stop,
 } = useTransientChat();
+
 
 const messagesElement = ref<HTMLElement>();
 
@@ -177,6 +179,7 @@ function handleInputKeydown(event: KeyboardEvent) {
           >
             {{ errorMessage }}
           </div>
+
 
           <button
             v-if="isGenerating"
@@ -388,6 +391,7 @@ function handleInputKeydown(event: KeyboardEvent) {
   color: #aaaaaa;
   cursor: default;
 }
+
 
 .error-message {
   margin-right: auto;

@@ -12,4 +12,5 @@ raw-window-handle = "=0.6.2"
 serde = { version = "1", features = ["derive"] }
 tauri = { version = "=2.11.5", features = [] }
 tauri-plugin-opener = "2.5.5"
+
 x11rb = { version = "=0.14.0", features = ["shape"] }

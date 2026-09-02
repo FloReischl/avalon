@@ -5,6 +5,7 @@ use backend::{BackendProcess, BackendSnapshot};
 use input_shape::InputRect;
 use tauri::Manager;
 
+
 #[tauri::command]
 fn get_backend_snapshot(
     backend: tauri::State<'_, BackendProcess>,
@@ -45,6 +46,7 @@ fn main() {
             show_chat_window
         ])
         .setup(move |app| {
+
             backend
                 .start(app.handle().clone())
                 .map_err(std::io::Error::other)?;
