@@ -7,7 +7,7 @@ import {
 } from "vue";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 
-import friedaStandard from "./assets/avatars/frieda/standard.png";
+import friedaStandard from "./assets/avatars/frieda2/standard.png";
 import {
   getBackendSnapshot,
   listenToBackendLifecycle,

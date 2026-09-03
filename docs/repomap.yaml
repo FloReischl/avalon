@@ -537,7 +537,7 @@ modules:
       - frontend/src/services/inputShape.ts
       - frontend/src/services/chatWindow.ts
       - frontend/src/services/windowDrag.ts
-      - frontend/src/assets/avatars/frieda/standard.png
+      - frontend/src/assets/avatars/frieda1/standard.png
     interaction:
       - avatar drag starts only after pointer movement crosses a small threshold
       - avatar double-click opens the chat window
@@ -693,7 +693,7 @@ modules:
     native_counterpart:
       - src-tauri/src/input_shape.rs
 
-  frontend/src/assets/avatars/frieda/standard.png:
+  frontend/src/assets/avatars/frieda1/standard.png:
     role: current default Frieda avatar
     relevant_to:
       - companion rendering
