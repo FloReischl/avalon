@@ -88,7 +88,10 @@ architecture:
       - no persona
       - no memory
       - no persisted history
-      - active turn can be aborted and rolled back client-side
+      - text and audio turns share the same transient conversation context
+      - prior audio UI placeholders are excluded from model context
+      - active text turn can be aborted and rolled back client-side
+      - failed or aborted audio response keeps the visible audio user contribution
 
 key_flows:
 
@@ -133,21 +136,28 @@ key_flows:
       - cancellation propagates through service and runtime without becoming an error event
 
   native_audio:
-      target_flow:
-        - avatar push-to-talk interaction
-        - backend-local microphone capture
-        - AudioInputPreparer.prepare
-        - ModelRuntime.generate_from_audio
-        - complete model response
+      flow:
+        - chat-window push-to-talk interaction
+        - POST /api/v1/audio/recording/start
+        - backend-local microphone capture through PipeWireRecorder
+        - POST /api/v1/audio/recording/stop with prior conversation context
+        - AudioChatService stops capture and passes WAV plus context to ModelRuntime
+        - OllamaRuntime sends prior context plus native audio to /v1/chat/completions
+        - model response streams back through Avalo SSE
       capture_location: python_backend
       capture_adapter: backend/app/audio/capture.py:PipeWireRecorder
-      status: capture_spike_implemented
+      application_service: backend/app/services/audio_chat.py:AudioChatService
+      status: end_to_end_spike_implemented
       notes:
         - browser/WebView microphone capture via MediaRecorder was rejected after WebKitGTK produced zero-byte chunks
         - backend microphone capture uses PipeWire pw-record
-        - frontend currently implements push-to-talk UI state only
-        - HTTP control API connecting frontend push-to-talk to backend capture is not yet implemented
+        - frontend push-to-talk controls backend recording lifecycle
+        - quick pointer release while backend start is pending is completed after start succeeds
+        - pointer cancellation aborts and discards capture
         - reaching the duration limit aborts capture and discards the incomplete audio fragment
+        - visible audio user turns use the UI placeholder "🎤 Sprachnachricht"
+        - previous audio placeholders are not sent back as semantic model context
+        - no transcript is currently retained for previous audio user turns
       constraints:
         max_duration_seconds: 30
         target_sample_rate_hz: 16000
@@ -212,6 +222,7 @@ modules:
     routes:
       - health router at root
       - chat router under /api/v1
+      - audio recording router under /api/v1
     dependencies:
       - backend/app/api/routes/health.py
       - backend/app/api/routes/chat.py
@@ -223,15 +234,23 @@ modules:
         fields:
           status: literal_ok
           service: str
+      ConversationMessage:
+        fields:
+          role: user_or_assistant
+          content: non_empty_str
       ChatRequest:
         fields:
-          message: str
+          messages: list[ConversationMessage]
         validation:
-          message_min_length: 1
+          messages_min_length: 1
+      AudioResponseRequest:
+        fields:
+          messages: list[ConversationMessage]
     relevant_to:
       - health API
       - text chat API
-      - frontend/backend contract
+      - audio response API
+      - frontend/backend conversation contract
 
   backend/app/api/routes/health.py:
     role: backend readiness endpoint
@@ -252,7 +271,7 @@ modules:
       format_sse_event:
         role: Avalo SSE event serialization
       stream_chat_response:
-        signature: "(service: ChatService, message: str) -> AsyncIterator[str]"
+        signature: "(service: ChatService, messages: list[dict[str, str]]) -> AsyncIterator[str]"
         role: translate service chunks and runtime failures into Avalo SSE events
       create_chat_response:
         signature: "(request: ChatRequest, service: ChatService) -> StreamingResponse"
@@ -278,16 +297,30 @@ modules:
         constructor: "(runtime: ModelRuntime)"
         methods:
           stream_response:
-            signature: "(message: str) -> AsyncIterator[str]"
+            signature: "(messages: list[dict[str, str]]) -> AsyncIterator[str]"
     dependencies:
       - backend/app/runtime/base.py:ModelRuntime
     status: implemented
     behavior:
-      - delegate streaming text generation to configured ModelRuntime
+      - delegate complete transient conversation context to configured ModelRuntime
       - remain independent of concrete runtime adapter
     future_scope:
-      - conversation/context orchestration may grow here
-      - no persistence, persona, memory, or history yet
+      - no persistence, persona, or memory yet
+
+  backend/app/services/audio_chat.py:
+    role: native-audio chat use-case boundary
+    symbols:
+      AudioChatService:
+        role: coordinate microphone capture lifecycle and model response generation
+    dependencies:
+      - backend/app/audio/capture.py:PipeWireRecorder
+      - backend/app/runtime/base.py:ModelRuntime
+    behavior:
+      - start and abort backend-local recording
+      - stop capture and pass WAV plus prior conversation context to runtime
+      - stream assistant response
+      - clean temporary captured audio after generation
+    status: implemented_spike
 
   backend/app/runtime/base.py:
     role: model runtime abstraction
@@ -302,10 +335,12 @@ modules:
             signature: "(message: str) -> str"
             async: true
           generate_text_stream:
-            signature: "(message: str) -> AsyncIterator[str]"
+            signature: "(messages: list[dict[str, str]]) -> AsyncIterator[str]"
           generate_from_audio:
             signature: "(audio_file: Path) -> str"
             async: true
+          generate_from_audio_stream:
+            signature: "(audio_file: Path, messages: list[dict[str, str]]) -> AsyncIterator[str]"
     consumers:
       - backend/app/services/chat.py
       - concrete runtime adapters
@@ -330,15 +365,24 @@ modules:
             timeout_seconds: 120
           generate_text_stream:
             kind: async_generator
-            endpoint: "POST /api/generate"
+            endpoint: "POST /v1/chat/completions"
             request_streaming: true
-            remote_format: Ollama NDJSON
-            yielded_value: non-empty response strings
+            request_context: full_message_list
+            remote_format: OpenAI_compatible_SSE
+            yielded_value: non-empty choices[0].delta.content strings
             timeout_seconds: 120
           generate_from_audio:
             async: true
             endpoint: "POST /v1/chat/completions"
             response_contract: "choices[0].message.content"
+            audio_encoding: base64_wav
+            timeout_seconds: 120
+          generate_from_audio_stream:
+            kind: async_generator
+            endpoint: "POST /v1/chat/completions"
+            request_streaming: true
+            request_context: prior_messages_plus_current_audio
+            remote_format: OpenAI_compatible_SSE
             audio_encoding: base64_wav
             timeout_seconds: 120
     dependencies:
@@ -352,9 +396,10 @@ modules:
       local_audio_file_errors: propagate
       cancellation: propagate
     notes:
-      - Text uses Ollama native generate API for complete and streaming responses.
-      - Ollama NDJSON remains internal to the runtime adapter.
-      - Audio uses Ollama OpenAI-compatible chat-completions API.
+      - Complete non-streaming text generation still uses Ollama native /api/generate.
+      - Streaming text and native-audio chat both use Ollama OpenAI-compatible /v1/chat/completions.
+      - Streaming text receives the full transient message context.
+      - Audio streaming appends the current native audio input to prior text-compatible context.
       - Streaming cancellation exits the HTTP response and client contexts.
       - Current adapter has passing real Ollama integration coverage for normal streaming.
       - Abort/cancellation is covered deterministically without real Ollama integration.
@@ -523,8 +568,14 @@ modules:
       - keeps user Markdown source editing in a plain monospace textarea
       - supports draggable sidebar splitter with bounded width
       - automatically follows streamed assistant output
+      - implements push-to-talk backend recording control
+      - shows 30-second recording countdown
+      - aborts and discards recording at the duration limit
+      - handles pointer release that occurs while backend recording start is still pending
+      - renders audio user turns as "🎤 Sprachnachricht"
+      - streams audio-triggered assistant responses into the normal conversation
     relevant_to:
-      - transient text chat UI
+      - transient text and audio chat UI
       - conversation sidebar
       - current conversation view
       - Markdown rendering
@@ -552,13 +603,17 @@ modules:
     role: frontend HTTP boundary for backend communication
     responsibilities:
       - health calls
-      - POST streaming chat requests to /api/v1/chat
-      - parse Avalo SSE chunk / done / error events
+      - POST streaming chat requests with conversation messages to /api/v1/chat
+      - start backend recording through /api/v1/audio/recording/start
+      - abort backend recording through /api/v1/audio/recording/abort
+      - stop recording and stream native-audio response through /api/v1/audio/recording/stop
+      - parse shared Avalo SSE chunk / done / error events
       - expose AbortSignal cancellation to callers
       - reject malformed or incomplete streams
     relevant_to:
       - backend URL/contracts
       - streaming text chat
+      - native-audio recording and response flow
     inspect_before:
       - changing backend API paths
       - changing frontend/backend transport
@@ -571,6 +626,7 @@ modules:
         fields:
           role: user_or_assistant
           content: str
+          kind: optional_text_or_audio
     relevant_to:
       - frontend transient conversation state
       - frontend chat rendering
@@ -582,12 +638,15 @@ modules:
     role: transient client-side chat-turn state machine
     responsibilities:
       - hold current messages and input
-      - start backend streaming generation
+      - derive shared model conversation context from transient UI messages
+      - exclude prior audio UI placeholders from semantic model context
+      - start text and audio backend streaming generation
       - append assistant chunks incrementally
       - disable concurrent generation
       - abort active generation
-      - roll back complete active turn on Stop or technical failure
-      - restore original user prompt exactly after rollback
+      - roll back complete text turn on Stop or technical failure
+      - keep visible audio user contribution when audio response fails or is stopped
+      - restore original text prompt exactly after rollback
       - ignore stale callbacks from superseded turns
     dependencies:
       - frontend/src/services/backend.ts
@@ -751,9 +810,10 @@ tests:
       - backend/app/runtime/ollama.py
       - backend/app/config.py
     important_contracts:
-      text_response: "response"
-      stream_chunk_response: "response"
+      complete_text_response: "response"
+      streaming_text_response: "choices[0].delta.content"
       audio_response: "choices[0].message.content"
+      streaming_audio_response: "choices[0].delta.content"
 
   tests/backend/test_audio_capture.py:
     covers:
@@ -882,17 +942,26 @@ change_navigation:
       - backend/app/runtime/ollama.py
       - backend/app/api/schemas.py
 
-  implement_audio_api:
+  change_audio_chat:
     inspect:
-      - backend/app/audio/input.py
+      - backend/app/audio/capture.py
+      - backend/app/services/audio_chat.py
       - backend/app/runtime/base.py
+      - backend/app/runtime/ollama.py
+      - backend/app/api/routes/audio.py
       - backend/app/api/router.py
       - backend/app/api/schemas.py
-      - backend/app/config.py
-    maybe_inspect:
-      - backend/app/runtime/ollama.py
+      - frontend/src/ChatWindow.vue
+      - frontend/src/composables/useTransientChat.ts
       - frontend/src/services/backend.ts
-      - frontend/src/App.vue
+      - frontend/src/types/chat.ts
+      - tests/backend/test_ollama_runtime.py
+      - tests/frontend/ChatWindow.spec.ts
+      - tests/frontend/useTransientChat.spec.ts
+      - tests/frontend/backend.spec.ts
+    maybe_inspect:
+      - backend/app/config.py
+      - tests/integration/test_ollama_integration.py
 
   implement_tts:
     inspect:
@@ -1045,6 +1114,12 @@ known_state:
     - role-specific message actions for user and assistant messages
     - multi-format message clipboard copy with Markdown plain text and rendered HTML
     - avatar push-to-talk UI state with 30-second countdown and abort
+    - backend-local PipeWire push-to-talk capture
+    - audio recording HTTP control API
+    - chat-window push-to-talk with quick-release race handling
+    - native-audio response streaming through shared Avalo SSE
+    - shared transient conversation context for text and audio turns
+    - streaming text chat through Ollama /v1/chat/completions
 
   contracts_or_stubs:
     - AudioInputPreparer
@@ -1061,8 +1136,6 @@ known_state:
     - final local LLM runtime pending runtime spike decision
     - llama.cpp native Gemma audio feasibility
     - Chatterbox resource and quality spike
-    - concrete audio HTTP transport/API
     - whether user audio is surfaced as transcript
-    - concrete backend-local microphone capture implementation
-    - concrete audio recording control API
+    - representation of previous audio user turns in future model context
     - audio chunking / incremental Ollama processing feasibility
