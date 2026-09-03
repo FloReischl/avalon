@@ -68,7 +68,7 @@ architecture:
       api: HTTP endpoints and public schemas
       application: use-case orchestration
       runtime: interchangeable local model adapters
-      audio: native audio preparation boundary
+      audio: backend-local audio capture and preparation boundary
       tts: interchangeable speech synthesis adapters
       config: central technical configuration
 
@@ -140,11 +140,14 @@ key_flows:
         - ModelRuntime.generate_from_audio
         - complete model response
       capture_location: python_backend
-      status: capture_spike_pending
+      capture_adapter: backend/app/audio/capture.py:PipeWireRecorder
+      status: capture_spike_implemented
       notes:
         - browser/WebView microphone capture via MediaRecorder was rejected after WebKitGTK produced zero-byte chunks
+        - backend microphone capture uses PipeWire pw-record
         - frontend currently implements push-to-talk UI state only
-        - concrete backend capture implementation and HTTP control API are not yet implemented
+        - HTTP control API connecting frontend push-to-talk to backend capture is not yet implemented
+        - reaching the duration limit aborts capture and discards the incomplete audio fragment
       constraints:
         max_duration_seconds: 30
         target_sample_rate_hz: 16000
@@ -369,6 +372,42 @@ modules:
     notes:
       - Preferred target runtime according to current runtime ADR.
       - Runtime spike must establish Gemma 4 native audio feasibility before final adoption.
+
+  backend/app/audio/capture.py:
+    role: backend-local microphone capture adapter
+    symbols:
+      CaptureError:
+        kind: RuntimeError
+      CapturedAudio:
+        kind: frozen_dataclass
+        fields:
+          path: Path
+          duration_seconds: float
+          sample_rate_hz: int
+          channels: int
+      PipeWireRecorder:
+        role: single push-to-talk capture lifecycle through pw-record
+        methods:
+          start:
+            async: true
+          stop:
+            signature: "() -> CapturedAudio"
+            async: true
+          abort:
+            async: true
+      inspect_wav:
+        signature: "(path: Path) -> CapturedAudio"
+    dependencies:
+      - PipeWire pw-record
+      - backend/app/config.py:settings.audio_max_seconds
+    behavior:
+      - only one recording may be active per recorder
+      - stop terminates pw-record with SIGINT and validates resulting WAV metadata
+      - abort terminates capture and removes the temporary WAV
+      - duration timeout aborts and discards the incomplete recording
+      - invalid or failed captures are removed
+      - hung process shutdown escalates from SIGINT to kill after 2 seconds
+    status: implemented_spike
 
   backend/app/audio/input.py:
     role: native audio normalization and validation boundary
@@ -716,6 +755,21 @@ tests:
       stream_chunk_response: "response"
       audio_response: "choices[0].message.content"
 
+  tests/backend/test_audio_capture.py:
+    covers:
+      - PipeWireRecorder start/stop lifecycle
+      - WAV metadata inspection
+      - SIGINT exit-code handling
+      - explicit abort cleanup
+      - duration-limit abort and discard
+      - concurrent recording rejection
+      - stop without active recording
+      - missing pw-record failure cleanup
+      - invalid WAV rejection and cleanup
+    inspect_with:
+      - backend/app/audio/capture.py
+      - backend/app/config.py
+
   tests/backend/test_tts_blueprint.py:
     covers:
       - TTS protocol / Chatterbox blueprint
@@ -737,6 +791,17 @@ tests:
     known_note:
       - uses pytest integration marker
       - cancellation is intentionally not covered by real Ollama integration
+
+  tests/integration/test_audio_capture_integration.py:
+    covers:
+      - real local PipeWire microphone capture produces non-empty WAV audio
+    external_dependency:
+      - PipeWire pw-record
+      - local microphone hardware
+    status: opt_in
+    activation:
+      - AVALO_TEST_MICROPHONE=1
+      - pytest integration marker
 
   tests/frontend/App.spec.ts:
     covers:
