@@ -732,7 +732,7 @@ modules:
   src-tauri/src/backend.rs:
     role: Tauri-managed Python backend process lifecycle
     responsibilities:
-      - start backend through scripts/start-backend.sh
+      - start backend through scripts/xstart-backend.sh
       - disable uvicorn reload for Tauri-managed process
       - capture backend stdout and stderr
       - poll backend health readiness
@@ -976,7 +976,7 @@ change_navigation:
     inspect:
       - backend/app/config.py
       - backend/app/main.py
-      - scripts/start-backend.sh
+      - scripts/xstart-backend.sh
       - frontend/src/services/backend.ts
       - tests/backend/test_config.py
       - tests/backend/test_health.py
@@ -1016,7 +1016,7 @@ change_navigation:
       - frontend/src/styles.css
       - tests/frontend/App.spec.ts
     maybe_inspect:
-      - scripts/start-backend.sh
+      - scripts/xstart-backend.sh
       - frontend/src/services/backendLifecycle.ts
 
   change_desktop_input_regions:

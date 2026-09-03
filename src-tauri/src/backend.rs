@@ -134,7 +134,7 @@ fn backend_script_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("scripts")
-        .join("start-backend.sh")
+        .join("xstart-backend.sh")
 }
 
 fn forward_output<R>(
@@ -258,7 +258,7 @@ mod tests {
     fn backend_script_resolves_from_project_root() {
         let script = backend_script_path();
 
-        assert!(script.ends_with("scripts/start-backend.sh"));
+        assert!(script.ends_with("scripts/xstart-backend.sh"));
         assert!(script.is_file());
     }
 
