@@ -19,7 +19,9 @@ async def test_ollama_runtime_integration():
     streamed_response = "".join(
         [
             chunk
-            async for chunk in runtime.generate_text_stream(prompt)
+            async for chunk in runtime.generate_text_stream(
+                [{"role": "user", "content": prompt}],
+            )
         ],
     )
     assert streamed_response.strip(), "The streamed response from Ollama is empty or only contains whitespace."

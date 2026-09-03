@@ -9,6 +9,11 @@ export interface ChatStreamHandlers {
   onChunk: (text: string) => void;
 }
 
+export interface ConversationMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
 interface ChatChunkData {
   text: string;
 }
@@ -22,7 +27,7 @@ export async function getBackendHealth(): Promise<BackendHealth> {
 }
 
 export async function streamChatMessage(
-  message: string,
+  messages: ConversationMessage[],
   handlers: ChatStreamHandlers,
   signal: AbortSignal,
 ): Promise<void> {
@@ -31,9 +36,57 @@ export async function streamChatMessage(
     headers: {
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ message }),
+    body: JSON.stringify({ messages }),
     signal,
   });
+
+  await consumeChatStream(response, handlers);
+}
+
+export async function startAudioRecording(): Promise<void> {
+  const response = await fetch(
+    `${BACKEND_BASE_URL}/api/v1/audio/recording/start`,
+    { method: "POST" },
+  );
+  if (!response.ok) {
+    throw new Error(`Audio recording start failed with ${response.status}`);
+  }
+}
+
+export async function abortAudioRecording(): Promise<void> {
+  const response = await fetch(
+    `${BACKEND_BASE_URL}/api/v1/audio/recording/abort`,
+    { method: "POST" },
+  );
+  if (!response.ok) {
+    throw new Error(`Audio recording abort failed with ${response.status}`);
+  }
+}
+
+export async function streamAudioResponse(
+  messages: ConversationMessage[],
+  handlers: ChatStreamHandlers,
+  signal: AbortSignal,
+): Promise<void> {
+  const response = await fetch(
+    `${BACKEND_BASE_URL}/api/v1/audio/recording/stop`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ messages }),
+      signal,
+    },
+  );
+
+  await consumeChatStream(response, handlers);
+}
+
+async function consumeChatStream(
+  response: Response,
+  handlers: ChatStreamHandlers,
+): Promise<void> {
 
   if (!response.ok) {
     throw new Error(`Chat request failed with ${response.status}`);
@@ -99,4 +152,3 @@ export async function streamChatMessage(
     throw new Error("Chat stream ended without done event");
   }
 }
-

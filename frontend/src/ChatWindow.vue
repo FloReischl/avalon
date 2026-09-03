@@ -1,9 +1,13 @@
 <script setup lang="ts">
-import { nextTick, ref, watch } from "vue";
+import { nextTick, onBeforeUnmount, ref, watch } from "vue";
 
 import MarkdownMessage from "./components/MarkdownMessage.vue";
 
 import { useTransientChat } from "./composables/useTransientChat";
+import {
+  abortAudioRecording as abortBackendAudioRecording,
+  startAudioRecording as startBackendAudioRecording,
+} from "./services/backend";
 
 const {
   messages,
@@ -11,12 +15,129 @@ const {
   isGenerating,
   errorMessage,
   send,
+  sendAudio,
   stop,
 } = useTransientChat();
 
 
 const messagesElement = ref<HTMLElement>();
 const isComposerExpanded = ref(false);
+const isRecording = ref(false);
+const remainingRecordingSeconds = ref(30);
+
+let recordingTimer: number | undefined;
+let recordingStartPending = false;
+let recordingReleaseAction: "finish" | "abort" | undefined;
+
+function clearRecordingTimer() {
+  if (recordingTimer !== undefined) {
+    window.clearInterval(recordingTimer);
+    recordingTimer = undefined;
+  }
+}
+
+function removeRecordingListeners() {
+  window.removeEventListener("pointerup", finishAudioRecording);
+  window.removeEventListener("pointercancel", abortAudioRecording);
+}
+
+function resetRecordingState() {
+  clearRecordingTimer();
+  removeRecordingListeners();
+  isRecording.value = false;
+  remainingRecordingSeconds.value = 30;
+}
+
+async function startAudioRecording(event: PointerEvent) {
+  if (
+    event.button !== 0
+    || isGenerating.value
+    || isRecording.value
+    || recordingStartPending
+  ) {
+    return;
+  }
+
+  event.preventDefault();
+  errorMessage.value = undefined;
+  recordingStartPending = true;
+  recordingReleaseAction = undefined;
+  window.addEventListener("pointerup", finishAudioRecording);
+  window.addEventListener("pointercancel", abortAudioRecording);
+
+  try {
+    await startBackendAudioRecording();
+  } catch {
+    recordingStartPending = false;
+    recordingReleaseAction = undefined;
+    removeRecordingListeners();
+    errorMessage.value = "Audioaufnahme konnte nicht gestartet werden.";
+    return;
+  }
+
+  recordingStartPending = false;
+
+  if (recordingReleaseAction === "finish") {
+    recordingReleaseAction = undefined;
+    removeRecordingListeners();
+    await sendAudio();
+    return;
+  }
+
+  if (recordingReleaseAction === "abort") {
+    recordingReleaseAction = undefined;
+    removeRecordingListeners();
+    try {
+      await abortBackendAudioRecording();
+    } catch {
+      errorMessage.value = "Audioaufnahme konnte nicht verworfen werden.";
+    }
+    return;
+  }
+
+  isRecording.value = true;
+  recordingTimer = window.setInterval(() => {
+    remainingRecordingSeconds.value -= 1;
+    if (remainingRecordingSeconds.value <= 0) {
+      void abortAudioRecording();
+    }
+  }, 1000);
+}
+
+async function finishAudioRecording() {
+  if (recordingStartPending) {
+    recordingReleaseAction = "finish";
+    return;
+  }
+  if (!isRecording.value) {
+    return;
+  }
+  resetRecordingState();
+  await sendAudio();
+}
+
+async function abortAudioRecording() {
+  if (recordingStartPending) {
+    recordingReleaseAction = "abort";
+    return;
+  }
+  if (!isRecording.value) {
+    return;
+  }
+  resetRecordingState();
+  try {
+    await abortBackendAudioRecording();
+  } catch {
+    errorMessage.value = "Audioaufnahme konnte nicht verworfen werden.";
+  }
+}
+
+onBeforeUnmount(() => {
+  if (isRecording.value) {
+    void abortBackendAudioRecording();
+  }
+  resetRecordingState();
+});
 
 type MarkdownMessageInstance = {
   getRenderedHtml: () => string;
@@ -204,7 +325,10 @@ function handleInputKeydown(event: KeyboardEvent) {
           v-for="(message, index) in messages"
           :key="index"
           class="message"
-          :class="`message-${message.role}`"
+          :class="[
+            `message-${message.role}`,
+            { 'message-audio': message.kind === 'audio' },
+          ]"
           :data-testid="`message-${message.role}`"
         >
           <div class="message-role">
@@ -345,6 +469,31 @@ function handleInputKeydown(event: KeyboardEvent) {
           >
             {{ errorMessage }}
           </div>
+
+          <div
+            v-if="isRecording"
+            class="recording-status"
+            data-testid="recording-status"
+            role="status"
+          >
+            Aufnahme · {{ remainingRecordingSeconds }} s
+          </div>
+
+          <button
+            class="icon-button audio-record-button"
+            :class="{ 'audio-record-button--recording': isRecording }"
+            type="button"
+            data-testid="record-audio"
+            aria-label="Sprachnachricht aufnehmen"
+            title="Zum Aufnehmen gedrückt halten"
+            :disabled="isGenerating"
+            @pointerdown="startAudioRecording"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="9" y="3" width="6" height="11" rx="3" />
+              <path d="M5 11a7 7 0 0 0 14 0M12 18v3M8 21h8" />
+            </svg>
+          </button>
 
 
           <button
@@ -539,6 +688,10 @@ function handleInputKeydown(event: KeyboardEvent) {
   text-align: right;
 }
 
+.message-audio .message-content {
+  color: #4b5563;
+}
+
 .message-assistant {
   text-align: left;
 }
@@ -621,6 +774,17 @@ function handleInputKeydown(event: KeyboardEvent) {
 .error-message {
   margin-right: auto;
   color: #a00000;
+}
+
+.recording-status {
+  color: #a00000;
+  font-size: 0.9rem;
+}
+
+.audio-record-button--recording {
+  border-color: #b91c1c;
+  background: #fee2e2;
+  color: #b91c1c;
 }
 
 </style>

@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { streamChatMessage } from "../../frontend/src/services/backend";
+import {
+  abortAudioRecording,
+  startAudioRecording,
+  streamAudioResponse,
+  streamChatMessage,
+} from "../../frontend/src/services/backend";
 
 function createStreamingResponse(parts: string[]): Response {
   const encoder = new TextEncoder();
@@ -39,7 +44,7 @@ describe("streamChatMessage", () => {
     const chunks: string[] = [];
 
     await streamChatMessage(
-      "Hallo",
+      [{ role: "user", content: "Hallo" }],
       {
         onChunk: (text) => chunks.push(text),
       },
@@ -51,7 +56,9 @@ describe("streamChatMessage", () => {
       "http://127.0.0.1:8095/api/v1/chat",
       expect.objectContaining({
         method: "POST",
-        body: JSON.stringify({ message: "Hallo" }),
+        body: JSON.stringify({
+          messages: [{ role: "user", content: "Hallo" }],
+        }),
       }),
     );
   });
@@ -65,7 +72,7 @@ describe("streamChatMessage", () => {
 
     await expect(
       streamChatMessage(
-        "Hallo",
+        [{ role: "user", content: "Hallo" }],
         {
           onChunk: () => {},
         },
@@ -83,12 +90,42 @@ describe("streamChatMessage", () => {
 
     await expect(
       streamChatMessage(
-        "Hallo",
+        [{ role: "user", content: "Hallo" }],
         {
           onChunk: () => {},
         },
         new AbortController().signal,
       ),
     ).rejects.toThrow("Chat stream ended without done event");
+  });
+
+  it("controls capture and streams audio responses with context", async () => {
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(createStreamingResponse([
+        'event: chunk\ndata: {"text": "Hallo"}\n\n',
+        "event: done\ndata: {}\n\n",
+      ]))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+
+    await startAudioRecording();
+    const chunks: string[] = [];
+    await streamAudioResponse(
+      [{ role: "user", content: "Kontext" }],
+      { onChunk: (text) => chunks.push(text) },
+      new AbortController().signal,
+    );
+    await abortAudioRecording();
+
+    expect(chunks).toEqual(["Hallo"]);
+    expect(fetch).toHaveBeenNthCalledWith(
+      2,
+      "http://127.0.0.1:8095/api/v1/audio/recording/stop",
+      expect.objectContaining({
+        body: JSON.stringify({
+          messages: [{ role: "user", content: "Kontext" }],
+        }),
+      }),
+    );
   });
 });

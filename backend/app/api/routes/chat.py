@@ -25,11 +25,11 @@ def format_sse_event(event: str, data: dict[str, str]) -> str:
 
 async def stream_chat_response(
     service: ChatService,
-    message: str,
+    messages: list[dict[str, str]],
 ) -> AsyncIterator[str]:
     """Translate chat-service chunks into the Avalo SSE protocol."""
     try:
-        async for chunk in service.stream_response(message):
+        async for chunk in service.stream_response(messages):
             yield format_sse_event("chunk", {"text": chunk})
     except RuntimeError:
         yield format_sse_event("error", {})
@@ -44,8 +44,9 @@ async def create_chat_response(
     service: ChatService = Depends(get_chat_service),
 ) -> StreamingResponse:
     """Stream one text-chat response as Avalo SSE events."""
+    messages = [message.model_dump() for message in request.messages]
     return StreamingResponse(
-        stream_chat_response(service, request.message),
+        stream_chat_response(service, messages),
         media_type="text/event-stream",
     )
 

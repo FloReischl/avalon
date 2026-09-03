@@ -13,8 +13,20 @@ class HealthResponse(BaseModel):
 
 
 class ChatRequest(BaseModel):
-    """A single text-chat input."""
+    """Conversation context including the current text-chat input."""
 
-    message: str = Field(min_length=1)
+    messages: list["ConversationMessage"] = Field(min_length=1)
 
+
+class ConversationMessage(BaseModel):
+    """One previous plain-text conversation message."""
+
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1)
+
+
+class AudioResponseRequest(BaseModel):
+    """Conversation context accompanying a completed audio turn."""
+
+    messages: list[ConversationMessage] = Field(default_factory=list)
 

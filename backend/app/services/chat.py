@@ -11,6 +11,9 @@ class ChatService:
     def __init__(self, runtime: ModelRuntime) -> None:
         self._runtime = runtime
 
-    def stream_response(self, message: str) -> AsyncIterator[str]:
-        """Stream a response for one text-chat input."""
-        return self._runtime.generate_text_stream(message)
+    def stream_response(
+        self,
+        messages: list[dict[str, str]],
+    ) -> AsyncIterator[str]:
+        """Stream a response for one text-chat turn with conversation context."""
+        return self._runtime.generate_text_stream(messages)

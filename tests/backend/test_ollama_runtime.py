@@ -114,21 +114,26 @@ async def test_generate_text_raises_runtime_error_for_invalid_response(
 
 
 @pytest.mark.asyncio
-async def test_generate_text_stream_returns_chunks_in_order(
+async def test_generate_text_stream_includes_context_and_returns_chunks_in_order(
     httpx_mock: HTTPXMock,
 ) -> None:
+    messages = [
+        {"role": "user", "content": "Mein Name ist Flo."},
+        {"role": "assistant", "content": "Hallo Flo."},
+        {"role": "user", "content": "Wie heiße ich?"},
+    ]
     httpx_mock.add_response(
         method="POST",
-        url=f"http://{settings.ollama_host}/api/generate",
+        url=f"http://{settings.ollama_host}/v1/chat/completions",
         match_json={
             "model": settings.ollama_model,
-            "prompt": "Hallo",
+            "messages": messages,
             "stream": True,
         },
         content=(
-            b'{"response":"Hallo "}\n'
-            b'{"response":"Flo"}\n'
-            b'{"response":"","done":true}\n'
+            b'data: {"choices":[{"delta":{"content":"Du "}}]}\n\n'
+            b'data: {"choices":[{"delta":{"content":"heisst Flo."}}]}\n\n'
+            b"data: [DONE]\n\n"
         ),
     )
 
@@ -136,23 +141,25 @@ async def test_generate_text_stream_returns_chunks_in_order(
 
     chunks = [
         chunk
-        async for chunk in runtime.generate_text_stream("Hallo")
+        async for chunk in runtime.generate_text_stream(messages)
     ]
 
-    assert chunks == ["Hallo ", "Flo"]
+    assert chunks == ["Du ", "heisst Flo."]
 
 
 @pytest.mark.asyncio
 async def test_generate_text_stream_skips_empty_chunks(
     httpx_mock: HTTPXMock,
 ) -> None:
+    messages = [{"role": "user", "content": "Hallo"}]
     httpx_mock.add_response(
         method="POST",
-        url=f"http://{settings.ollama_host}/api/generate",
+        url=f"http://{settings.ollama_host}/v1/chat/completions",
         content=(
-            b'{"response":""}\n'
-            b'{"response":"Hallo"}\n'
-            b'{"response":""}\n'
+            b'data: {"choices":[{"delta":{"content":""}}]}\n\n'
+            b'data: {"choices":[{"delta":{"content":"Hallo"}}]}\n\n'
+            b'data: {"choices":[{"delta":{"content":""}}]}\n\n'
+            b"data: [DONE]\n\n"
         ),
     )
 
@@ -160,7 +167,7 @@ async def test_generate_text_stream_skips_empty_chunks(
 
     chunks = [
         chunk
-        async for chunk in runtime.generate_text_stream("Hallo")
+        async for chunk in runtime.generate_text_stream(messages)
     ]
 
     assert chunks == ["Hallo"]
@@ -170,10 +177,13 @@ async def test_generate_text_stream_skips_empty_chunks(
 async def test_generate_text_stream_raises_runtime_error_for_invalid_chunk(
     httpx_mock: HTTPXMock,
 ) -> None:
+    messages = [{"role": "user", "content": "Hallo"}]
     httpx_mock.add_response(
         method="POST",
-        url=f"http://{settings.ollama_host}/api/generate",
-        content=b'{"response":42}\n',
+        url=f"http://{settings.ollama_host}/v1/chat/completions",
+        content=(
+            b'data: {"choices":[{"delta":{"content":42}}]}\n\n'
+        ),
     )
 
     runtime = OllamaRuntime()
@@ -181,7 +191,7 @@ async def test_generate_text_stream_raises_runtime_error_for_invalid_chunk(
     with pytest.raises(RuntimeError, match="Ollama error"):
         _ = [
             chunk
-            async for chunk in runtime.generate_text_stream("Hallo")
+            async for chunk in runtime.generate_text_stream(messages)
         ]
 
 
@@ -189,10 +199,11 @@ async def test_generate_text_stream_raises_runtime_error_for_invalid_chunk(
 async def test_generate_text_stream_raises_runtime_error_when_ollama_is_unreachable(
     httpx_mock: HTTPXMock,
 ) -> None:
+    messages = [{"role": "user", "content": "Hallo"}]
     httpx_mock.add_exception(
         ConnectError("connection failed"),
         method="POST",
-        url=f"http://{settings.ollama_host}/api/generate",
+        url=f"http://{settings.ollama_host}/v1/chat/completions",
     )
 
     runtime = OllamaRuntime()
@@ -200,7 +211,7 @@ async def test_generate_text_stream_raises_runtime_error_when_ollama_is_unreacha
     with pytest.raises(RuntimeError, match="Ollama error"):
         _ = [
             chunk
-            async for chunk in runtime.generate_text_stream("Hallo")
+            async for chunk in runtime.generate_text_stream(messages)
         ]
 
 
@@ -217,7 +228,7 @@ async def test_generate_text_stream_closes_http_stream_when_cancelled(
             pass
 
         async def aiter_lines(self):
-            yield '{"response":"Hallo"}'
+            yield 'data: {"choices":[{"delta":{"content":"Hallo"}}]}'
             waiting.set()
             await asyncio.Event().wait()
 
@@ -248,7 +259,9 @@ async def test_generate_text_stream_closes_http_stream_when_cancelled(
     )
 
     runtime = OllamaRuntime()
-    stream = runtime.generate_text_stream("Hallo")
+    stream = runtime.generate_text_stream(
+        [{"role": "user", "content": "Hallo"}],
+    )
 
     assert await anext(stream) == "Hallo"
 
@@ -311,6 +324,57 @@ async def test_generate_from_audio_returns_response(
     result = await runtime.generate_from_audio(Path("tests/data/german-transcription.wav"))
 
     assert result == "Die Hauptstadt von Deutschland ist Berlin."
+
+
+@pytest.mark.asyncio
+async def test_generate_from_audio_stream_includes_context_and_yields_content(
+    httpx_mock: HTTPXMock,
+) -> None:
+    audio_data = Path("tests/data/german-transcription.wav").read_bytes()
+    audio_base64 = base64.b64encode(audio_data).decode("utf-8")
+    context = [{"role": "user", "content": "Mein Name ist Flo."}]
+    httpx_mock.add_response(
+        method="POST",
+        url=f"http://{settings.ollama_host}/v1/chat/completions",
+        match_json={
+            "model": settings.ollama_model,
+            "messages": [
+                *context,
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "Listen to the audio and respond in German.",
+                        },
+                        {
+                            "type": "input_audio",
+                            "input_audio": {
+                                "data": audio_base64,
+                                "format": "wav",
+                            },
+                        },
+                    ],
+                },
+            ],
+            "stream": True,
+        },
+        content=(
+            b'data: {"choices":[{"delta":{"content":"Hallo "}}]}\n\n'
+            b'data: {"choices":[{"delta":{"content":"Flo"}}]}\n\n'
+            b"data: [DONE]\n\n"
+        ),
+    )
+
+    chunks = [
+        chunk
+        async for chunk in OllamaRuntime().generate_from_audio_stream(
+            Path("tests/data/german-transcription.wav"),
+            context,
+        )
+    ]
+
+    assert chunks == ["Hallo ", "Flo"]
 
 
 @pytest.mark.asyncio

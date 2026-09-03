@@ -17,8 +17,11 @@ class FakeChatService:
         self._chunks = chunks or []
         self._error = error
 
-    async def stream_response(self, message: str) -> AsyncIterator[str]:
-        del message
+    async def stream_response(
+        self,
+        messages: list[dict[str, str]],
+    ) -> AsyncIterator[str]:
+        del messages
 
         for chunk in self._chunks:
             yield chunk
@@ -28,7 +31,7 @@ class FakeChatService:
 
 
 def post_chat(
-    message: str,
+    messages: list[dict[str, str]],
     service: FakeChatService | None = None,
 ):
     async def request_chat():
@@ -39,14 +42,14 @@ def post_chat(
 
         transport = ASGITransport(app=application)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            return await client.post("/api/v1/chat", json={"message": message})
+            return await client.post("/api/v1/chat", json={"messages": messages})
 
     return asyncio.run(request_chat())
 
 
 def test_chat_streams_chunks_and_done_event() -> None:
     response = post_chat(
-        "Hallo",
+        [{"role": "user", "content": "Hallo"}],
         FakeChatService(["Hallo ", "Flo"]),
     )
 
@@ -61,7 +64,7 @@ def test_chat_streams_chunks_and_done_event() -> None:
 
 def test_chat_streams_error_event_without_done() -> None:
     response = post_chat(
-        "Hallo",
+        [{"role": "user", "content": "Hallo"}],
         FakeChatService(
             ["Hallo"],
             RuntimeError("runtime failed"),
@@ -75,8 +78,8 @@ def test_chat_streams_error_event_without_done() -> None:
     )
 
 
-def test_chat_rejects_empty_message() -> None:
-    response = post_chat("")
+def test_chat_rejects_empty_messages() -> None:
+    response = post_chat([])
 
     assert response.status_code == 422
 
@@ -86,13 +89,19 @@ async def test_chat_stream_propagates_cancellation() -> None:
     started = asyncio.Event()
 
     class BlockingChatService:
-        async def stream_response(self, message: str) -> AsyncIterator[str]:
-            del message
+        async def stream_response(
+            self,
+            messages: list[dict[str, str]],
+        ) -> AsyncIterator[str]:
+            del messages
             yield "Hallo"
             started.set()
             await asyncio.Event().wait()
 
-    stream = stream_chat_response(BlockingChatService(), "Hallo")
+    stream = stream_chat_response(
+        BlockingChatService(),
+        [{"role": "user", "content": "Hallo"}],
+    )
 
     first_event = await anext(stream)
     assert first_event == 'event: chunk\ndata: {"text": "Hallo"}\n\n'

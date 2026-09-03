@@ -2,8 +2,14 @@ import { flushPromises, mount } from "@vue/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
+  abortAudioRecordingMock,
+  startAudioRecordingMock,
+  streamAudioResponseMock,
   streamChatMessageMock,
 } = vi.hoisted(() => ({
+  abortAudioRecordingMock: vi.fn(),
+  startAudioRecordingMock: vi.fn(),
+  streamAudioResponseMock: vi.fn(),
   streamChatMessageMock: vi.fn(),
 }));
 
@@ -14,6 +20,9 @@ vi.mock("../../frontend/src/services/backend", async (importOriginal) => {
 
   return {
     ...original,
+    abortAudioRecording: abortAudioRecordingMock,
+    startAudioRecording: startAudioRecordingMock,
+    streamAudioResponse: streamAudioResponseMock,
     streamChatMessage: streamChatMessageMock,
   };
 });
@@ -22,6 +31,11 @@ import ChatWindow from "../../frontend/src/ChatWindow.vue";
 
 describe("ChatWindow", () => {
   beforeEach(() => {
+    abortAudioRecordingMock.mockReset();
+    abortAudioRecordingMock.mockResolvedValue(undefined);
+    startAudioRecordingMock.mockReset();
+    startAudioRecordingMock.mockResolvedValue(undefined);
+    streamAudioResponseMock.mockReset();
     streamChatMessageMock.mockReset();
   });
 
@@ -39,6 +53,7 @@ describe("ChatWindow", () => {
     const newChatButton = wrapper.get('[data-testid="new-chat"]');
     const sendButton = wrapper.get('[data-testid="send-chat"]');
     const expandButton = wrapper.get('[data-testid="toggle-composer"]');
+    const audioButton = wrapper.get('[data-testid="record-audio"]');
 
     expect(newChatButton.attributes("aria-label")).toBe("Neuer Chat");
     expect(newChatButton.attributes("title")).toBe("Neuer Chat");
@@ -51,6 +66,85 @@ describe("ChatWindow", () => {
     expect(expandButton.attributes("aria-label")).toBe("Eingabe vergrößern");
     expect(expandButton.attributes("title")).toBe("Eingabe vergrößern");
     expect(expandButton.text()).toBe("");
+
+    expect(audioButton.attributes("aria-label")).toBe(
+      "Sprachnachricht aufnehmen",
+    );
+    expect(audioButton.attributes("title")).toBe(
+      "Zum Aufnehmen gedrückt halten",
+    );
+  });
+
+  it("records while held and renders the streamed audio response", async () => {
+    streamAudioResponseMock.mockImplementation(
+      async (_messages, handlers) => {
+        handlers.onChunk("**Hallo** ");
+        handlers.onChunk("Flo");
+      },
+    );
+    const wrapper = mount(ChatWindow);
+    const audioButton = wrapper.get('[data-testid="record-audio"]');
+
+    await audioButton.trigger("pointerdown", { button: 0 });
+    await flushPromises();
+
+    expect(startAudioRecordingMock).toHaveBeenCalledTimes(1);
+    expect(wrapper.get('[data-testid="recording-status"]').text()).toContain(
+      "30 s",
+    );
+
+    window.dispatchEvent(new Event("pointerup"));
+    await flushPromises();
+
+    expect(streamAudioResponseMock).toHaveBeenCalledWith(
+      [],
+      expect.any(Object),
+      expect.any(AbortSignal),
+    );
+    expect(wrapper.get('[data-testid="message-user"]').text()).toContain(
+      "🎤 Sprachnachricht",
+    );
+    expect(wrapper.get('[data-testid="message-user"]').classes()).toContain(
+      "message-audio",
+    );
+    expect(
+      wrapper.get('[data-testid="message-assistant"] strong').text(),
+    ).toBe("Hallo");
+    expect(wrapper.get('[data-testid="message-assistant"]').text()).toContain(
+      "Hallo Flo",
+    );
+  });
+
+  it("finishes a quick release after recording start completes", async () => {
+    let resolveStart: (() => void) | undefined;
+    startAudioRecordingMock.mockImplementation(
+      () => new Promise<void>((resolve) => {
+        resolveStart = resolve;
+      }),
+    );
+    streamAudioResponseMock.mockResolvedValue(undefined);
+
+    const wrapper = mount(ChatWindow);
+    const audioButton = wrapper.get('[data-testid="record-audio"]');
+
+    void audioButton.trigger("pointerdown", { button: 0 });
+    await flushPromises();
+
+    expect(startAudioRecordingMock).toHaveBeenCalledTimes(1);
+
+    window.dispatchEvent(new Event("pointerup"));
+    await flushPromises();
+
+    expect(streamAudioResponseMock).not.toHaveBeenCalled();
+
+    resolveStart?.();
+    await flushPromises();
+
+    expect(streamAudioResponseMock).toHaveBeenCalledTimes(1);
+    expect(abortAudioRecordingMock).not.toHaveBeenCalled();
+    expect(wrapper.find('[data-testid="recording-status"]').exists()).toBe(
+      false,
+    );
   });
 
   it("expands and collapses the composer without replacing its input", async () => {
@@ -141,7 +235,9 @@ describe("ChatWindow", () => {
     await flushPromises();
 
     expect(streamChatMessageMock).toHaveBeenCalledTimes(1);
-    expect(streamChatMessageMock.mock.calls[0][0]).toBe("Hallo");
+    expect(streamChatMessageMock.mock.calls[0][0]).toEqual([
+      { role: "user", content: "Hallo" },
+    ]);
     expect(wrapper.get('[data-testid="message-user"]').text()).toContain(
       "Hallo",
     );
@@ -322,9 +418,12 @@ describe("ChatWindow", () => {
     await flushPromises();
 
     expect(streamChatMessageMock).toHaveBeenCalledTimes(1);
-    expect(streamChatMessageMock.mock.calls[0][0]).toBe(
-      "Zeile 1\nZeile 2",
-    );
+    expect(streamChatMessageMock.mock.calls[0][0]).toEqual([
+      {
+        role: "user",
+        content: "Zeile 1\nZeile 2",
+      },
+    ]);
   });
 
   it("does not send with Shift+Enter", async () => {

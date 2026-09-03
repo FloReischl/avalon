@@ -8,10 +8,12 @@ import {
 describe("useTransientChat", () => {
   it("adds the user turn and streams the assistant response", async () => {
     const streamer: ChatStreamer = async (
-      message,
+      messages,
       handlers,
     ) => {
-      expect(message).toBe("Hallo");
+      expect(messages).toEqual([
+        { role: "user", content: "Hallo" },
+      ]);
       handlers.onChunk("Hallo ");
       handlers.onChunk("Flo");
     };
@@ -93,6 +95,43 @@ describe("useTransientChat", () => {
     expect(chat.isGenerating.value).toBe(false);
     expect(chat.errorMessage.value).toBe(
       "Antwort konnte nicht erzeugt werden.",
+    );
+  });
+
+  it("keeps an audio message and streams a response with prior context", async () => {
+    const audioStreamer = vi.fn(async (_messages, handlers) => {
+      handlers.onChunk("**Hallo** ");
+      handlers.onChunk("Flo");
+    });
+    const chat = useTransientChat(undefined, audioStreamer);
+    chat.messages.value.push(
+      { role: "user", content: "Mein Name ist Flo." },
+      { role: "assistant", content: "Hallo Flo." },
+    );
+
+    await chat.sendAudio();
+
+    expect(audioStreamer.mock.calls[0][0]).toEqual([
+      { role: "user", content: "Mein Name ist Flo." },
+      { role: "assistant", content: "Hallo Flo." },
+    ]);
+    expect(chat.messages.value.slice(-2)).toEqual([
+      { role: "user", content: "🎤 Sprachnachricht", kind: "audio" },
+      { role: "assistant", content: "**Hallo** Flo" },
+    ]);
+  });
+
+  it("keeps an audio message when response generation fails", async () => {
+    const audioStreamer = vi.fn().mockRejectedValue(new Error("failed"));
+    const chat = useTransientChat(undefined, audioStreamer);
+
+    await chat.sendAudio();
+
+    expect(chat.messages.value).toEqual([
+      { role: "user", content: "🎤 Sprachnachricht", kind: "audio" },
+    ]);
+    expect(chat.errorMessage.value).toBe(
+      "Sprachantwort konnte nicht erzeugt werden.",
     );
   });
 });
