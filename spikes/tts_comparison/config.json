@@ -1,0 +1,59 @@
+{
+  "output_dir": "artifacts/tts-spike",
+  "device": "auto",
+  "engines": {
+    "piper": {
+      "voice": "de_DE-kerstin-low",
+      "speaker": "Kerstin (female)",
+      "license": "Voice-specific license: documented in the downloaded MODEL_CARD; Piper voices repository: MIT",
+      "source_revision": "c9f71aea53a7ebfe5934f33aa28016141392c8cf",
+      "files": [
+        {
+          "name": "de_DE-kerstin-low.onnx",
+          "url": "https://huggingface.co/rhasspy/piper-voices/resolve/c9f71aea53a7ebfe5934f33aa28016141392c8cf/de/de_DE/kerstin/low/de_DE-kerstin-low.onnx"
+        },
+        {
+          "name": "de_DE-kerstin-low.onnx.json",
+          "url": "https://huggingface.co/rhasspy/piper-voices/resolve/c9f71aea53a7ebfe5934f33aa28016141392c8cf/de/de_DE/kerstin/low/de_DE-kerstin-low.onnx.json"
+        },
+        {
+          "name": "MODEL_CARD",
+          "url": "https://huggingface.co/rhasspy/piper-voices/resolve/c9f71aea53a7ebfe5934f33aa28016141392c8cf/de/de_DE/kerstin/low/MODEL_CARD"
+        }
+      ]
+    },
+    "kokoro_victoria": {
+      "voice": "kikiri-german-victoria",
+      "speaker": "Victoria Asztaller (female, synthetic)",
+      "license": "Apache-2.0",
+      "source_revision": "ce81e20",
+      "files": [
+        {
+          "name": "kikiri_german_victoria_ep10.pth",
+          "url": "https://huggingface.co/kikiri-tts/kikiri-german-victoria/resolve/ce81e20/kikiri_german_victoria_ep10.pth"
+        },
+        {
+          "name": "victoria.pt",
+          "url": "https://huggingface.co/kikiri-tts/kikiri-german-victoria/resolve/ce81e20/voices/victoria.pt"
+        },
+        {
+          "name": "config.json",
+          "url": "https://huggingface.co/hexgrad/Kokoro-82M/resolve/main/config.json"
+        }
+      ],
+      "base_model": "hexgrad/Kokoro-82M (config revision main at download time)"
+    },
+    "kokoro_kerstin": {
+      "voice": "df_kerstin",
+      "speaker": "Kerstin (female; local voicepack provenance not supplied)",
+      "license": "unknown; local artifact supplied by Flo",
+      "source_revision": "not available",
+      "files": [
+        {
+          "name": "df_kerstin.pt",
+          "local_path": "artifacts/tts-spike/models/kokoro/df_kerstin.pt"
+        }
+      ]
+    }
+  }
+}

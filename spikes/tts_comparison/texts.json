@@ -1,0 +1,19 @@
+{
+  "texts": [
+    {
+      "id": "news",
+      "label": "Nachrichtentext",
+      "text": "Guten Morgen, Flo. Für heute ist am Vormittag leichter Regen vorhergesagt. Dein nächster Termin beginnt um zehn Uhr dreißig. Ich erinnere dich außerdem daran, dass die Einkaufsliste noch offen ist."
+    },
+    {
+      "id": "suspense",
+      "label": "Spannender Text",
+      "text": "Hinter der Tür war es still. Zu still. Als sie die Klinke berührte, flackerte das Licht im Flur ein einziges Mal auf. Dann hörte sie direkt hinter sich ein leises, langsames Atmen."
+    },
+    {
+      "id": "erotic",
+      "label": "Erotischer Text",
+      "text": "Langsam…  \ndringt er in sie ein.\nImmer tiefer.\n\nSie bebt am ganzen Körper.\n\n„Ja… Flo… tiefer…\nnimm mich.\nIch bin dein.“"
+    }
+  ]
+}

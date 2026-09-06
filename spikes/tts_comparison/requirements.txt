@@ -1,0 +1,4 @@
+# Isolated dependencies for the local TTS comparison spike.
+piper-tts==1.3.0
+misaki @ git+https://github.com/semidark/misaki.git@9cda9268309160120fffee216280a9ca83ac4644
+kokoro-deutsch @ git+https://github.com/semidark/kikiri-tts.git@a12d0410e89841e6f3c09958ae5c072f90ae1d49

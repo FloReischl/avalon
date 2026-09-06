@@ -26,5 +26,9 @@ src-tauri/target/debug/
 *.log
 .aider*
 
+# Reproducible, locally generated TTS comparison outputs and downloaded models
+artifacts/tts-spike/
+:memory:.ses
+
 # docs
 scripts/data/
