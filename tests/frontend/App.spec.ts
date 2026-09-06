@@ -93,7 +93,7 @@ describe("App", () => {
     expect(wrapper.find('[data-testid="active-panel"]').exists()).toBe(false);
   });
 
-  it("keeps Frieda visible while the backend is starting", async () => {
+  it("keeps Avatar visible while the backend is starting", async () => {
     getBackendSnapshotMock.mockResolvedValue({
       status: "waiting-for-health",
       logs: ["Waiting for backend health endpoint"],
@@ -108,7 +108,7 @@ describe("App", () => {
     expect(wrapper.get('[data-testid="startup-panel"]').exists()).toBe(true);
   });
 
-  it("opens the chat window when Frieda is double-clicked", async () => {
+  it("opens the chat window when Avatar is double-clicked", async () => {
     getBackendSnapshotMock.mockResolvedValue({
       status: "ready",
       logs: ["Backend ready"],
@@ -137,7 +137,7 @@ describe("App", () => {
     expect(showChatWindowMock).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps double-click working after Frieda has been dragged", async () => {
+  it("keeps double-click working after Avatar has been dragged", async () => {
     getBackendSnapshotMock.mockResolvedValue({
       status: "ready",
       logs: ["Backend ready"],

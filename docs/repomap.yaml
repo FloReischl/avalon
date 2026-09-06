@@ -91,7 +91,7 @@ architecture:
       - text and audio turns share the same transient conversation context
       - prior audio UI placeholders are excluded from model context
       - active text turn can be aborted and rolled back client-side
-      - failed or aborted audio response keeps the visible audio user contribution
+      - failed or aborted audio response keeps avatar visible audio user contribution
 
 key_flows:
 
@@ -509,11 +509,18 @@ modules:
   frontend/src/main.ts:
     role: Vue application bootstrap and Tauri window-root selector
     behavior:
+      - initialize active avatar configuration before mounting Vue
       - mounts ChatWindow.vue for Tauri window label chat
       - mounts App.vue otherwise
+      - sets avatar-window title from active avatar name
+      - sets chat-window title to "Chat Window"
       - preserves browser development without requiring a Tauri runtime
+      - logs bootstrap failure and leaves the app unmounted
+    dependencies:
+      - frontend/src/avatar.ts
     relevant_to:
       - frontend startup
+      - avatar configuration
       - desktop window composition
       - App.vue
       - ChatWindow.vue
@@ -528,23 +535,28 @@ modules:
       - avatar drag interaction
       - avatar push-to-talk UI
       - audio recording countdown
+      - application exit
       - chat-window opening
       - alpha-based avatar hit detection
       - native input-shape generation
       - frontend tests
     dependencies:
+      - frontend/src/avatar.ts
+      - frontend/src/services/appLifecycle.ts
       - frontend/src/services/backendLifecycle.ts
       - frontend/src/services/inputShape.ts
       - frontend/src/services/chatWindow.ts
       - frontend/src/services/windowDrag.ts
-      - frontend/src/assets/avatars/frieda1/standard.png
     interaction:
+      - renders active avatar image and name from avatar configuration
       - avatar drag starts only after pointer movement crosses a small threshold
       - avatar double-click opens the chat window
       - double-click remains functional after moving the avatar
       - audio button enters recording UI state while pointer is held
       - recording UI resets on pointer release or cancellation
       - recording UI aborts after 30 seconds
+      - exit button terminates the Avalo application
+      - audio and exit buttons are included in native X11 input regions
       - current frontend audio interaction does not capture microphone data
 
   frontend/src/ChatWindow.vue:
@@ -582,8 +594,42 @@ modules:
       - streaming interaction
       - frontend chat tests
     dependencies:
+      - frontend/src/avatar.ts
       - frontend/src/composables/useTransientChat.ts
       - frontend/src/components/MarkdownMessage.vue
+
+  frontend/src/avatar.ts:
+    role: frontend active-avatar configuration loader
+    responsibilities:
+      - define current source-selected avatar id
+      - load avatar.yaml and standard.png through Vite asset discovery
+      - parse avatar.yaml with YAML parser
+      - require non-empty avatar name
+      - fail when required avatar configuration or image is missing
+      - expose initialized active avatar to frontend components
+    current_scope:
+      - only avatar name is consumed
+      - persona and instructions remain unused
+      - current active avatar is selected in source code
+    dependencies:
+      - yaml
+      - frontend/src/assets/avatars/frieda1/avatar.yaml
+      - frontend/src/assets/avatars/frieda1/standard.png
+    relevant_to:
+      - frontend startup
+      - avatar identity
+      - avatar rendering
+      - window title
+      - assistant role label
+
+  frontend/src/services/appLifecycle.ts:
+    role: frontend Tauri boundary for application lifecycle
+    responsibilities:
+      - invoke native application-exit command
+    consumers:
+      - frontend/src/App.vue
+    native_counterpart:
+      - src-tauri/src/main.rs
 
   frontend/src/services/chatWindow.ts:
     role: frontend Tauri boundary for chat-window lifecycle
@@ -693,8 +739,19 @@ modules:
     native_counterpart:
       - src-tauri/src/input_shape.rs
 
+  frontend/src/assets/avatars/frieda1/avatar.yaml:
+    role: current avatar identity and future persona configuration
+    current_usage:
+      - name
+    currently_unused:
+      - persona
+      - instructions
+    relevant_to:
+      - avatar identity
+      - frontend startup
+
   frontend/src/assets/avatars/frieda1/standard.png:
-    role: current default Frieda avatar
+    role: current default avatar image
     relevant_to:
       - companion rendering
       - alpha-derived X11 input shape
@@ -706,12 +763,14 @@ modules:
       - expose backend snapshot command
       - expose native input-region command
       - expose chat-window show/focus command
+      - expose explicit application-exit command
       - exit application when avatar window is closed
       - hide chat window instead of destroying it on close
       - stop owned backend on application exit
     dependencies:
       - src-tauri/src/backend.rs
       - src-tauri/src/input_shape.rs
+
 
   src-tauri/tauri.conf.json:
     role: Tauri desktop window configuration
@@ -867,7 +926,7 @@ tests:
     covers:
       - backend startup lifecycle integration boundary
       - startup diagnostics rendering
-      - Frieda avatar visibility during startup and ready state
+      - avatar visibility during startup and ready state
       - avatar interaction behavior
       - chat opening on avatar double-click
       - avatar drag threshold behavior
@@ -1094,7 +1153,7 @@ known_state:
     - Tauri transparent desktop shell
     - Tauri-managed backend process lifecycle
     - buffered backend startup diagnostics
-    - Frieda avatar drag with movement threshold
+    - avatar drag with movement threshold
     - avatar double-click opens and focuses chat window
     - separate hidden-at-startup native chat window
     - chat-window close hides rather than destroys the window
@@ -1113,6 +1172,9 @@ known_state:
     - expandable chat composer preserving textarea state
     - role-specific message actions for user and assistant messages
     - multi-format message clipboard copy with Markdown plain text and rendered HTML
+    - source-selected avatar identity loaded from avatar.yaml
+    - avatar name used for avatar window title and assistant role label
+    - explicit avatar-window Exit action using native application shutdown
     - avatar push-to-talk UI state with 30-second countdown and abort
     - backend-local PipeWire push-to-talk capture
     - audio recording HTTP control API
