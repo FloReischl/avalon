@@ -34,6 +34,11 @@ fn show_chat_window(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+fn exit_app(app: tauri::AppHandle) {
+    app.exit(0);
+}
+
 fn main() {
     let backend = BackendProcess::default();
 
@@ -43,10 +48,10 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             get_backend_snapshot,
             set_window_input_regions,
-            show_chat_window
+            show_chat_window,
+            exit_app
         ])
         .setup(move |app| {
-
             backend
                 .start(app.handle().clone())
                 .map_err(std::io::Error::other)?;

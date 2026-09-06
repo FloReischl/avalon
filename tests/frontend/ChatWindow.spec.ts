@@ -47,6 +47,14 @@ describe("ChatWindow", () => {
     ).toContain("width: 280px");
   });
 
+  it("renders the generic composer placeholder", () => {
+    const wrapper = mount(ChatWindow);
+
+    expect(
+      wrapper.get('[data-testid="chat-input"]').attributes("placeholder"),
+    ).toBe("Dein Prompt hier");
+  });
+
   it("renders composer actions as labelled icon buttons", () => {
     const wrapper = mount(ChatWindow);
 

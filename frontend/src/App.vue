@@ -7,7 +7,7 @@ import {
 } from "vue";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 
-import friedaStandard from "./assets/avatars/frieda2/standard.png";
+import { getActiveAvatar } from "./avatar";
 import {
   getBackendSnapshot,
   listenToBackendLifecycle,
@@ -16,11 +16,13 @@ import {
   setWindowInputRegions,
   type InputRegionRect,
 } from "./services/inputShape";
+import { exitAvalo } from "./services/appLifecycle";
 import { showChatWindow } from "./services/chatWindow";
 import { startAvatarWindowDrag } from "./services/windowDrag";
 
 type AudioState = "idle" | "recording";
 
+const avatar = getActiveAvatar();
 const MAX_AUDIO_SECONDS = 30;
 const AVATAR_DRAG_THRESHOLD_PX = 5;
 
@@ -30,6 +32,7 @@ const audioState = ref<AudioState>("idle");
 const remainingRecordingSeconds = ref(MAX_AUDIO_SECONDS);
 const avatarImage = useTemplateRef<HTMLImageElement>("avatarImage");
 const audioButton = useTemplateRef<HTMLButtonElement>("audioButton");
+const exitButton = useTemplateRef<HTMLButtonElement>("exitButton");
 
 let avatarPointerStart: { x: number; y: number } | undefined;
 let recordingTimer: number | undefined;
@@ -194,8 +197,11 @@ async function applyAvatarInputShape() {
     activeRuns = nextRuns;
   }
 
-  const button = audioButton.value;
-  if (button) {
+  for (const button of [audioButton.value, exitButton.value]) {
+    if (!button) {
+      continue;
+    }
+
     const buttonBounds = button.getBoundingClientRect();
 
     if (buttonBounds.width > 0 && buttonBounds.height > 0) {
@@ -262,6 +268,14 @@ async function handleAvatarDoubleClick() {
   }
 }
 
+async function handleExit() {
+  try {
+    await exitAvalo();
+  } catch (error) {
+    console.error("[app] failed to exit Avalo", error);
+  }
+}
+
 onMounted(async () => {
   try {
     unlisten = await listenToBackendLifecycle({
@@ -325,36 +339,59 @@ onBeforeUnmount(() => {
       <img
         ref="avatarImage"
         class="avatar"
-        :src="friedaStandard"
-        alt="Frieda"
+        :src="avatar.imageUrl"
+        :alt="avatar.name"
         data-testid="avatar"
         @load="initializeAvatar"
       />
     </div>
 
     <div class="audio-control">
-      <button
-        ref="audioButton"
-        class="audio-button"
-        :class="{ 'audio-button--recording': audioState === 'recording' }"
-        type="button"
-        aria-label="Push to talk"
-        :aria-pressed="audioState === 'recording'"
-        data-testid="audio-button"
-        @pointerdown="startAudioRecording"
-        @pointerup="finishAudioRecording"
-        @pointercancel="abortAudioRecording"
-      >
-        <svg
-          class="audio-icon"
-          viewBox="0 0 24 24"
-          aria-hidden="true"
+      <div class="avatar-control-buttons">
+        <button
+          ref="audioButton"
+          class="audio-button"
+          :class="{ 'audio-button--recording': audioState === 'recording' }"
+          type="button"
+          aria-label="Push to talk"
+          :aria-pressed="audioState === 'recording'"
+          data-testid="audio-button"
+          @pointerdown="startAudioRecording"
+          @pointerup="finishAudioRecording"
+          @pointercancel="abortAudioRecording"
         >
-          <path
-            d="M12 15a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21H8v2h8v-2h-3v-2.08A7 7 0 0 0 19 12h-2Z"
-          />
-        </svg>
-      </button>
+          <svg
+            class="audio-icon"
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+          >
+            <path
+              d="M12 15a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21H8v2h8v-2h-3v-2.08A7 7 0 0 0 19 12h-2Z"
+            />
+          </svg>
+        </button>
+
+        <button
+          ref="exitButton"
+          class="audio-button"
+          type="button"
+          aria-label="Exit"
+          title="Exit"
+          data-testid="exit-button"
+          @click="handleExit"
+        >
+          <svg
+            class="audio-icon"
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+          >
+            <path
+              d="M10 5H5v14h5M14 8l4 4-4 4M8 12h10"
+            />
+          </svg>
+        </button>
+      </div>
+
       <span
         v-if="audioState === 'recording'"
         class="audio-countdown"
@@ -362,7 +399,6 @@ onBeforeUnmount(() => {
       >
         {{ remainingRecordingSeconds }}
       </span>
-
     </div>
 
     <span

@@ -116,6 +116,13 @@ body {
   width: min(42vw, 24rem);
 }
 
+.avatar-control-buttons {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+}
+
 .audio-button {
   display: grid;
   width: 3rem;

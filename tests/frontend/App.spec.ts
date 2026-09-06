@@ -2,11 +2,13 @@ import { flushPromises, mount } from "@vue/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
+  exitAvaloMock,
   getBackendSnapshotMock,
   listenToBackendLifecycleMock,
   showChatWindowMock,
   startDraggingMock,
 } = vi.hoisted(() => ({
+  exitAvaloMock: vi.fn(),
   getBackendSnapshotMock: vi.fn(),
   listenToBackendLifecycleMock: vi.fn(),
   showChatWindowMock: vi.fn(),
@@ -22,6 +24,10 @@ vi.mock("../../frontend/src/services/chatWindow", () => ({
   showChatWindow: showChatWindowMock,
 }));
 
+vi.mock("../../frontend/src/services/appLifecycle", () => ({
+  exitAvalo: exitAvaloMock,
+}));
+
 vi.mock("../../frontend/src/services/windowDrag", () => ({
   startAvatarWindowDrag: startDraggingMock,
 }));
@@ -30,10 +36,12 @@ import App from "../../frontend/src/App.vue";
 
 describe("App", () => {
   beforeEach(() => {
+    exitAvaloMock.mockReset();
     getBackendSnapshotMock.mockReset();
     listenToBackendLifecycleMock.mockReset();
     showChatWindowMock.mockReset();
     startDraggingMock.mockReset();
+    exitAvaloMock.mockResolvedValue(undefined);
     listenToBackendLifecycleMock.mockResolvedValue(() => {});
     showChatWindowMock.mockResolvedValue(undefined);
     startDraggingMock.mockResolvedValue(undefined);
@@ -175,6 +183,25 @@ describe("App", () => {
     await avatarRegion.trigger("dblclick");
 
     expect(showChatWindowMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("exits Avalo from the exit button", async () => {
+    getBackendSnapshotMock.mockResolvedValue({
+      status: "ready",
+      logs: ["Backend ready"],
+    });
+
+    const wrapper = mount(App);
+    await flushPromises();
+
+    const exitButton = wrapper.get('[data-testid="exit-button"]');
+
+    expect(exitButton.attributes("aria-label")).toBe("Exit");
+    expect(exitButton.attributes("title")).toBe("Exit");
+
+    await exitButton.trigger("click");
+
+    expect(exitAvaloMock).toHaveBeenCalledTimes(1);
   });
 
   it("shows push-to-talk recording state only while the audio button is held", async () => {

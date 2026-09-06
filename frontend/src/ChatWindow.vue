@@ -3,11 +3,14 @@ import { nextTick, onBeforeUnmount, ref, watch } from "vue";
 
 import MarkdownMessage from "./components/MarkdownMessage.vue";
 
+import { getActiveAvatar } from "./avatar";
 import { useTransientChat } from "./composables/useTransientChat";
 import {
   abortAudioRecording as abortBackendAudioRecording,
   startAudioRecording as startBackendAudioRecording,
 } from "./services/backend";
+
+const avatar = getActiveAvatar();
 
 const {
   messages,
@@ -332,7 +335,7 @@ function handleInputKeydown(event: KeyboardEvent) {
           :data-testid="`message-${message.role}`"
         >
           <div class="message-role">
-            {{ message.role === "user" ? "Du" : "Frieda" }}
+            {{ message.role === "user" ? "Du" : avatar.name }}
           </div>
           <MarkdownMessage
             :ref="(instance) => setMessageRenderer(index, instance)"
@@ -453,7 +456,7 @@ function handleInputKeydown(event: KeyboardEvent) {
             v-model="input"
             data-testid="chat-input"
             aria-label="Nachricht"
-            placeholder="Nachricht an Frieda"
+            placeholder="Dein Prompt hier"
             :disabled="isGenerating"
             rows="3"
             @keydown="handleInputKeydown"
