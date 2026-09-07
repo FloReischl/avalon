@@ -15,6 +15,10 @@ class Settings:
     audio_max_seconds: int = 30
     ollama_host: str = "127.0.0.1:11434"
     ollama_model: str = "gemma4:e4b-it-q4_K_M"
+    tts_device: str = "auto"
+    tts_reference_audio: str = "data/chatterbox-frieda1.wav"
+    tts_model_revision: str = "5bb1f6ee58e50c3b8d408bc82a6d3740c2db6e18"
+
 
 
 settings = Settings()
