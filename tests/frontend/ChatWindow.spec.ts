@@ -435,6 +435,9 @@ describe("ChatWindow", () => {
       expect(audios).toHaveLength(2);
       expect(audios[0].pause).toHaveBeenCalledTimes(1);
       expect(audios[1].play).toHaveBeenCalledTimes(1);
+      expect(notifyTtsPlaybackEndedMock).toHaveBeenCalledWith(
+        "playback-1",
+      );
     } finally {
       vi.unstubAllGlobals();
     }

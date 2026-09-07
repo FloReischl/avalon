@@ -160,7 +160,9 @@ const messageRenderers = new Map<number, MarkdownMessageInstance>();
 let ttsAbortController: AbortController | undefined;
 let ttsAudio: HTMLAudioElement | undefined;
 let ttsObjectUrl: string | undefined;
+let ttsPlaybackId: string | undefined;
 let ttsRequestToken = 0;
+
 
 function cleanupTtsAudio() {
   if (ttsAudio) {
@@ -181,7 +183,13 @@ function replaceCurrentTts() {
   ttsAbortController?.abort();
   ttsAbortController = undefined;
   cleanupTtsAudio();
+
+  if (ttsPlaybackId) {
+    void notifyTtsPlaybackEnded(ttsPlaybackId);
+    ttsPlaybackId = undefined;
+  }
 }
+
 
 async function readMessageAloud(index: number) {
   const text = messageRenderers.get(index)?.getPlainText().trim() ?? "";
@@ -210,8 +218,10 @@ async function readMessageAloud(index: number) {
     }
 
     playbackId = tts.playbackId;
+    ttsPlaybackId = tts.playbackId;
 
     // fetch() has received the HTTP response headers: synthesis is complete
+
     // and WAV transfer has begun.
     isTtsSynthesizing.value = false;
 
@@ -231,18 +241,22 @@ async function readMessageAloud(index: number) {
       }
 
       cleanupTtsAudio();
+      ttsPlaybackId = undefined;
       void notifyTtsPlaybackEnded(tts.playbackId);
     };
 
     audio.onerror = () => {
+
       if (requestToken !== ttsRequestToken) {
         return;
       }
 
       cleanupTtsAudio();
+      ttsPlaybackId = undefined;
       errorMessage.value = "Vorlesen fehlgeschlagen.";
       void notifyTtsPlaybackEnded(tts.playbackId);
     };
+
 
     await audio.play();
   } catch (error) {
