@@ -30,3 +30,16 @@ class AudioResponseRequest(BaseModel):
 
     messages: list[ConversationMessage] = Field(default_factory=list)
 
+
+class TtsRequest(BaseModel):
+    """Plain text to synthesize as local speech."""
+
+    text: str = Field(min_length=1)
+
+
+class TtsPlaybackEndedRequest(BaseModel):
+    """Identify the playback that has stopped in the frontend."""
+
+    playback_id: str = Field(min_length=1)
+
+

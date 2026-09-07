@@ -18,6 +18,8 @@ class Settings:
     tts_device: str = "auto"
     tts_reference_audio: str = "data/chatterbox-frieda1.wav"
     tts_model_revision: str = "5bb1f6ee58e50c3b8d408bc82a6d3740c2db6e18"
+    tts_idle_unload_seconds: float = 300.0
+
 
 
 

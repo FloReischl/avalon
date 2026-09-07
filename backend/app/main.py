@@ -17,6 +17,8 @@ def create_app() -> FastAPI:
         allow_credentials=False,
         allow_methods=["GET", "POST"],
         allow_headers=["Content-Type"],
+        expose_headers=["X-Avalo-TTS-Playback-ID"],
+
     )
     application.include_router(api_router)
     return application
