@@ -2,10 +2,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   abortAudioRecording,
+  notifyTtsPlaybackEnded,
   startAudioRecording,
   streamAudioResponse,
   streamChatMessage,
+  synthesizeSpeech,
 } from "../../frontend/src/services/backend";
+
 
 function createStreamingResponse(parts: string[]): Response {
   const encoder = new TextEncoder();
@@ -26,6 +29,76 @@ function createStreamingResponse(parts: string[]): Response {
     },
   });
 }
+
+describe("tts", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("returns the WAV response as soon as headers and playback ID arrive", async () => {
+    const response = new Response(
+      new Blob(["wav"], { type: "audio/wav" }),
+      {
+        status: 200,
+        headers: {
+          "X-Avalo-TTS-Playback-ID": "playback-123",
+        },
+      },
+    );
+
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(response);
+
+    const result = await synthesizeSpeech(
+      "Hallo Flo",
+      new AbortController().signal,
+    );
+
+    expect(result).toEqual({
+      playbackId: "playback-123",
+      response,
+    });
+    expect(fetch).toHaveBeenCalledWith(
+      "http://127.0.0.1:8095/api/v1/tts",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          text: "Hallo Flo",
+        }),
+      }),
+    );
+  });
+
+  it("reports playback completion", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(null, { status: 204 }),
+    );
+
+    await notifyTtsPlaybackEnded("playback-123");
+
+    expect(fetch).toHaveBeenCalledWith(
+      "http://127.0.0.1:8095/api/v1/tts/playback-ended",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          playback_id: "playback-123",
+        }),
+      }),
+    );
+  });
+
+  it("rejects a TTS response without playback ID", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(new Blob(["wav"]), { status: 200 }),
+    );
+
+    await expect(
+      synthesizeSpeech(
+        "Hallo",
+        new AbortController().signal,
+      ),
+    ).rejects.toThrow("TTS response has no playback ID");
+  });
+});
 
 describe("streamChatMessage", () => {
   afterEach(() => {

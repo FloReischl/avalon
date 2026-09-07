@@ -7,8 +7,11 @@ import { getActiveAvatar } from "./avatar";
 import { useTransientChat } from "./composables/useTransientChat";
 import {
   abortAudioRecording as abortBackendAudioRecording,
+  notifyTtsPlaybackEnded,
   startAudioRecording as startBackendAudioRecording,
+  synthesizeSpeech,
 } from "./services/backend";
+
 
 const avatar = getActiveAvatar();
 
@@ -27,8 +30,10 @@ const messagesElement = ref<HTMLElement>();
 const isComposerExpanded = ref(false);
 const isRecording = ref(false);
 const remainingRecordingSeconds = ref(30);
+const isTtsSynthesizing = ref(false);
 
 let recordingTimer: number | undefined;
+
 let recordingStartPending = false;
 let recordingReleaseAction: "finish" | "abort" | undefined;
 
@@ -139,14 +144,130 @@ onBeforeUnmount(() => {
   if (isRecording.value) {
     void abortBackendAudioRecording();
   }
+
+  replaceCurrentTts();
   resetRecordingState();
 });
 
+
 type MarkdownMessageInstance = {
   getRenderedHtml: () => string;
+  getPlainText: () => string;
 };
 
 const messageRenderers = new Map<number, MarkdownMessageInstance>();
+
+let ttsAbortController: AbortController | undefined;
+let ttsAudio: HTMLAudioElement | undefined;
+let ttsObjectUrl: string | undefined;
+let ttsRequestToken = 0;
+
+function cleanupTtsAudio() {
+  if (ttsAudio) {
+    ttsAudio.onended = null;
+    ttsAudio.onerror = null;
+    ttsAudio.pause();
+    ttsAudio = undefined;
+  }
+
+  if (ttsObjectUrl) {
+    URL.revokeObjectURL(ttsObjectUrl);
+    ttsObjectUrl = undefined;
+  }
+}
+
+function replaceCurrentTts() {
+  ttsRequestToken += 1;
+  ttsAbortController?.abort();
+  ttsAbortController = undefined;
+  cleanupTtsAudio();
+}
+
+async function readMessageAloud(index: number) {
+  const text = messageRenderers.get(index)?.getPlainText().trim() ?? "";
+  if (!text || isTtsSynthesizing.value) {
+    return;
+  }
+
+  replaceCurrentTts();
+
+  const requestToken = ttsRequestToken;
+  const controller = new AbortController();
+  ttsAbortController = controller;
+  isTtsSynthesizing.value = true;
+  errorMessage.value = undefined;
+
+  let playbackId: string | undefined;
+
+  try {
+    const tts = await synthesizeSpeech(
+      text,
+      controller.signal,
+    );
+
+    if (requestToken !== ttsRequestToken) {
+      return;
+    }
+
+    playbackId = tts.playbackId;
+
+    // fetch() has received the HTTP response headers: synthesis is complete
+    // and WAV transfer has begun.
+    isTtsSynthesizing.value = false;
+
+    const audioBlob = await tts.response.blob();
+
+    if (requestToken !== ttsRequestToken) {
+      return;
+    }
+
+    ttsObjectUrl = URL.createObjectURL(audioBlob);
+    const audio = new Audio(ttsObjectUrl);
+    ttsAudio = audio;
+
+    audio.onended = () => {
+      if (requestToken !== ttsRequestToken) {
+        return;
+      }
+
+      cleanupTtsAudio();
+      void notifyTtsPlaybackEnded(tts.playbackId);
+    };
+
+    audio.onerror = () => {
+      if (requestToken !== ttsRequestToken) {
+        return;
+      }
+
+      cleanupTtsAudio();
+      errorMessage.value = "Vorlesen fehlgeschlagen.";
+      void notifyTtsPlaybackEnded(tts.playbackId);
+    };
+
+    await audio.play();
+  } catch (error) {
+    if (
+      requestToken !== ttsRequestToken
+      || (
+        error instanceof DOMException
+        && error.name === "AbortError"
+      )
+    ) {
+      return;
+    }
+
+    errorMessage.value = "Vorlesen fehlgeschlagen.";
+
+    if (playbackId) {
+      void notifyTtsPlaybackEnded(playbackId);
+    }
+  } finally {
+    if (requestToken === ttsRequestToken) {
+      isTtsSynthesizing.value = false;
+      ttsAbortController = undefined;
+    }
+  }
+}
 
 const DEFAULT_SIDEBAR_WIDTH_PX = 280;
 const MIN_SIDEBAR_WIDTH_PX = 220;
@@ -195,10 +316,14 @@ watch(
 function setMessageRenderer(index: number, instance: unknown) {
   const renderer = instance as MarkdownMessageInstance | null;
 
-  if (renderer?.getRenderedHtml) {
+  if (
+    renderer?.getRenderedHtml
+    && renderer.getPlainText
+  ) {
     messageRenderers.set(index, renderer);
     return;
   }
+
 
   messageRenderers.delete(index);
 }
@@ -371,8 +496,10 @@ function handleInputKeydown(event: KeyboardEvent) {
               data-testid="read-aloud-message"
               aria-label="Vorlesen"
               title="Vorlesen"
-              disabled
+              :disabled="isGenerating || isTtsSynthesizing"
+              @click="readMessageAloud(index)"
             >
+
               <svg
                 viewBox="0 0 24 24"
                 aria-hidden="true"

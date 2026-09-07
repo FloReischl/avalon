@@ -14,7 +14,13 @@ export interface ConversationMessage {
   content: string;
 }
 
+export interface TtsResponse {
+  playbackId: string;
+  response: Response;
+}
+
 interface ChatChunkData {
+
   text: string;
 }
 
@@ -83,7 +89,64 @@ export async function streamAudioResponse(
   await consumeChatStream(response, handlers);
 }
 
+export async function synthesizeSpeech(
+  text: string,
+  signal: AbortSignal,
+): Promise<TtsResponse> {
+  const response = await fetch(
+    `${BACKEND_BASE_URL}/api/v1/tts`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ text }),
+      signal,
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(`TTS request failed with ${response.status}`);
+  }
+
+  const playbackId = response.headers.get(
+    "X-Avalo-TTS-Playback-ID",
+  );
+  if (!playbackId) {
+    throw new Error("TTS response has no playback ID");
+  }
+
+  return {
+    playbackId,
+    response,
+  };
+}
+
+export async function notifyTtsPlaybackEnded(
+  playbackId: string,
+): Promise<void> {
+  const response = await fetch(
+    `${BACKEND_BASE_URL}/api/v1/tts/playback-ended`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        playback_id: playbackId,
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      `TTS playback notification failed with ${response.status}`,
+    );
+  }
+}
+
 async function consumeChatStream(
+
   response: Response,
   handlers: ChatStreamHandlers,
 ): Promise<void> {

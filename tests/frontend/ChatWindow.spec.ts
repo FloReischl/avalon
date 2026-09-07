@@ -3,15 +3,20 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
   abortAudioRecordingMock,
+  notifyTtsPlaybackEndedMock,
   startAudioRecordingMock,
   streamAudioResponseMock,
   streamChatMessageMock,
+  synthesizeSpeechMock,
 } = vi.hoisted(() => ({
   abortAudioRecordingMock: vi.fn(),
+  notifyTtsPlaybackEndedMock: vi.fn(),
   startAudioRecordingMock: vi.fn(),
   streamAudioResponseMock: vi.fn(),
   streamChatMessageMock: vi.fn(),
+  synthesizeSpeechMock: vi.fn(),
 }));
+
 
 vi.mock("../../frontend/src/services/backend", async (importOriginal) => {
   const original = await importOriginal<
@@ -21,9 +26,12 @@ vi.mock("../../frontend/src/services/backend", async (importOriginal) => {
   return {
     ...original,
     abortAudioRecording: abortAudioRecordingMock,
+    notifyTtsPlaybackEnded: notifyTtsPlaybackEndedMock,
     startAudioRecording: startAudioRecordingMock,
     streamAudioResponse: streamAudioResponseMock,
     streamChatMessage: streamChatMessageMock,
+    synthesizeSpeech: synthesizeSpeechMock,
+
   };
 });
 
@@ -33,10 +41,14 @@ describe("ChatWindow", () => {
   beforeEach(() => {
     abortAudioRecordingMock.mockReset();
     abortAudioRecordingMock.mockResolvedValue(undefined);
+    notifyTtsPlaybackEndedMock.mockReset();
+    notifyTtsPlaybackEndedMock.mockResolvedValue(undefined);
     startAudioRecordingMock.mockReset();
     startAudioRecordingMock.mockResolvedValue(undefined);
     streamAudioResponseMock.mockReset();
     streamChatMessageMock.mockReset();
+    synthesizeSpeechMock.mockReset();
+
   });
 
   it("renders the chat sidebar with its default width", () => {
@@ -286,16 +298,177 @@ describe("ChatWindow", () => {
 
     expect(
       assistantActions.get('[data-testid="read-aloud-message"]').attributes("disabled"),
-    ).toBeDefined();
+    ).toBeUndefined();
     expect(
       assistantActions.get('[data-testid="branch-message"]').attributes("disabled"),
     ).toBeDefined();
+
     expect(
       userActions.get('[data-testid="edit-message"]').attributes("disabled"),
     ).toBeDefined();
   });
 
+  it("reads rendered assistant text aloud and reports playback end", async () => {
+    streamChatMessageMock.mockImplementation(
+      async (_message, handlers) => {
+        handlers.onChunk("**Hallo** `Flo`");
+      },
+    );
+
+    synthesizeSpeechMock.mockResolvedValue({
+      playbackId: "playback-123",
+      response: new Response(
+        new Blob(["wav"], { type: "audio/wav" }),
+        { status: 200 },
+      ),
+    });
+
+    const audios: AudioMock[] = [];
+
+    class AudioMock {
+      onended: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      play = vi.fn().mockResolvedValue(undefined);
+      pause = vi.fn();
+
+      constructor() {
+        audios.push(this);
+      }
+    }
+
+
+    vi.stubGlobal("Audio", AudioMock);
+    vi.stubGlobal("URL", {
+      createObjectURL: vi.fn(() => "blob:tts"),
+      revokeObjectURL: vi.fn(),
+    });
+
+    try {
+      const wrapper = mount(ChatWindow);
+
+      await wrapper.get('[data-testid="chat-input"]').setValue("Frage");
+      await wrapper.get('[data-testid="send-chat"]').trigger("click");
+      await flushPromises();
+
+      await wrapper
+        .get('[data-testid="message-actions-assistant"]')
+        .get('[data-testid="read-aloud-message"]')
+        .trigger("click");
+      await flushPromises();
+
+      expect(synthesizeSpeechMock).toHaveBeenCalledTimes(1);
+      expect(synthesizeSpeechMock.mock.calls[0][0]).toContain("Hallo");
+      expect(synthesizeSpeechMock.mock.calls[0][0]).toContain("Flo");
+      expect(audios).toHaveLength(1);
+      expect(audios[0].play).toHaveBeenCalledTimes(1);
+
+      audios[0].onended?.();
+      await flushPromises();
+
+      expect(notifyTtsPlaybackEndedMock).toHaveBeenCalledWith(
+        "playback-123",
+      );
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("replaces an active read-aloud playback instead of queueing it", async () => {
+    streamChatMessageMock.mockImplementation(
+      async (_message, handlers) => {
+        handlers.onChunk("Antwort");
+      },
+    );
+
+    synthesizeSpeechMock
+      .mockResolvedValueOnce({
+        playbackId: "playback-1",
+        response: new Response(new Blob(["wav-1"])),
+      })
+      .mockResolvedValueOnce({
+        playbackId: "playback-2",
+        response: new Response(new Blob(["wav-2"])),
+      });
+
+    const audios: Array<{
+      onended: (() => void) | null;
+      onerror: (() => void) | null;
+      play: ReturnType<typeof vi.fn>;
+      pause: ReturnType<typeof vi.fn>;
+    }> = [];
+
+    class AudioMock {
+      onended: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      play = vi.fn().mockResolvedValue(undefined);
+      pause = vi.fn();
+
+      constructor() {
+        audios.push(this);
+      }
+    }
+
+    vi.stubGlobal("Audio", AudioMock);
+    vi.stubGlobal("URL", {
+      createObjectURL: vi.fn(() => "blob:tts"),
+      revokeObjectURL: vi.fn(),
+    });
+
+    try {
+      const wrapper = mount(ChatWindow);
+
+      await wrapper.get('[data-testid="chat-input"]').setValue("Frage");
+      await wrapper.get('[data-testid="send-chat"]').trigger("click");
+      await flushPromises();
+
+      const button = wrapper
+        .get('[data-testid="message-actions-assistant"]')
+        .get('[data-testid="read-aloud-message"]');
+
+      await button.trigger("click");
+      await flushPromises();
+
+      await button.trigger("click");
+      await flushPromises();
+
+      expect(synthesizeSpeechMock).toHaveBeenCalledTimes(2);
+      expect(audios).toHaveLength(2);
+      expect(audios[0].pause).toHaveBeenCalledTimes(1);
+      expect(audios[1].play).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("shows a chat error when read aloud fails", async () => {
+    streamChatMessageMock.mockImplementation(
+      async (_message, handlers) => {
+        handlers.onChunk("Antwort");
+      },
+    );
+    synthesizeSpeechMock.mockRejectedValue(
+      new Error("tts failed"),
+    );
+
+    const wrapper = mount(ChatWindow);
+
+    await wrapper.get('[data-testid="chat-input"]').setValue("Frage");
+    await wrapper.get('[data-testid="send-chat"]').trigger("click");
+    await flushPromises();
+
+    await wrapper
+      .get('[data-testid="message-actions-assistant"]')
+      .get('[data-testid="read-aloud-message"]')
+      .trigger("click");
+    await flushPromises();
+
+    expect(wrapper.get('[data-testid="chat-error"]').text()).toBe(
+      "Vorlesen fehlgeschlagen.",
+    );
+  });
+
   it("copies Markdown source and rendered HTML together", async () => {
+
     streamChatMessageMock.mockImplementation(
       async (_message, handlers) => {
         handlers.onChunk("**fett**");

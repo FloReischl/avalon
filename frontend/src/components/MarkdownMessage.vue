@@ -18,9 +18,29 @@ function getRenderedHtml(): string {
   return rootElement.value?.innerHTML ?? "";
 }
 
+function getPlainText(): string {
+  const root = rootElement.value;
+  if (!root) {
+    return "";
+  }
+
+  const clone = root.cloneNode(true) as HTMLElement;
+  clone.querySelectorAll("[data-copy-code]").forEach((element) => {
+    element.remove();
+  });
+
+  return (
+    clone.innerText
+    || clone.textContent
+    || ""
+  ).trim();
+}
+
 defineExpose({
   getRenderedHtml,
+  getPlainText,
 });
+
 
 function highlightCode(code: string, language: string): string {
   if (language && hljs.getLanguage(language)) {
