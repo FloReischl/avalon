@@ -196,7 +196,7 @@ def main() -> int:
             elif engine == "chatterbox":
                 if chatterbox_model is None:
                     chatterbox_model, chatterbox_device, chatterbox_files = load_chatterbox(config["device"])
-                render_chatterbox(chatterbox_model, text["text"], output, files[engine]["chatterbox-ref1.wav"])
+                render_chatterbox(chatterbox_model, text["text"], output, files[engine]["chatterbox-frieda1.wav"])
                 device = chatterbox_device
             else:
                 raise RuntimeError(f"Unbekannte Engine: {engine}")
