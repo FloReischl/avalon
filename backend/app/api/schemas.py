@@ -1,5 +1,6 @@
 """Public request and response schemas."""
 
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -24,6 +25,35 @@ class ConversationMessage(BaseModel):
 
     role: Literal["user", "assistant"]
     content: str = Field(min_length=1)
+
+
+class PersistentMessageResponse(BaseModel):
+    """One persistent message returned by the chat-management API."""
+
+    id: int
+    role: Literal["user", "assistant"]
+    content: str
+    created_at: datetime
+
+
+class ChatSummaryResponse(BaseModel):
+    """One persistent chat for sidebar-style listings."""
+
+    id: int
+    title: str
+    created_at: datetime
+
+
+class ChatDetailResponse(ChatSummaryResponse):
+    """One persistent chat including its complete message history."""
+
+    messages: list[PersistentMessageResponse]
+
+
+class RenameChatRequest(BaseModel):
+    """Requested manual title for one persistent chat."""
+
+    title: str = Field(min_length=1, max_length=200)
 
 
 class AudioResponseRequest(BaseModel):
