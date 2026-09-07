@@ -127,6 +127,34 @@ class ChatRepository:
             session.refresh(chat)
             return chat
 
+    def claim_auto_title_attempt(self, chat_id: int) -> bool:
+        """Atomically claim the one allowed automatic-title attempt."""
+        with self._session_factory() as session:
+            chat = session.get(Chat, chat_id)
+            if (
+                chat is None
+                or chat.title_is_manual
+                or chat.auto_title_attempted
+            ):
+                return False
+
+            chat.auto_title_attempted = True
+            session.commit()
+            return True
+
+    def set_auto_title(self, chat_id: int, title: str) -> bool:
+        """Store a generated title unless a manual title now exists."""
+        normalized_title = self._validate_title(title)
+
+        with self._session_factory() as session:
+            chat = session.get(Chat, chat_id)
+            if chat is None or chat.title_is_manual:
+                return False
+
+            chat.title = normalized_title
+            session.commit()
+            return True
+
     def delete_chat(self, chat_id: int) -> bool:
         """Physically delete a chat and its messages."""
         with self._session_factory() as session:

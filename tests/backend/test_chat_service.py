@@ -18,12 +18,14 @@ class FakeRuntime:
     def __init__(self, chunks: list[str] | None = None) -> None:
         self.chunks = chunks or ["Hallo ", "Flo"]
         self.messages: list[dict[str, str]] | None = None
+        self.calls: list[list[dict[str, str]]] = []
 
     async def generate_text_stream(
         self,
         messages: list[dict[str, str]],
     ) -> AsyncIterator[str]:
         self.messages = messages
+        self.calls.append(messages)
         for chunk in self.chunks:
             yield chunk
 
@@ -69,11 +71,88 @@ async def test_existing_chat_is_continued_with_persisted_context(service) -> Non
     chunks = [chunk async for chunk in chat_service.stream_response(turn)]
 
     assert chunks == ["Hallo ", "Flo"]
-    assert runtime.messages == [
+    assert runtime.calls[0] == [
         {"role": "user", "content": "Erste Frage"},
         {"role": "assistant", "content": "Erste Antwort"},
         {"role": "user", "content": "Zweite Frage"},
     ]
+
+
+@pytest.mark.asyncio
+async def test_auto_title_is_generated_after_second_roundtrip(service) -> None:
+    chat_service, repository, runtime = service
+    chat = repository.create_chat_with_message("New Chat", "user", "Hallo")
+    repository.add_message(chat.id, "assistant", "Hallo Flo")
+
+    runtime.chunks = ["Persistenz", " mit SQLite"]
+
+    turn = chat_service.start_turn(chat.id, "Wie speichern wir Chats?")
+    _ = [chunk async for chunk in chat_service.stream_response(turn)]
+
+    assert len(runtime.calls) == 1
+
+    await chat_service.finalize_turn(turn)
+
+    loaded = repository.get_chat(chat.id)
+    assert loaded is not None
+    assert loaded.title == "Persistenz mit SQLite"
+    assert loaded.auto_title_attempted is True
+    assert len(runtime.calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_manual_title_prevents_auto_title_generation(service) -> None:
+    chat_service, repository, runtime = service
+    chat = repository.create_chat_with_message("New Chat", "user", "Hallo")
+    repository.add_message(chat.id, "assistant", "Hallo Flo")
+    repository.rename_chat(chat.id, "Mein Titel")
+
+    turn = chat_service.start_turn(chat.id, "Zweite Frage")
+    _ = [chunk async for chunk in chat_service.stream_response(turn)]
+    await chat_service.finalize_turn(turn)
+
+    loaded = repository.get_chat(chat.id)
+    assert loaded is not None
+    assert loaded.title == "Mein Titel"
+    assert len(runtime.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_failed_auto_title_is_not_retried(service) -> None:
+    chat_service, repository, runtime = service
+    chat = repository.create_chat_with_message("New Chat", "user", "Hallo")
+    repository.add_message(chat.id, "assistant", "Hallo Flo")
+
+    call_count = 0
+
+    async def failing_title_stream(messages):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            yield "Zweite Antwort"
+            return
+        raise RuntimeError("title generation failed")
+        yield
+
+    runtime.generate_text_stream = failing_title_stream
+
+    turn = chat_service.start_turn(chat.id, "Zweite Frage")
+    _ = [chunk async for chunk in chat_service.stream_response(turn)]
+    await chat_service.finalize_turn(turn)
+
+    loaded = repository.get_chat(chat.id)
+    assert loaded is not None
+    assert loaded.title == "New Chat"
+    assert loaded.auto_title_attempted is True
+
+    runtime.generate_text_stream = FakeRuntime().generate_text_stream
+    third_turn = chat_service.start_turn(chat.id, "Dritte Frage")
+    _ = [chunk async for chunk in chat_service.stream_response(third_turn)]
+    await chat_service.finalize_turn(third_turn)
+
+    loaded = repository.get_chat(chat.id)
+    assert loaded is not None
+    assert loaded.title == "New Chat"
 
 
 def test_unknown_chat_is_rejected_before_streaming(service) -> None:

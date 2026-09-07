@@ -54,7 +54,7 @@ def test_migrations_are_idempotent(tmp_path: Path) -> None:
                 text("SELECT version_num FROM alembic_version")
             ).scalar_one()
 
-        assert revision == "0001"
+        assert revision == "0002"
     finally:
         engine.dispose()
 

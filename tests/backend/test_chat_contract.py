@@ -47,6 +47,10 @@ class FakeChatService:
         if self._error is not None:
             raise self._error
 
+    async def finalize_turn(self, turn: ChatTurn) -> None:
+        """Accept optional post-response finalization."""
+        del turn
+
 
 def post_chat(
     payload: dict,

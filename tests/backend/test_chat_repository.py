@@ -40,6 +40,7 @@ def test_create_and_get_chat(repository) -> None:
     assert loaded.id == created.id
     assert loaded.title == "New 2026-09-07 12:00:00"
     assert loaded.title_is_manual is False
+    assert loaded.auto_title_attempted is False
 
 
 def test_create_chat_normalizes_title(repository) -> None:
@@ -218,6 +219,53 @@ def test_rename_unknown_chat_returns_none(repository) -> None:
     repo, _ = repository
 
     assert repo.rename_chat(999, "Title") is None
+
+
+def test_auto_title_attempt_can_only_be_claimed_once(repository) -> None:
+    repo, _ = repository
+    chat = repo.create_chat("New Chat")
+
+    assert repo.claim_auto_title_attempt(chat.id) is True
+    assert repo.claim_auto_title_attempt(chat.id) is False
+
+    loaded = repo.get_chat(chat.id)
+    assert loaded is not None
+    assert loaded.auto_title_attempted is True
+
+
+def test_manual_title_prevents_auto_title_attempt(repository) -> None:
+    repo, _ = repository
+    chat = repo.create_chat("New Chat")
+    repo.rename_chat(chat.id, "Mein Titel")
+
+    assert repo.claim_auto_title_attempt(chat.id) is False
+
+
+def test_auto_title_does_not_override_manual_title(repository) -> None:
+    repo, _ = repository
+    chat = repo.create_chat("New Chat")
+
+    assert repo.claim_auto_title_attempt(chat.id) is True
+    repo.rename_chat(chat.id, "Mein Titel")
+
+    assert repo.set_auto_title(chat.id, "Automatischer Titel") is False
+
+    loaded = repo.get_chat(chat.id)
+    assert loaded is not None
+    assert loaded.title == "Mein Titel"
+
+
+def test_auto_title_is_stored(repository) -> None:
+    repo, _ = repository
+    chat = repo.create_chat("New Chat")
+
+    assert repo.claim_auto_title_attempt(chat.id) is True
+    assert repo.set_auto_title(chat.id, "  Persistenz mit SQLite  ") is True
+
+    loaded = repo.get_chat(chat.id)
+    assert loaded is not None
+    assert loaded.title == "Persistenz mit SQLite"
+    assert loaded.title_is_manual is False
 
 
 def test_delete_chat_physically_removes_chat_and_messages(repository) -> None:

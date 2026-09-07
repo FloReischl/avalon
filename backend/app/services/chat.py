@@ -79,3 +79,63 @@ class ChatService:
                 "assistant",
                 response,
             )
+
+    async def finalize_turn(self, turn: ChatTurn) -> None:
+        """Run optional post-response work after the client receives done."""
+        try:
+            await self._try_auto_title(turn.chat_id)
+        except Exception:
+            # Optional post-response work must never affect a completed turn.
+            return
+
+    async def _try_auto_title(self, chat_id: int) -> None:
+        """Attempt automatic title generation after roundtrip two."""
+        messages = self._repository.get_messages(chat_id)
+
+        if len(messages) != 4:
+            return
+
+        if [message.role for message in messages] != [
+            "user",
+            "assistant",
+            "user",
+            "assistant",
+        ]:
+            return
+
+        if not self._repository.claim_auto_title_attempt(chat_id):
+            return
+
+        title_context = "\n".join(
+            f"{message.role}: {message.content}"
+            for message in messages
+        )
+        title_prompt = [
+            {
+                "role": "user",
+                "content": (
+                    "Erzeuge einen kurzen, prägnanten Titel für den "
+                    "folgenden Chat. Antworte ausschließlich mit dem Titel, "
+                    "ohne Anführungszeichen, Präfix oder Erklärung. "
+                    "Maximal 200 Zeichen.\n\n"
+                    f"{title_context}"
+                ),
+            }
+        ]
+
+        try:
+            chunks = [
+                chunk
+                async for chunk in self._runtime.generate_text_stream(
+                    title_prompt
+                )
+            ]
+            title = "".join(chunks).strip()
+
+            if not title or len(title) > 200:
+                return
+
+            self._repository.set_auto_title(chat_id, title)
+        except Exception:
+            # Automatic naming is optional and must never fail the chat turn.
+            return

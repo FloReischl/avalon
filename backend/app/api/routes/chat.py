@@ -49,6 +49,7 @@ async def stream_chat_response(
         return
 
     yield format_sse_event("done", {})
+    await service.finalize_turn(turn)
 
 
 @router.post("")

@@ -23,6 +23,12 @@ class Chat(Base):
         default=False,
         server_default="0",
     )
+    auto_title_attempted: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="0",
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
         nullable=False,
