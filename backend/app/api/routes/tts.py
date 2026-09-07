@@ -1,6 +1,12 @@
 """Local text-to-speech HTTP endpoints."""
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Response, status
+
+
+logger = logging.getLogger(__name__)
+
 
 from app.api.schemas import TtsPlaybackEndedRequest, TtsRequest
 from app.config import settings
@@ -37,11 +43,18 @@ async def synthesize_speech(
             detail="Speech synthesis is already active.",
         ) from exc
     except ValueError as exc:
+        logger.warning(
+            "TTS request rejected: %s",
+            exc,
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="TTS text is invalid.",
         ) from exc
     except RuntimeError as exc:
+        logger.exception(
+            "TTS synthesis failed."
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Speech synthesis failed.",

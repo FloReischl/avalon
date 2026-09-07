@@ -13,7 +13,9 @@ dependencies = [
     "uvicorn[standard]>=0.34,<1",
     "httpx>=0.28,<1",
     "setuptools>=75,<81",
-    "chatterbox-tts @ git+https://github.com/resemble-ai/chatterbox.git@5de7a54aa4e5e2baadb0182dde554908b48b85c2",
+    "torchaudio==2.6.0",
+    "bitsandbytes==0.50.2",
+    "chatterbox-tts @ git+https://github.com/prathamesh-chavan-22/chatterbox.git@28dd1e642739c556e9d8728609055ea06bfb99cc",
 ]
 
 

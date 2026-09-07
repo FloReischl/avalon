@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import gc
+import re
 from io import BytesIO
 from pathlib import Path
 from typing import Any
@@ -15,16 +16,20 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 _MODEL_FILENAMES = [
     "ve.pt",
-    "t3_mtl23ls_v3.safetensors",
+    "t3_mtl23ls_v2.safetensors",
     "s3gen.pt",
     "grapheme_mtl_merged_expanded_v1.json",
     "conds.pt",
     "Cangjie5_TC.json",
 ]
 
+_MAX_CHUNK_CHARS = 300
+_SENTENCE_BOUNDARY = re.compile(r"(?<=[.!?])\s+")
+_CLAUSE_BOUNDARY = re.compile(r"(?<=[,;:])\s+")
+
 
 class ChatterboxTextToSpeech:
-    """Generate German WAV audio using Chatterbox Multilingual V3."""
+    """Generate German WAV audio using 4-bit Chatterbox Multilingual V2."""
 
     def __init__(
         self,
@@ -61,19 +66,27 @@ class ChatterboxTextToSpeech:
             )
 
         try:
+            import torch
             import torchaudio
 
             model = self._ensure_model()
-            wav = model.generate(
-                text,
-                language_id=settings.default_language,
-                audio_prompt_path=str(self._reference_audio),
-            )
+            wav_chunks = []
+
+            for chunk in self._split_text(text):
+                wav = model.generate(
+                    chunk,
+                    language_id=settings.default_language,
+                    audio_prompt_path=str(self._reference_audio),
+                )
+                wav_chunks.append(wav.cpu())
+                del wav
+
+            wav = torch.cat(wav_chunks, dim=-1)
 
             output = BytesIO()
             torchaudio.save(
                 output,
-                wav.cpu(),
+                wav,
                 model.sr,
                 format="wav",
             )
@@ -85,6 +98,56 @@ class ChatterboxTextToSpeech:
             raise RuntimeError("Chatterbox produced empty audio.")
 
         return audio
+
+    @staticmethod
+    def _split_text(text: str) -> list[str]:
+        """Split text at natural speech boundaries while bounding TTS chunk size."""
+        sentences = [
+            sentence.strip()
+            for sentence in _SENTENCE_BOUNDARY.split(text.strip())
+            if sentence.strip()
+        ]
+
+        chunks: list[str] = []
+        for sentence in sentences:
+            if len(sentence) <= _MAX_CHUNK_CHARS:
+                chunks.append(sentence)
+                continue
+
+            chunks.extend(
+                ChatterboxTextToSpeech._split_long_part(
+                    sentence,
+                    _CLAUSE_BOUNDARY,
+                )
+            )
+
+        return chunks
+
+    @staticmethod
+    def _split_long_part(text: str, boundary: re.Pattern[str]) -> list[str]:
+        parts = [part.strip() for part in boundary.split(text) if part.strip()]
+        chunks: list[str] = []
+
+        for part in parts:
+            if len(part) <= _MAX_CHUNK_CHARS:
+                chunks.append(part)
+                continue
+
+            words = part.split()
+            current: list[str] = []
+
+            for word in words:
+                candidate = " ".join([*current, word])
+                if current and len(candidate) > _MAX_CHUNK_CHARS:
+                    chunks.append(" ".join(current))
+                    current = [word]
+                else:
+                    current.append(word)
+
+            if current:
+                chunks.append(" ".join(current))
+
+        return chunks
 
     def _ensure_model(self) -> Any:
         if self._model is None:
@@ -117,7 +180,8 @@ class ChatterboxTextToSpeech:
         model = ChatterboxMultilingualTTS.from_local(
             checkpoint_dir,
             device=device,
-            t3_model="v3",
+            use_bnb_quantization=True,
+            quantization_bits=4,
         )
         return model, device
 

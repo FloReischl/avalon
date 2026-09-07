@@ -12,7 +12,8 @@ def test_gemma_audio_limit_is_recorded() -> None:
 
 def test_ollama_runtime_settings_are_recorded() -> None:
     assert settings.ollama_host == "127.0.0.1:11434"
-    assert settings.ollama_model == "gemma4:e4b-it-q4_K_M"
+    assert settings.ollama_model == "hf.co/TrevorJS/gemma-4-E4B-it-uncensored-GGUF:Q4_K_M"
+    # assert settings.ollama_model == "gemma4:e4b-it-q4_K_M"
 
 
 def test_chatterbox_tts_settings_are_recorded() -> None:
