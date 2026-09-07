@@ -167,18 +167,32 @@ key_flows:
 
   tts:
     contract: backend/app/tts/base.py:TextToSpeech
-    candidate_adapter: backend/app/tts/chatterbox.py:ChatterboxTextToSpeech
-    target_candidate: Chatterbox Multilingual V3
-    status: spike_validated_integration_pending
-    priority: after_text_and_native_audio
-    spike_result:
-      evaluated_candidates:
-        - Piper with de_DE-kerstin-low
-        - Kikiri/Kokoro with Victoria
-        - Kikiri/Kokoro with local Kerstin voicepack
-        - Chatterbox Multilingual V3 with local reference voice
-      decision: Chatterbox Multilingual V3 is the preferred candidate for the first integration.
-      scope: The comparison produced local WAV artifacts only; no product TTS adapter, API, or playback path is implemented yet.
+    adapter: backend/app/tts/chatterbox.py:ChatterboxTextToSpeech
+    service: backend/app/services/tts.py:TtsService
+    endpoints:
+      synthesize: "POST /api/v1/tts"
+      playback_ended: "POST /api/v1/tts/playback-ended"
+    status: read_aloud_implemented
+    engine: Chatterbox Multilingual V2
+    quantization: bitsandbytes_4bit
+    behavior:
+      - lazy model load on first synthesis
+      - one synthesis at a time; no queue
+      - frontend playback identity controls idle lifecycle
+      - model unload after 300 seconds without synthesis or active playback
+      - stale playback-ended notifications are ignored
+      - completed Markdown is converted to plain text in the frontend
+      - backend returns one complete WAV response
+      - long text is partitioned primarily at sentence boundaries
+      - sentences above roughly 300 characters fall back to clause boundaries then whitespace
+    resource_strategy:
+      - Gemma remains fully GPU resident
+      - TTS is quantized to fit alongside the primary LLM
+      - full-message generation without partitioning can exceed available 8 GB VRAM
+    notes:
+      - Chatterbox V3 won the original quality comparison but the integrated quantized fork is V2.
+      - Current 4-bit quality loss is accepted for the first integration.
+      - Quantization depends on a pinned non-upstream Chatterbox fork.
 
 modules:
 
@@ -197,6 +211,10 @@ modules:
           audio_max_seconds: int
           ollama_host: str
           ollama_model: str
+          tts_device: str
+          tts_reference_audio: str
+          tts_model_revision: str
+          tts_idle_unload_seconds: float
       settings:
         kind: singleton
         type: Settings
@@ -231,9 +249,12 @@ modules:
       - health router at root
       - chat router under /api/v1
       - audio recording router under /api/v1
+      - TTS router under /api/v1
     dependencies:
       - backend/app/api/routes/health.py
       - backend/app/api/routes/chat.py
+      - backend/app/api/routes/audio.py
+      - backend/app/api/routes/tts.py
 
   backend/app/api/schemas.py:
     role: public backend HTTP contracts
@@ -254,10 +275,17 @@ modules:
       AudioResponseRequest:
         fields:
           messages: list[ConversationMessage]
+      TtsRequest:
+        fields:
+          text: non_empty_str
+      TtsPlaybackEndedRequest:
+        fields:
+          playback_id: non_empty_str
     relevant_to:
       - health API
       - text chat API
       - audio response API
+      - TTS synthesis and playback lifecycle API
       - frontend/backend conversation contract
 
   backend/app/api/routes/health.py:
@@ -489,6 +517,27 @@ modules:
       - 16 kHz
       - mono
 
+  backend/app/services/tts.py:
+    role: process-local TTS synthesis and playback lifecycle service
+    symbols:
+      TtsBusyError:
+        kind: RuntimeError
+      TtsResult:
+        kind: frozen_dataclass
+        fields:
+          playback_id: str
+          audio: bytes
+      TtsService:
+        responsibilities:
+          - reject concurrent synthesis instead of queueing
+          - keep cancelled requests busy until underlying synthesis finishes
+          - track current frontend playback by generated playback id
+          - ignore stale playback-ended notifications
+          - unload engine after configured idle period
+    dependencies:
+      - backend/app/tts/base.py:TextToSpeech
+    status: implemented
+
   backend/app/tts/base.py:
     role: runtime-independent TTS abstraction
     symbols:
@@ -496,23 +545,37 @@ modules:
         kind: Protocol
         methods:
           synthesize:
-            signature: "(text: str) -> Path"
+            signature: "(text: str) -> bytes"
             async: true
-    status: contract_only
+          unload:
+            signature: "() -> None"
+            async: true
+    status: implemented_contract
 
   backend/app/tts/chatterbox.py:
-    role: planned Chatterbox TTS adapter
+    role: local Chatterbox TTS adapter
     symbols:
       ChatterboxTextToSpeech:
         methods:
           synthesize:
-            signature: "(text: str) -> Path"
+            signature: "(text: str) -> bytes"
             async: true
-    status: stub
+          unload:
+            signature: "() -> None"
+            async: true
+    status: implemented
     dependencies:
-      - backend/app/tts/base.py:TextToSpeech
-    notes:
-      - Chatterbox Multilingual V3 is candidate pending dedicated spike.
+      - backend/app/config.py
+      - Chatterbox Multilingual V2
+      - bitsandbytes 4-bit quantization
+      - torchaudio
+      - huggingface_hub
+    behavior:
+      - lazily loads pinned Chatterbox model snapshot
+      - uses fixed configured reference audio and German language
+      - synthesizes sentence-oriented chunks and concatenates them into one WAV
+      - moves generated chunks to CPU before final concatenation
+      - releases model and CUDA cache on unload
 
   frontend/src/main.ts:
     role: Vue application bootstrap and Tauri window-root selector
@@ -584,7 +647,11 @@ modules:
       - renders role-specific message actions
       - message Copy writes Markdown source as text/plain and rendered content as text/html when supported
       - message Copy falls back to plain Markdown clipboard text
-      - Read aloud, Branch, and Edit actions are visible disabled placeholders
+      - Read aloud synthesizes completed assistant messages and plays the returned WAV
+      - a new Read aloud replaces current TTS playback
+      - Read aloud is disabled while LLM generation or TTS synthesis is active
+      - TTS failures are shown as a chat error without modifying the assistant message
+      - Branch and Edit actions remain visible disabled placeholders
       - keeps user Markdown source editing in a plain monospace textarea
       - supports draggable sidebar splitter with bounded width
       - automatically follows streamed assistant output
@@ -661,6 +728,8 @@ modules:
       - start backend recording through /api/v1/audio/recording/start
       - abort backend recording through /api/v1/audio/recording/abort
       - stop recording and stream native-audio response through /api/v1/audio/recording/stop
+      - synthesize plain text through /api/v1/tts and return WAV response plus playback id
+      - notify backend playback completion through /api/v1/tts/playback-ended
       - parse shared Avalo SSE chunk / done / error events
       - expose AbortSignal cancellation to callers
       - reject malformed or incomplete streams
@@ -714,6 +783,7 @@ modules:
       - syntax-highlight fenced code with highlight.js
       - add Copy action for fenced code
       - expose current rendered message HTML to ChatWindow for multi-format clipboard copy
+      - expose rendered plain text to ChatWindow for Read Aloud
       - route rendered links through externalLinks service
     dependencies:
       - markdown-it
