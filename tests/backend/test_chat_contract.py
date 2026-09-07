@@ -6,6 +6,7 @@ from httpx import ASGITransport, AsyncClient
 
 from app.api.routes.chat import get_chat_service, stream_chat_response
 from app.main import create_app
+from app.services.chat import ChatNotFoundError, ChatTurn
 
 
 class FakeChatService:
@@ -13,15 +14,32 @@ class FakeChatService:
         self,
         chunks: list[str] | None = None,
         error: RuntimeError | None = None,
+        chat_id: int = 42,
     ) -> None:
         self._chunks = chunks or []
         self._error = error
+        self._chat_id = chat_id
+
+    def start_turn(
+        self,
+        chat_id: int | None,
+        message: str,
+    ) -> ChatTurn:
+        del message
+
+        if chat_id == 999:
+            raise ChatNotFoundError("Chat 999 does not exist.")
+
+        return ChatTurn(
+            chat_id=chat_id or self._chat_id,
+            messages=[{"role": "user", "content": "Hallo"}],
+        )
 
     async def stream_response(
         self,
-        messages: list[dict[str, str]],
+        turn: ChatTurn,
     ) -> AsyncIterator[str]:
-        del messages
+        del turn
 
         for chunk in self._chunks:
             yield chunk
@@ -31,7 +49,7 @@ class FakeChatService:
 
 
 def post_chat(
-    messages: list[dict[str, str]],
+    payload: dict,
     service: FakeChatService | None = None,
 ):
     async def request_chat():
@@ -42,29 +60,42 @@ def post_chat(
 
         transport = ASGITransport(app=application)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            return await client.post("/api/v1/chat", json={"messages": messages})
+            return await client.post("/api/v1/chat", json=payload)
 
     return asyncio.run(request_chat())
 
 
-def test_chat_streams_chunks_and_done_event() -> None:
+def test_chat_streams_chat_id_chunks_and_done_event() -> None:
     response = post_chat(
-        [{"role": "user", "content": "Hallo"}],
+        {"message": "Hallo"},
         FakeChatService(["Hallo ", "Flo"]),
     )
 
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/event-stream")
     assert response.text == (
+        'event: chat\ndata: {"id": "42"}\n\n'
         'event: chunk\ndata: {"text": "Hallo "}\n\n'
         'event: chunk\ndata: {"text": "Flo"}\n\n'
         "event: done\ndata: {}\n\n"
     )
 
 
+def test_chat_continues_existing_chat() -> None:
+    response = post_chat(
+        {"chat_id": 7, "message": "Weiter"},
+        FakeChatService(["Antwort"]),
+    )
+
+    assert response.status_code == 200
+    assert response.text.startswith(
+        'event: chat\ndata: {"id": "7"}\n\n'
+    )
+
+
 def test_chat_streams_error_event_without_done() -> None:
     response = post_chat(
-        [{"role": "user", "content": "Hallo"}],
+        {"message": "Hallo"},
         FakeChatService(
             ["Hallo"],
             RuntimeError("runtime failed"),
@@ -73,15 +104,25 @@ def test_chat_streams_error_event_without_done() -> None:
 
     assert response.status_code == 200
     assert response.text == (
+        'event: chat\ndata: {"id": "42"}\n\n'
         'event: chunk\ndata: {"text": "Hallo"}\n\n'
         "event: error\ndata: {}\n\n"
     )
 
 
-def test_chat_rejects_empty_messages() -> None:
-    response = post_chat([])
+def test_chat_rejects_empty_message() -> None:
+    response = post_chat({"message": ""})
 
     assert response.status_code == 422
+
+
+def test_chat_rejects_unknown_chat() -> None:
+    response = post_chat(
+        {"chat_id": 999, "message": "Hallo"},
+        FakeChatService(),
+    )
+
+    assert response.status_code == 404
 
 
 @pytest.mark.asyncio
@@ -91,20 +132,24 @@ async def test_chat_stream_propagates_cancellation() -> None:
     class BlockingChatService:
         async def stream_response(
             self,
-            messages: list[dict[str, str]],
+            turn: ChatTurn,
         ) -> AsyncIterator[str]:
-            del messages
+            del turn
             yield "Hallo"
             started.set()
             await asyncio.Event().wait()
 
-    stream = stream_chat_response(
-        BlockingChatService(),
-        [{"role": "user", "content": "Hallo"}],
+    turn = ChatTurn(
+        chat_id=42,
+        messages=[{"role": "user", "content": "Hallo"}],
     )
+    stream = stream_chat_response(BlockingChatService(), turn)
 
     first_event = await anext(stream)
-    assert first_event == 'event: chunk\ndata: {"text": "Hallo"}\n\n'
+    assert first_event == 'event: chat\ndata: {"id": "42"}\n\n'
+
+    second_event = await anext(stream)
+    assert second_event == 'event: chunk\ndata: {"text": "Hallo"}\n\n'
 
     task = asyncio.create_task(anext(stream))
     await started.wait()

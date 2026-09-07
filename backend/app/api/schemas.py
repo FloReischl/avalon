@@ -13,9 +13,10 @@ class HealthResponse(BaseModel):
 
 
 class ChatRequest(BaseModel):
-    """Conversation context including the current text-chat input."""
+    """One new text-chat turn."""
 
-    messages: list["ConversationMessage"] = Field(min_length=1)
+    chat_id: int | None = Field(default=None, gt=0)
+    message: str = Field(min_length=1)
 
 
 class ConversationMessage(BaseModel):

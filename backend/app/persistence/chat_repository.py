@@ -23,6 +23,28 @@ class ChatRepository:
             session.refresh(chat)
             return chat
 
+    def create_chat_with_message(
+        self,
+        title: str,
+        role: str,
+        content: str,
+    ) -> Chat:
+        """Create a chat and its first message atomically."""
+        normalized_title = self._validate_title(title)
+        self._validate_message(role, content)
+
+        with self._session_factory() as session:
+            chat = Chat(title=normalized_title)
+            message = Message(
+                chat=chat,
+                role=role,
+                content=content,
+            )
+            session.add_all([chat, message])
+            session.commit()
+            session.refresh(chat)
+            return chat
+
     def add_message(
         self,
         chat_id: int,
@@ -30,11 +52,7 @@ class ChatRepository:
         content: str,
     ) -> Message:
         """Append one complete message to a persistent chat."""
-        if role not in {"user", "assistant"}:
-            raise ValueError("Message role must be 'user' or 'assistant'.")
-
-        if not content:
-            raise ValueError("Message content must not be empty.")
+        self._validate_message(role, content)
 
         with self._session_factory() as session:
             message = Message(
@@ -119,6 +137,15 @@ class ChatRepository:
             session.delete(chat)
             session.commit()
             return True
+
+    @staticmethod
+    def _validate_message(role: str, content: str) -> None:
+        """Validate persistent message invariants."""
+        if role not in {"user", "assistant"}:
+            raise ValueError("Message role must be 'user' or 'assistant'.")
+
+        if not content:
+            raise ValueError("Message content must not be empty.")
 
     @staticmethod
     def _validate_title(title: str) -> str:

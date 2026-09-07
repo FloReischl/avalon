@@ -65,6 +65,36 @@ def test_create_chat_rejects_title_over_200_characters(repository) -> None:
         repo.create_chat("x" * 201)
 
 
+def test_create_chat_with_message_is_atomic(repository) -> None:
+    repo, _ = repository
+
+    chat = repo.create_chat_with_message(
+        "New 2026-09-07 12:00:00",
+        "user",
+        "Hallo",
+    )
+
+    messages = repo.get_messages(chat.id)
+
+    assert len(messages) == 1
+    assert messages[0].role == "user"
+    assert messages[0].content == "Hallo"
+
+
+def test_create_chat_with_message_rejects_invalid_message(repository) -> None:
+    repo, session_factory = repository
+
+    with pytest.raises(ValueError):
+        repo.create_chat_with_message("New Chat", "system", "Hallo")
+
+    with session_factory() as session:
+        chat_count = session.scalar(
+            select(func.count()).select_from(Chat)
+        )
+
+    assert chat_count == 0
+
+
 def test_add_and_get_messages_in_chronological_order(repository) -> None:
     repo, _ = repository
     chat = repo.create_chat("Chat")
