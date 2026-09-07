@@ -54,6 +54,15 @@
           "local_path": "artifacts/tts-spike/models/kokoro/df_kerstin.pt"
         }
       ]
+    },
+    "chatterbox": {
+      "voice": "data/chatterbox-ref1.wav",
+      "speaker": "local reference voice supplied by Flo",
+      "license": "MIT model; Flo confirmed rights to the local reference recording",
+      "source_revision": "ResembleAI/chatterbox weights revision 5bb1f6ee58e50c3b8d408bc82a6d3740c2db6e18; multilingual model V3",
+      "files": [
+        {"name": "chatterbox-ref1.wav", "local_path": "data/chatterbox-ref1.wav"}
+      ]
     }
   }
 }

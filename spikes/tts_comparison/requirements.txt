@@ -1,4 +1,6 @@
 # Isolated dependencies for the local TTS comparison spike.
+setuptools<81  # resemble-perth 1.0.1 imports pkg_resources
 piper-tts==1.3.0
 misaki @ git+https://github.com/semidark/misaki.git@9cda9268309160120fffee216280a9ca83ac4644
 kokoro-deutsch @ git+https://github.com/semidark/kikiri-tts.git@a12d0410e89841e6f3c09958ae5c072f90ae1d49
+chatterbox-tts @ git+https://github.com/resemble-ai/chatterbox.git@5de7a54aa4e5e2baadb0182dde554908b48b85c2

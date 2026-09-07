@@ -16,6 +16,7 @@ def test_fixed_matrix_has_each_engine_for_each_text():
         ("piper", "news"), ("piper", "suspense"), ("piper", "erotic"),
         ("kokoro_victoria", "news"), ("kokoro_victoria", "suspense"), ("kokoro_victoria", "erotic"),
         ("kokoro_kerstin", "news"), ("kokoro_kerstin", "suspense"), ("kokoro_kerstin", "erotic"),
+        ("chatterbox", "news"), ("chatterbox", "suspense"), ("chatterbox", "erotic"),
     }
 
 

@@ -6,7 +6,7 @@ Einmalig, ausschließlich in Avalos vorhandener virtueller Umgebung:
 ./.venv/bin/pip install --upgrade --force-reinstall -r spikes/tts_comparison/requirements.txt
 ```
 
-Der einzelne Laufbefehl lädt fehlende Modelle in `artifacts/tts-spike/models/` und erzeugt neun WAV-Dateien, `report.json` und `hearing-review.md`:
+Der einzelne Laufbefehl lädt fehlende Modelle in `artifacts/tts-spike/models/` und erzeugt zwölf WAV-Dateien, `report.json` und `hearing-review.md`:
 
 ```bash
 ./.venv/bin/python spikes/tts_comparison/run.py
@@ -19,3 +19,5 @@ Kikiri/Kokoro: `kikiri-german-victoria` (Victoria Asztaller, synthetisch), Apach
 Die Auswahl ist kein Qualitätsurteil. Natürlichkeit, Ausdruck und insbesondere die Eignung des erotischen Texts müssen durch Flo per Hörbewertung entschieden werden.
 
 `df_kerstin` wird ausschließlich aus dem von Flo lokal bereitgestellten Voicepack geladen. Der Laufbericht hält dessen SHA-256 fest. Weil keine externe Herkunft oder Lizenz vorliegt, wird beides bewusst als unbekannt dokumentiert.
+
+Chatterbox Multilingual V3 nutzt `data/chatterbox-ref1.wav` als lokale Referenzstimme. Flo hat deren Verwendung, einschließlich des erotischen Testtexts, bestätigt. Das Modell wird pro Spike-Lauf genau einmal geladen; die drei Chatterbox-Renderzeiten enthalten daher keinen Modellstart.

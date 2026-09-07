@@ -11,6 +11,7 @@ import platform
 import subprocess
 import sys
 import time
+import traceback
 import wave
 from dataclasses import asdict, dataclass
 from importlib.metadata import PackageNotFoundError, version
@@ -129,6 +130,27 @@ def render_kokoro(text: str, output: Path, files: dict[str, Path], requested_dev
     return device
 
 
+def load_chatterbox(requested_device: str):
+    try:
+        import torchaudio
+        from chatterbox.mtl_tts import ChatterboxMultilingualTTS
+        from huggingface_hub import snapshot_download
+    except ImportError as error:
+        raise RuntimeError("Chatterbox fehlt. Installiere zuerst requirements.txt dieses Spikes.") from error
+    device = select_device(requested_device)
+    revision = "5bb1f6ee58e50c3b8d408bc82a6d3740c2db6e18"
+    filenames = ["ve.pt", "t3_mtl23ls_v3.safetensors", "s3gen.pt", "grapheme_mtl_merged_expanded_v1.json", "conds.pt", "Cangjie5_TC.json"]
+    checkpoint_dir = Path(snapshot_download(repo_id="ResembleAI/chatterbox", revision=revision, allow_patterns=filenames))
+    model = ChatterboxMultilingualTTS.from_local(checkpoint_dir, device=device, t3_model="v3")
+    return model, device, {name: checkpoint_dir / name for name in filenames}
+
+
+def render_chatterbox(model, text: str, output: Path, reference: Path) -> None:
+    import torchaudio
+    wav = model.generate(text, language_id="de", audio_prompt_path=str(reference))
+    torchaudio.save(str(output), wav.cpu(), model.sr)
+
+
 def installed_version(name: str) -> str | None:
     try:
         return version(name)
@@ -156,6 +178,7 @@ def main() -> int:
     model_dir = output_dir / "models"
     output_dir.mkdir(parents=True, exist_ok=True)
     files = {engine: download_files(engine, spec, model_dir) for engine, spec in config["engines"].items()}
+    chatterbox_model = chatterbox_device = chatterbox_files = None
     rows: list[dict[str, Any]] = []
     actual_device = "not-used"
     try:
@@ -170,13 +193,21 @@ def main() -> int:
                 shared_files = files["kokoro_victoria"] | files[engine]
                 voice_filename = "victoria.pt" if engine == "kokoro_victoria" else "df_kerstin.pt"
                 device = render_kokoro(text["text"], output, shared_files, config["device"], voice_filename)
+            elif engine == "chatterbox":
+                if chatterbox_model is None:
+                    chatterbox_model, chatterbox_device, chatterbox_files = load_chatterbox(config["device"])
+                render_chatterbox(chatterbox_model, text["text"], output, files[engine]["chatterbox-ref1.wav"])
+                device = chatterbox_device
             else:
                 raise RuntimeError(f"Unbekannte Engine: {engine}")
             info = validate_wav(output)
             actual_device = device
             rows.append({"engine": engine, "text_id": text["id"], "text": text["text"], "file": str(output), "render_seconds": round(time.perf_counter() - started, 3), "device": device, "wav": asdict(info)})
     except Exception as error:
-        raise SystemExit(f"TTS-Spike fehlgeschlagen; kein vollständiger Erfolg: {error}") from error
+        raise SystemExit(
+            f"TTS-Spike fehlgeschlagen; kein vollständiger Erfolg: {error}\n\n"
+            f"Chatterbox-/Engine-Traceback:\n{traceback.format_exc()}"
+        ) from error
     report = {
         "status": "success",
         "run_at_epoch_seconds": time.time(),
@@ -184,11 +215,13 @@ def main() -> int:
         "python": sys.version,
         "requested_device": config["device"],
         "used_device": actual_device,
-        "dependencies": {name: installed_version(name) for name in ("piper-tts", "kokoro-deutsch", "torch", "soundfile", "numpy")},
+        "dependencies": {name: installed_version(name) for name in ("piper-tts", "kokoro-deutsch", "chatterbox-tts", "torch", "soundfile", "numpy")},
         "engines": config["engines"],
         "model_files": {engine: {name: {"path": str(path), "size_bytes": path.stat().st_size, "sha256": sha256(path)} for name, path in entries.items()} for engine, entries in files.items()},
         "renders": rows,
     }
+    if chatterbox_files:
+        report["model_files"]["chatterbox_weights"] = {name: {"path": str(path), "size_bytes": path.stat().st_size, "sha256": sha256(path)} for name, path in chatterbox_files.items()}
     (output_dir / "report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     write_rating_template(output_dir, rows)
     print(f"Erfolgreich: {len(rows)} WAV-Dateien in {output_dir}")

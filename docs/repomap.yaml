@@ -169,8 +169,16 @@ key_flows:
     contract: backend/app/tts/base.py:TextToSpeech
     candidate_adapter: backend/app/tts/chatterbox.py:ChatterboxTextToSpeech
     target_candidate: Chatterbox Multilingual V3
-    status: stub
+    status: spike_validated_integration_pending
     priority: after_text_and_native_audio
+    spike_result:
+      evaluated_candidates:
+        - Piper with de_DE-kerstin-low
+        - Kikiri/Kokoro with Victoria
+        - Kikiri/Kokoro with local Kerstin voicepack
+        - Chatterbox Multilingual V3 with local reference voice
+      decision: Chatterbox Multilingual V3 is the preferred candidate for the first integration.
+      scope: The comparison produced local WAV artifacts only; no product TTS adapter, API, or playback path is implemented yet.
 
 modules:
 
