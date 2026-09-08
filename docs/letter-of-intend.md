@@ -4,7 +4,7 @@
 
 Avalo soll eine lokal betriebene Companion- und Assistant-Anwendung werden, deren Kern ein lokales Large Language Model bildet. Ziel ist eine deutlich natürlichere und persönlichere Interaktion als bei einem klassischen textbasierten Chatbot, bei zugleich weitgehender Unabhängigkeit von Cloud-Diensten.
 
-Der Projektname **Avalo** leitet sich ursprünglich von „Avatar Local“ ab.
+Der Projektname **Avalo** leitete sich ursprünglich von „Avatar Local“ ab. Heute "Augmented Virtual Assistant, Local/Offline", wird aber nicht Capital Case.
 
 ## Produktvision
 
