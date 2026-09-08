@@ -41,7 +41,9 @@ class ChatSummaryResponse(BaseModel):
 
     id: int
     title: str
+    pinned: bool
     created_at: datetime
+
 
 
 class ChatDetailResponse(ChatSummaryResponse):
@@ -56,7 +58,14 @@ class RenameChatRequest(BaseModel):
     title: str = Field(min_length=1, max_length=200)
 
 
+class SetChatPinnedRequest(BaseModel):
+    """Requested pinned state for one persistent chat."""
+
+    pinned: bool
+
+
 class AudioResponseRequest(BaseModel):
+
     """Conversation context accompanying a completed audio turn."""
 
     messages: list[ConversationMessage] = Field(default_factory=list)

@@ -41,6 +41,8 @@ def test_create_and_get_chat(repository) -> None:
     assert loaded.title == "New 2026-09-07 12:00:00"
     assert loaded.title_is_manual is False
     assert loaded.auto_title_attempted is False
+    assert loaded.pinned is False
+
 
 
 def test_create_chat_normalizes_title(repository) -> None:
@@ -221,7 +223,37 @@ def test_rename_unknown_chat_returns_none(repository) -> None:
     assert repo.rename_chat(999, "Title") is None
 
 
+def test_set_pinned_persists_state(repository) -> None:
+    repo, _ = repository
+    chat = repo.create_chat("Chat")
+
+    pinned = repo.set_pinned(chat.id, True)
+
+    assert pinned is not None
+    assert pinned.pinned is True
+
+    loaded = repo.get_chat(chat.id)
+    assert loaded is not None
+    assert loaded.pinned is True
+
+    unpinned = repo.set_pinned(chat.id, False)
+
+    assert unpinned is not None
+    assert unpinned.pinned is False
+
+    loaded = repo.get_chat(chat.id)
+    assert loaded is not None
+    assert loaded.pinned is False
+
+
+def test_set_pinned_unknown_chat_returns_none(repository) -> None:
+    repo, _ = repository
+
+    assert repo.set_pinned(999, True) is None
+
+
 def test_auto_title_attempt_can_only_be_claimed_once(repository) -> None:
+
     repo, _ = repository
     chat = repo.create_chat("New Chat")
 

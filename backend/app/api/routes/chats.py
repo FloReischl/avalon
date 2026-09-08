@@ -7,7 +7,9 @@ from app.api.schemas import (
     ChatSummaryResponse,
     PersistentMessageResponse,
     RenameChatRequest,
+    SetChatPinnedRequest,
 )
+
 from app.persistence.chat_repository import ChatRepository
 from app.persistence.database import (
     create_database_engine,
@@ -33,8 +35,10 @@ def _summary_response(chat) -> ChatSummaryResponse:
     return ChatSummaryResponse(
         id=chat.id,
         title=chat.title,
+        pinned=chat.pinned,
         created_at=chat.created_at,
     )
+
 
 
 @router.get("", response_model=list[ChatSummaryResponse])
@@ -66,7 +70,9 @@ def get_chat(
     return ChatDetailResponse(
         id=chat.id,
         title=chat.title,
+        pinned=chat.pinned,
         created_at=chat.created_at,
+
         messages=[
             PersistentMessageResponse(
                 id=message.id,
@@ -103,8 +109,26 @@ def rename_chat(
     return _summary_response(chat)
 
 
+@router.patch("/{chat_id}/pinned", response_model=ChatSummaryResponse)
+def set_chat_pinned(
+    chat_id: int,
+    request: SetChatPinnedRequest,
+    repository: ChatRepository = Depends(get_chat_repository),
+) -> ChatSummaryResponse:
+    """Persist the pinned state of one chat."""
+    chat = repository.set_pinned(chat_id, request.pinned)
+    if chat is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Chat {chat_id} does not exist.",
+        )
+
+    return _summary_response(chat)
+
+
 @router.delete("/{chat_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_chat(
+
     chat_id: int,
     repository: ChatRepository = Depends(get_chat_repository),
 ) -> Response:

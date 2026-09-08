@@ -127,8 +127,21 @@ class ChatRepository:
             session.refresh(chat)
             return chat
 
+    def set_pinned(self, chat_id: int, pinned: bool) -> Chat | None:
+        """Persist the pinned state of one chat."""
+        with self._session_factory() as session:
+            chat = session.get(Chat, chat_id)
+            if chat is None:
+                return None
+
+            chat.pinned = pinned
+            session.commit()
+            session.refresh(chat)
+            return chat
+
     def claim_auto_title_attempt(self, chat_id: int) -> bool:
         """Atomically claim the one allowed automatic-title attempt."""
+
         with self._session_factory() as session:
             chat = session.get(Chat, chat_id)
             if (
