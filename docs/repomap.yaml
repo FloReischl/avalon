@@ -67,6 +67,7 @@ architecture:
     layers:
       api: HTTP endpoints and public schemas
       application: use-case orchestration
+      persistence: SQLite conversation storage and schema lifecycle
       runtime: interchangeable local model adapters
       audio: backend-local audio capture and preparation boundary
       tts: interchangeable speech synthesis adapters
@@ -81,17 +82,28 @@ architecture:
     scope: loopback_only
 
   conversation:
-    persistence: none
-    state: transient_frontend_memory
+    persistence: sqlite
+    database_path: "~/.avalo/avalo.sqlite"
+    schema_management: alembic
     response_mode: streaming
     current_scope:
-      - no persona
-      - no memory
-      - no persisted history
-      - text and audio turns share the same transient conversation context
-      - prior audio UI placeholders are excluded from model context
-      - active text turn can be aborted and rolled back client-side
-      - failed or aborted audio response keeps avatar visible audio user contribution
+      - text chats and completed text messages are persisted
+      - application startup always begins with a fresh transient New Chat
+      - a transient New Chat is persisted only when its first message is sent
+      - persisted chats can be listed and reopened with complete stored history
+      - model context for text chat is limited to the most recent 100 persisted messages
+      - assistant text is persisted only after successful complete generation
+      - aborted or failed partial assistant output is not persisted
+      - chat titles start as timestamp-based New titles
+      - one automatic title attempt occurs after exactly two complete text roundtrips
+      - manual chat titles suppress automatic title generation permanently
+      - text and audio UI continue to share the visible frontend conversation
+      - audio user turns remain represented by the transient "🎤 Sprachnachricht" placeholder
+      - prior audio UI placeholders are excluded from semantic model context
+      - audio content itself is not persisted yet
+      - multiple persisted chats may have independent concurrent text streams
+      - active text turns survive visible chat switching in frontend memory
+      - Stop affects only the currently selected running chat
 
 key_flows:
 
@@ -100,8 +112,13 @@ key_flows:
     uses:
       - backend/app/config.py:settings
       - backend/app/api/router.py:api_router
+      - Alembic migration runner
     behavior:
       - creates FastAPI application
+      - runs database migrations to current Alembic head during application lifespan startup
+      - backend startup fails when database initialization or migration fails
+      - database startup failures write their full traceback to server stderr
+      - uncaught request exceptions write their full traceback to server stderr
       - configures frontend CORS origin
       - installs API router
 
@@ -119,10 +136,15 @@ key_flows:
     route: backend/app/api/routes/chat.py:create_chat_response
     request: backend/app/api/schemas.py:ChatRequest
     response_media_type: text/event-stream
-    application_service: backend/app/services/chat.py:ChatService.stream_response
+    application_service: backend/app/services/chat.py:ChatService
     runtime_call: ModelRuntime.generate_text_stream
-    status: implemented
+    status: persisted_chat_implemented
+    request_contract:
+      new_chat: '{"message": "<prompt>"}'
+      existing_chat: '{"chat_id": <id>, "message": "<prompt>"}'
     stream_protocol:
+      chat:
+        data: '{"id": "<chat-id>"}'
       chunk:
         data: '{"text": "<chunk>"}'
       done:
@@ -130,7 +152,15 @@ key_flows:
       error:
         data: "{}"
     semantics:
-      - successful stream emits zero or more chunk events followed by done
+      - unknown supplied chat id returns HTTP 404 before StreamingResponse begins
+      - first SSE event identifies the persistent chat id
+      - user message is persisted before model generation
+      - runtime receives at most the most recent 100 persisted conversation messages
+      - successful generation persists the complete assistant message
+      - partial assistant output is not persisted on failure or cancellation
+      - successful stream emits chat, zero or more chunk events, then done
+      - done is emitted before optional automatic-title finalization
+      - HTTP stream EOF occurs after post-response finalization completes
       - runtime failure emits error and no done event
       - runtime error details are not exposed in the public stream
       - cancellation propagates through service and runtime without becoming an error event
@@ -229,14 +259,23 @@ modules:
     symbols:
       create_app:
         signature: "() -> FastAPI"
+      StderrExceptionMiddleware:
+        role: write complete uncaught request tracebacks to server stderr and re-raise
       app:
         kind: FastAPI instance
     dependencies:
       - backend/app/api/router.py
       - backend/app/config.py
+      - database migration runner
+    behavior:
+      - run Alembic migrations during lifespan startup
+      - fail backend startup when database initialization fails
+      - preserve raw technical exception diagnostics on stderr
     relevant_to:
       - backend startup
+      - database schema startup
       - middleware
+      - error diagnostics
       - CORS
       - top-level routing
 
@@ -269,9 +308,11 @@ modules:
           content: non_empty_str
       ChatRequest:
         fields:
-          messages: list[ConversationMessage]
-        validation:
-          messages_min_length: 1
+          chat_id: optional_positive_int
+          message: non_empty_str
+        semantics:
+          - omitted chat_id creates a persistent chat with the first user message
+          - supplied chat_id continues an existing persistent chat
       AudioResponseRequest:
         fields:
           messages: list[ConversationMessage]
@@ -300,48 +341,68 @@ modules:
     status: implemented
 
   backend/app/api/routes/chat.py:
-    role: text chat HTTP streaming boundary
+    role: persisted text-chat HTTP and CRUD boundary
     symbols:
       get_chat_service:
-        role: request-scoped ChatService composition using OllamaRuntime
+        role: request-scoped ChatService composition using OllamaRuntime and persistence
       format_sse_event:
         role: Avalo SSE event serialization
-      stream_chat_response:
-        signature: "(service: ChatService, messages: list[dict[str, str]]) -> AsyncIterator[str]"
-        role: translate service chunks and runtime failures into Avalo SSE events
       create_chat_response:
         signature: "(request: ChatRequest, service: ChatService) -> StreamingResponse"
-    endpoint: "POST /api/v1/chat"
+    endpoints:
+      stream: "POST /api/v1/chat"
+      list: "GET /api/v1/chats"
+      detail: "GET /api/v1/chats/{id}"
+      rename: "PATCH /api/v1/chats/{id}"
+      delete: "DELETE /api/v1/chats/{id}"
     response_media_type: text/event-stream
     dependencies:
-      - backend/app/api/schemas.py:ChatRequest
+      - backend/app/api/schemas.py
       - backend/app/services/chat.py:ChatService
       - backend/app/runtime/ollama.py:OllamaRuntime
+      - chat persistence repository
     status: implemented
     stream_events:
+      - chat
       - chunk
       - done
       - error
+    semantics:
+      - validates existing chat before StreamingResponse is created
+      - emits persistent chat id before assistant chunks
+      - emits done before optional post-response title generation
+      - performs post-response finalization before stream connection closes
     cancellation:
       - asyncio cancellation is not converted to an error event
       - cancellation propagates into ChatService and ModelRuntime
 
   backend/app/services/chat.py:
-    role: text chat use-case boundary
+    role: persisted text-chat use-case boundary
     symbols:
       ChatService:
-        constructor: "(runtime: ModelRuntime)"
         methods:
+          start_turn:
+            role: validate or create chat, persist user message, and prepare bounded runtime context
           stream_response:
-            signature: "(messages: list[dict[str, str]]) -> AsyncIterator[str]"
+            role: stream runtime response and persist only the complete successful assistant message
+          finalize_turn:
+            role: perform optional post-response work such as one-shot automatic title generation
     dependencies:
       - backend/app/runtime/base.py:ModelRuntime
+      - chat persistence repository
     status: implemented
     behavior:
-      - delegate complete transient conversation context to configured ModelRuntime
+      - create a persistent chat atomically with its first user message
+      - continue existing persistent chats by id
+      - pass only the most recent 100 messages to ModelRuntime
+      - accumulate streamed assistant chunks and persist them only on successful completion
+      - attempt automatic title generation only after exactly two complete user/assistant roundtrips
+      - persist the automatic-title-attempt marker before model title generation
+      - never retry a failed automatic title attempt
+      - never overwrite a manually assigned title
       - remain independent of concrete runtime adapter
     future_scope:
-      - no persistence, persona, or memory yet
+      - persona and long-term memory are not implemented yet
 
   backend/app/services/audio_chat.py:
     role: native-audio chat use-case boundary
@@ -632,13 +693,20 @@ modules:
 
   frontend/src/ChatWindow.vue:
     role: main chat-window Vue root
-    status: implemented_transient_chat
+    status: implemented_persisted_chat
     current_behavior:
-      - renders conversation sidebar and current transient chat
+      - starts with a fresh transient New Chat
+      - loads persisted chat summaries into the conversation sidebar
+      - retries the initial sidebar load up to 20 times with 500 ms delay while backend startup may still be in progress
+      - renders persisted chat titles with ellipsis and full native tooltip
+      - shows an activity indicator for persisted chats with running requests
+      - loads complete persisted history when an existing chat is selected
+      - leaves the current chat unchanged when loading another chat fails
+      - discards unsent composer text when switching chats or starting New Chat
       - sends messages through streaming backend client
-      - disables input while generation is active
-      - switches Send action to Stop during generation
-      - New Chat aborts an active turn and clears transient state
+      - disables input while visible generation is active
+      - switches Send action to Stop during visible generation
+      - New Chat does not abort a text response running in another chat
       - implements multiline-aware Enter / Shift+Enter / Ctrl+Enter semantics
       - renders user and assistant messages through MarkdownMessage
       - supports icon-based Send, Stop, New Chat, and composer expand/collapse actions
@@ -724,17 +792,22 @@ modules:
     role: frontend HTTP boundary for backend communication
     responsibilities:
       - health calls
-      - POST streaming chat requests with conversation messages to /api/v1/chat
+      - list persisted chats through GET /api/v1/chats
+      - load persisted chat detail through GET /api/v1/chats/{id}
+      - POST streaming text requests as chat_id plus message to /api/v1/chat
+      - accept the persistent chat id from the initial SSE chat event
       - start backend recording through /api/v1/audio/recording/start
       - abort backend recording through /api/v1/audio/recording/abort
       - stop recording and stream native-audio response through /api/v1/audio/recording/stop
       - synthesize plain text through /api/v1/tts and return WAV response plus playback id
       - notify backend playback completion through /api/v1/tts/playback-ended
-      - parse shared Avalo SSE chunk / done / error events
+      - parse Avalo SSE chat / chunk / done / error events
+      - expose done separately while continuing to read until HTTP stream EOF
       - expose AbortSignal cancellation to callers
       - reject malformed or incomplete streams
     relevant_to:
       - backend URL/contracts
+      - persisted chat CRUD reads
       - streaming text chat
       - native-audio recording and response flow
     inspect_before:
@@ -743,7 +816,7 @@ modules:
       - changing public chat stream protocol
 
   frontend/src/types/chat.ts:
-    role: frontend transient chat message types
+    role: frontend chat message presentation types
     symbols:
       ChatMessage:
         fields:
@@ -751,26 +824,37 @@ modules:
           content: str
           kind: optional_text_or_audio
     relevant_to:
-      - frontend transient conversation state
-      - frontend chat rendering
+      - frontend conversation state
+      - frontend persisted-history rendering
+      - transient audio UI messages
     inspect_with:
       - frontend/src/composables/useTransientChat.ts
       - frontend/src/ChatWindow.vue
 
   frontend/src/composables/useTransientChat.ts:
-    role: transient client-side chat-turn state machine
+    role: persisted-chat-aware client-side chat state machine
     responsibilities:
-      - hold current messages and input
-      - derive shared model conversation context from transient UI messages
+      - hold the currently visible chat state and transient New Chat state
+      - maintain persisted chat summaries for the sidebar
+      - load persisted chat history before switching visible state
+      - keep independent frontend state for persisted chats with running requests
+      - allow text generation in different chats concurrently
+      - prevent a second turn in the same chat while its request is still active
+      - keep background text streams alive while another chat is visible
+      - restore partial assistant output and Stop behavior when returning to a running chat
+      - assign a newly created persistent chat id from the SSE chat event
+      - refresh persisted chat summaries after request EOF
+      - distinguish visible generation completion at SSE done from request completion at EOF
+      - keep the active turn internally until EOF so automatic-title finalization cannot race a new same-chat send
+      - derive audio model context from current visible UI messages
       - exclude prior audio UI placeholders from semantic model context
-      - start text and audio backend streaming generation
       - append assistant chunks incrementally
-      - disable concurrent generation
-      - abort active generation
+      - abort only the active turn belonging to the selected chat
       - roll back complete text turn on Stop or technical failure
       - keep visible audio user contribution when audio response fails or is stopped
       - restore original text prompt exactly after rollback
       - ignore stale callbacks from superseded turns
+      - log frontend chat-list and chat-load transport failures to console.error
     dependencies:
       - frontend/src/services/backend.ts
       - frontend/src/types/chat.ts
@@ -909,23 +993,31 @@ tests:
 
   tests/backend/test_chat_contract.py:
     covers:
-      - public SSE text chat API contract
+      - persisted public SSE text chat API contract
+      - chat id event before streamed assistant chunks
       - chunk ordering and done event
+      - chat_id plus message request validation
+      - unknown chat rejection before stream creation
       - runtime failure mapped to error event without done
-      - request validation
       - cancellation propagation without SSE error conversion
     inspect_with:
       - backend/app/api/routes/chat.py
       - backend/app/api/schemas.py
       - backend/app/services/chat.py
+      - chat persistence implementation
 
   tests/backend/test_chat_service.py:
     covers:
-      - ChatService streaming delegation
+      - persistent ChatService turn orchestration
+      - runtime context selection
       - runtime chunk ordering
+      - complete assistant persistence
+      - incomplete assistant rollback semantics
+      - automatic title eligibility and one-shot behavior
     inspect_with:
       - backend/app/services/chat.py
       - backend/app/runtime/base.py
+      - chat persistence implementation
 
   tests/backend/test_runtime_blueprint.py:
     covers:
@@ -1047,10 +1139,33 @@ change_navigation:
     inspect:
       - backend/app/api/schemas.py
       - backend/app/api/routes/chat.py
+      - backend/app/services/chat.py
       - frontend/src/types/chat.ts
       - frontend/src/services/backend.ts
+      - frontend/src/composables/useTransientChat.ts
       - tests/backend/test_chat_contract.py
-      - tests/frontend/App.spec.ts
+      - tests/backend/test_chat_service.py
+      - tests/frontend/backend.spec.ts
+      - tests/frontend/useTransientChat.spec.ts
+      - tests/frontend/ChatWindow.spec.ts
+
+  change_chat_persistence:
+    inspect:
+      - backend/app/main.py
+      - backend/app/api/schemas.py
+      - backend/app/api/routes/chat.py
+      - backend/app/services/chat.py
+      - backend/app/persistence/database.py
+      - backend/app/persistence/models.py
+      - alembic configuration and migrations
+      - frontend/src/services/backend.ts
+      - frontend/src/composables/useTransientChat.ts
+      - frontend/src/ChatWindow.vue
+      - tests/backend/test_chat_contract.py
+      - tests/backend/test_chat_service.py
+      - tests/frontend/backend.spec.ts
+      - tests/frontend/useTransientChat.spec.ts
+      - tests/frontend/ChatWindow.spec.ts
 
   change_runtime_contract:
     inspect:
