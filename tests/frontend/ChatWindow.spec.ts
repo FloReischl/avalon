@@ -41,9 +41,51 @@ vi.mock("../../frontend/src/services/backend", async (importOriginal) => {
   };
 });
 
+vi.mock("../../frontend/src/components/MarkdownComposer.vue", async () => {
+  const { defineComponent, h } = await import("vue");
+
+  return {
+    default: defineComponent({
+      name: "MarkdownComposerStub",
+      props: {
+        modelValue: {
+          type: String,
+          required: true,
+        },
+        placeholder: {
+          type: String,
+          required: true,
+        },
+      },
+      emits: [
+        "update:modelValue",
+        "keydown",
+      ],
+      setup(props, { emit }) {
+        return () => h("textarea", {
+          "data-testid": "chat-input",
+          "aria-label": "Nachricht",
+          placeholder: props.placeholder,
+          value: props.modelValue,
+          onInput: (event: Event) => {
+            emit(
+              "update:modelValue",
+              (event.target as HTMLTextAreaElement).value,
+            );
+          },
+          onKeydown: (event: KeyboardEvent) => {
+            emit("keydown", event);
+          },
+        });
+      },
+    }),
+  };
+});
+
 import ChatWindow from "../../frontend/src/ChatWindow.vue";
 
 describe("ChatWindow", () => {
+
   beforeEach(() => {
     abortAudioRecordingMock.mockReset();
     abortAudioRecordingMock.mockResolvedValue(undefined);

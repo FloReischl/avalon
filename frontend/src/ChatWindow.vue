@@ -7,9 +7,11 @@ import {
   watch,
 } from "vue";
 
+import MarkdownComposer from "./components/MarkdownComposer.vue";
 import MarkdownMessage from "./components/MarkdownMessage.vue";
 
 import watermarkUrl from "./assets/watermark.png";
+
 import { getActiveAvatar } from "./avatar";
 
 import { useTransientChat } from "./composables/useTransientChat";
@@ -348,10 +350,7 @@ watch(
 function setMessageRenderer(index: number, instance: unknown) {
   const renderer = instance as MarkdownMessageInstance | null;
 
-  if (
-    renderer?.getRenderedHtml
-    && renderer.getPlainText
-  ) {
+  if (renderer) {
     messageRenderers.set(index, renderer);
     return;
   }
@@ -647,14 +646,12 @@ function handleInputKeydown(event: KeyboardEvent) {
             </svg>
           </button>
 
-          <textarea
+          <MarkdownComposer
             v-model="input"
-            data-testid="chat-input"
-            aria-label="Nachricht"
             placeholder="Dein Prompt hier"
-            rows="3"
             @keydown="handleInputKeydown"
           />
+
 
         </div>
 
@@ -1010,32 +1007,6 @@ function handleInputKeydown(event: KeyboardEvent) {
 
 .composer-input:focus-within {
   border-color: #8baee8;
-}
-
-.composer textarea {
-  width: 100%;
-  height: 100%;
-  margin: 0;
-  padding: 0.75rem 3.5rem 0.75rem 0.85rem;
-  box-sizing: border-box;
-  border: 0;
-  resize: none;
-  outline: none;
-  background: transparent;
-  color: inherit;
-  font-family: ui-monospace, "Consolas", "Liberation Mono", monospace;
-  font-size: 0.95rem;
-  line-height: 1.45;
-  tab-size: 4;
-}
-
-.composer textarea::placeholder {
-  color: #999999;
-}
-
-.composer textarea:disabled {
-  background: #f5f5f5;
-  color: #777777;
 }
 
 
