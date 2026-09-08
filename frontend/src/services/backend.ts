@@ -24,8 +24,10 @@ export interface ConversationMessage {
 export interface ChatSummary {
   id: number;
   title: string;
+  pinned: boolean;
   created_at: string;
 }
+
 
 export interface PersistentMessage {
   id: number;
@@ -79,7 +81,67 @@ export async function getChat(chatId: number): Promise<ChatDetail> {
   return response.json() as Promise<ChatDetail>;
 }
 
+export async function renameChat(
+  chatId: number,
+  title: string,
+): Promise<ChatSummary> {
+  const response = await fetch(
+    `${BACKEND_BASE_URL}/api/v1/chats/${chatId}`,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ title }),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(`Chat rename request failed with ${response.status}`);
+  }
+
+  return response.json() as Promise<ChatSummary>;
+}
+
+export async function setChatPinned(
+  chatId: number,
+  pinned: boolean,
+): Promise<ChatSummary> {
+  const response = await fetch(
+    `${BACKEND_BASE_URL}/api/v1/chats/${chatId}/pinned`,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ pinned }),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(`Chat pin request failed with ${response.status}`);
+  }
+
+  return response.json() as Promise<ChatSummary>;
+}
+
+export async function deleteChat(
+  chatId: number,
+): Promise<void> {
+  const response = await fetch(
+    `${BACKEND_BASE_URL}/api/v1/chats/${chatId}`,
+    {
+      method: "DELETE",
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(`Chat delete request failed with ${response.status}`);
+  }
+}
+
 export async function streamChatMessage(
+
   request: ChatStreamRequest,
   handlers: ChatStreamHandlers,
   signal: AbortSignal,

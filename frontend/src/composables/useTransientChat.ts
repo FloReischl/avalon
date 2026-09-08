@@ -6,15 +6,20 @@ import {
 } from "vue";
 
 import {
+  deleteChat as deleteBackendChat,
   getChat,
   getChats,
+  renameChat as renameBackendChat,
+  setChatPinned as setBackendChatPinned,
   streamAudioResponse,
   streamChatMessage,
+  type ChatDetail,
   type ChatStreamHandlers,
   type ChatStreamRequest,
   type ChatSummary,
   type ConversationMessage,
 } from "../services/backend";
+
 import type { ChatMessage } from "../types/chat";
 
 export type ChatStreamer = (
@@ -29,7 +34,30 @@ export type AudioStreamer = (
   signal: AbortSignal,
 ) => Promise<void>;
 
+export interface ChatManagementClient {
+  getChats: () => Promise<ChatSummary[]>;
+  getChat: (chatId: number) => Promise<ChatDetail>;
+  renameChat: (
+    chatId: number,
+    title: string,
+  ) => Promise<ChatSummary>;
+  setChatPinned: (
+    chatId: number,
+    pinned: boolean,
+  ) => Promise<ChatSummary>;
+  deleteChat: (chatId: number) => Promise<void>;
+}
+
+const defaultChatManagementClient: ChatManagementClient = {
+  getChats,
+  getChat,
+  renameChat: renameBackendChat,
+  setChatPinned: setBackendChatPinned,
+  deleteChat: deleteBackendChat,
+};
+
 interface ChatState {
+
   chatId?: number;
   messages: ChatMessage[];
   input: string;
@@ -62,7 +90,9 @@ function createChatState(
 export function useTransientChat(
   streamMessage: ChatStreamer = streamChatMessage,
   streamAudio: AudioStreamer = streamAudioResponse,
+  chatManagement: ChatManagementClient = defaultChatManagementClient,
 ) {
+
   const currentState = ref<ChatState>(createChatState());
   const chatSummaries = ref<ChatSummary[]>([]);
   const chatStates = new Map<number, ChatState>();
@@ -125,7 +155,8 @@ export function useTransientChat(
   ) {
     for (let attempt = 1; attempt <= attempts; attempt += 1) {
       try {
-        chatSummaries.value = await getChats();
+        chatSummaries.value = await chatManagement.getChats();
+
         return;
       } catch (error) {
         console.error(error);
@@ -161,7 +192,8 @@ export function useTransientChat(
     let detail;
 
     try {
-      detail = await getChat(chatId);
+      detail = await chatManagement.getChat(chatId);
+
     } catch (error) {
       console.error(error);
       currentState.value.errorMessage =
@@ -197,7 +229,79 @@ export function useTransientChat(
     currentState.value = createChatState();
   }
 
+  function updateChatSummary(summary: ChatSummary) {
+    const index = chatSummaries.value.findIndex(
+      (chat) => chat.id === summary.id,
+    );
+
+    if (index !== -1) {
+      chatSummaries.value[index] = summary;
+    }
+  }
+
+  async function renameChat(
+    chatId: number,
+    title: string,
+  ): Promise<boolean> {
+    try {
+      const summary = await chatManagement.renameChat(
+        chatId,
+        title,
+      );
+      updateChatSummary(summary);
+      return true;
+    } catch (error) {
+      console.error(error);
+      currentState.value.errorMessage =
+        "Chat konnte nicht umbenannt werden.";
+      return false;
+    }
+  }
+
+  async function setChatPinned(
+    chatId: number,
+    pinned: boolean,
+  ): Promise<boolean> {
+    try {
+      const summary = await chatManagement.setChatPinned(
+        chatId,
+        pinned,
+      );
+      updateChatSummary(summary);
+      return true;
+    } catch (error) {
+      console.error(error);
+      currentState.value.errorMessage =
+        "Pin-Status konnte nicht geändert werden.";
+      return false;
+    }
+  }
+
+  async function deleteChat(chatId: number): Promise<boolean> {
+    try {
+      await chatManagement.deleteChat(chatId);
+    } catch (error) {
+      console.error(error);
+      currentState.value.errorMessage =
+        "Chat konnte nicht gelöscht werden.";
+      return false;
+    }
+
+    chatSummaries.value = chatSummaries.value.filter(
+      (chat) => chat.id !== chatId,
+    );
+    chatStates.delete(chatId);
+    runningChatIds.delete(chatId);
+
+    if (currentState.value.chatId === chatId) {
+      currentState.value = createChatState();
+    }
+
+    return true;
+  }
+
   async function send() {
+
     const state = currentState.value;
 
     if (
@@ -411,8 +515,12 @@ export function useTransientChat(
     refreshChats,
     selectChat,
     newChat,
+    renameChat,
+    setChatPinned,
+    deleteChat,
     isChatRunning,
     send,
+
     sendAudio,
     stop,
   };

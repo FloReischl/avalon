@@ -2,11 +2,237 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   useTransientChat,
+  type ChatManagementClient,
   type ChatStreamer,
 } from "../../frontend/src/composables/useTransientChat";
 
+function createChatManagement(
+  overrides: Partial<ChatManagementClient> = {},
+): ChatManagementClient {
+  return {
+    getChats: vi.fn().mockResolvedValue([]),
+    getChat: vi.fn(),
+    renameChat: vi.fn(),
+    setChatPinned: vi.fn(),
+    deleteChat: vi.fn(),
+    ...overrides,
+  };
+}
+
+
 describe("useTransientChat", () => {
+  it("renames a chat only after the backend succeeds", async () => {
+    const management = createChatManagement({
+      getChats: vi.fn().mockResolvedValue([
+        {
+          id: 42,
+          title: "Original",
+          pinned: false,
+          created_at: "2026-09-07T10:00:00",
+        },
+      ]),
+      renameChat: vi.fn().mockResolvedValue({
+        id: 42,
+        title: "Neuer Name",
+        pinned: false,
+        created_at: "2026-09-07T10:00:00",
+      }),
+    });
+
+    const chat = useTransientChat(
+      undefined,
+      undefined,
+      management,
+    );
+
+    await chat.refreshChats();
+    const result = await chat.renameChat(42, "Neuer Name");
+
+    expect(result).toBe(true);
+    expect(management.renameChat).toHaveBeenCalledWith(
+      42,
+      "Neuer Name",
+    );
+    expect(chat.chatSummaries.value[0].title).toBe("Neuer Name");
+  });
+
+  it("keeps the old title when renaming fails", async () => {
+    const management = createChatManagement({
+      getChats: vi.fn().mockResolvedValue([
+        {
+          id: 42,
+          title: "Original",
+          pinned: false,
+          created_at: "2026-09-07T10:00:00",
+        },
+      ]),
+      renameChat: vi.fn().mockRejectedValue(
+        new Error("failed"),
+      ),
+    });
+
+    const chat = useTransientChat(
+      undefined,
+      undefined,
+      management,
+    );
+
+    await chat.refreshChats();
+    const result = await chat.renameChat(42, "Neuer Name");
+
+    expect(result).toBe(false);
+    expect(chat.chatSummaries.value[0].title).toBe("Original");
+    expect(chat.errorMessage.value).toBe(
+      "Chat konnte nicht umbenannt werden.",
+    );
+  });
+
+  it("updates pinned state only after the backend succeeds", async () => {
+    const management = createChatManagement({
+      getChats: vi.fn().mockResolvedValue([
+        {
+          id: 42,
+          title: "Chat",
+          pinned: false,
+          created_at: "2026-09-07T10:00:00",
+        },
+      ]),
+      setChatPinned: vi.fn().mockResolvedValue({
+        id: 42,
+        title: "Chat",
+        pinned: true,
+        created_at: "2026-09-07T10:00:00",
+      }),
+    });
+
+    const chat = useTransientChat(
+      undefined,
+      undefined,
+      management,
+    );
+
+    await chat.refreshChats();
+    const result = await chat.setChatPinned(42, true);
+
+    expect(result).toBe(true);
+    expect(management.setChatPinned).toHaveBeenCalledWith(
+      42,
+      true,
+    );
+    expect(chat.chatSummaries.value[0].pinned).toBe(true);
+  });
+
+  it("keeps pinned state unchanged when updating it fails", async () => {
+    const management = createChatManagement({
+      getChats: vi.fn().mockResolvedValue([
+        {
+          id: 42,
+          title: "Chat",
+          pinned: false,
+          created_at: "2026-09-07T10:00:00",
+        },
+      ]),
+      setChatPinned: vi.fn().mockRejectedValue(
+        new Error("failed"),
+      ),
+    });
+
+    const chat = useTransientChat(
+      undefined,
+      undefined,
+      management,
+    );
+
+    await chat.refreshChats();
+    const result = await chat.setChatPinned(42, true);
+
+    expect(result).toBe(false);
+    expect(chat.chatSummaries.value[0].pinned).toBe(false);
+    expect(chat.errorMessage.value).toBe(
+      "Pin-Status konnte nicht geändert werden.",
+    );
+  });
+
+  it("deletes a chat from local state after the backend succeeds", async () => {
+    const management = createChatManagement({
+      getChats: vi.fn().mockResolvedValue([
+        {
+          id: 42,
+          title: "Chat",
+          pinned: false,
+          created_at: "2026-09-07T10:00:00",
+        },
+      ]),
+      getChat: vi.fn().mockResolvedValue({
+        id: 42,
+        title: "Chat",
+        pinned: false,
+        created_at: "2026-09-07T10:00:00",
+        messages: [
+          {
+            id: 1,
+            role: "user",
+            content: "Hallo",
+            created_at: "2026-09-07T10:00:01",
+          },
+        ],
+      }),
+      deleteChat: vi.fn().mockResolvedValue(undefined),
+    });
+
+    const chat = useTransientChat(
+      undefined,
+      undefined,
+      management,
+    );
+
+    await chat.refreshChats();
+    await chat.selectChat(42);
+
+    const result = await chat.deleteChat(42);
+
+    expect(result).toBe(true);
+    expect(management.deleteChat).toHaveBeenCalledWith(42);
+    expect(chat.chatSummaries.value).toEqual([]);
+    expect(chat.selectedChatId.value).toBeUndefined();
+    expect(chat.messages.value).toEqual([]);
+    expect(chat.input.value).toBe("");
+  });
+
+  it("keeps a chat unchanged when deleting fails", async () => {
+    const management = createChatManagement({
+      getChats: vi.fn().mockResolvedValue([
+        {
+          id: 42,
+          title: "Chat",
+          pinned: false,
+          created_at: "2026-09-07T10:00:00",
+        },
+      ]),
+      deleteChat: vi.fn().mockRejectedValue(
+        new Error("failed"),
+      ),
+    });
+
+    const chat = useTransientChat(
+      undefined,
+      undefined,
+      management,
+    );
+
+    await chat.refreshChats();
+    const result = await chat.deleteChat(42);
+
+    expect(result).toBe(false);
+    expect(chat.chatSummaries.value).toHaveLength(1);
+    expect(chat.chatSummaries.value[0].id).toBe(42);
+    expect(chat.errorMessage.value).toBe(
+      "Chat konnte nicht gelöscht werden.",
+    );
+  });
+
   it("adds the first user turn, accepts its chat ID and streams the response", async () => {
+
     const streamer: ChatStreamer = async (
       request,
       handlers,

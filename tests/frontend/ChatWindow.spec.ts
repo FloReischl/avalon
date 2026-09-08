@@ -847,11 +847,13 @@ describe("ChatWindow", () => {
       {
         id: 42,
         title: "Persistenter Chat",
+        pinned: false,
         created_at: "2026-09-07T10:00:00",
       },
       {
         id: 7,
         title: "Älterer Chat",
+        pinned: false,
         created_at: "2026-09-06T10:00:00",
       },
     ]);
@@ -875,6 +877,7 @@ describe("ChatWindow", () => {
       {
         id: 42,
         title: "Persistenter Chat",
+        pinned: false,
         created_at: "2026-09-07T10:00:00",
       },
     ]);
@@ -882,7 +885,9 @@ describe("ChatWindow", () => {
     getChatMock.mockResolvedValue({
       id: 42,
       title: "Persistenter Chat",
+      pinned: false,
       created_at: "2026-09-07T10:00:00",
+
       messages: [
         {
           id: 1,
@@ -927,6 +932,7 @@ describe("ChatWindow", () => {
       {
         id: 42,
         title: "Persistenter Chat",
+        pinned: false,
         created_at: "2026-09-07T10:00:00",
       },
     ]);
@@ -934,6 +940,7 @@ describe("ChatWindow", () => {
     getChatMock.mockResolvedValue({
       id: 42,
       title: "Persistenter Chat",
+      pinned: false,
       created_at: "2026-09-07T10:00:00",
       messages: [],
     });
@@ -968,6 +975,7 @@ describe("ChatWindow", () => {
       {
         id: 42,
         title: "Kaputter Chat",
+        pinned: false,
         created_at: "2026-09-07T10:00:00",
       },
     ]);
