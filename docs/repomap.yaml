@@ -665,6 +665,7 @@ modules:
       - backend startup diagnostics
       - avatar rendering
       - avatar drag interaction
+      - avatar scaling and native window resize
       - avatar push-to-talk UI
       - audio recording countdown
       - application exit
@@ -684,12 +685,19 @@ modules:
       - avatar drag starts only after pointer movement crosses a small threshold
       - avatar double-click opens the chat window
       - double-click remains functional after moving the avatar
+      - Ctrl+Plus and Ctrl+Minus scale the avatar in 10 percent steps between 50 and 150 percent
+      - avatar scale is session-local and not persisted
+      - avatar content size drives native avatar-window resize
+      - avatar resize requests are serialized through a single-flight synchronization loop
+      - native window resize completion is followed by browser resize before recalculating X11 input shape
+      - avoids applying an input shape from stale pre-resize DOM geometry
       - audio button enters recording UI state while pointer is held
       - recording UI resets on pointer release or cancellation
       - recording UI aborts after 30 seconds
       - exit button terminates the Avalo application
       - audio and exit buttons are included in native X11 input regions
       - current frontend audio interaction does not capture microphone data
+
 
   frontend/src/ChatWindow.vue:
     role: main chat-window Vue root
@@ -704,14 +712,21 @@ modules:
       - leaves the current chat unchanged when loading another chat fails
       - discards unsent composer text when switching chats or starting New Chat
       - sends messages through streaming backend client
-      - disables input while visible generation is active
+      - keeps the composer editable while visible generation is active
+      - disables sending and audio recording while visible generation is active
+      - preserves a newly typed draft when the active generation completes, fails, or is stopped
       - switches Send action to Stop during visible generation
       - New Chat does not abort a text response running in another chat
       - implements multiline-aware Enter / Shift+Enter / Ctrl+Enter semantics
+      - normal composer sends Enter only while the Markdown source is single-line
+      - expanded composer always reserves Enter for editing and sends only with Ctrl+Enter
       - renders user and assistant messages through MarkdownMessage
+      - preserves explicit user line breaks while retaining Markdown rendering
+      - renders a centered watermark behind the scrollable conversation area
       - supports icon-based Send, Stop, New Chat, and composer expand/collapse actions
-      - expanded composer uses the available chat-main area without replacing the textarea
-      - preserves composer content and selection across expand/collapse
+      - expanded composer uses the available chat-main area with the same Milkdown editor instance
+      - expanded composer enables the Markdown formatting toolbar
+      - preserves composer state across expand/collapse
       - renders role-specific message actions
       - message Copy writes Markdown source as text/plain and rendered content as text/html when supported
       - message Copy falls back to plain Markdown clipboard text
@@ -720,7 +735,7 @@ modules:
       - Read aloud is disabled while LLM generation or TTS synthesis is active
       - TTS failures are shown as a chat error without modifying the assistant message
       - Branch and Edit actions remain visible disabled placeholders
-      - keeps user Markdown source editing in a plain monospace textarea
+      - uses Milkdown for user Markdown composition with Markdown source as canonical frontend state
       - supports draggable sidebar splitter with bounded width
       - automatically follows streamed assistant output
       - implements push-to-talk backend recording control
@@ -733,27 +748,32 @@ modules:
       - transient text and audio chat UI
       - conversation sidebar
       - current conversation view
-      - Markdown rendering
+      - Markdown rendering and composition
       - streaming interaction
       - frontend chat tests
     dependencies:
       - frontend/src/avatar.ts
       - frontend/src/composables/useTransientChat.ts
       - frontend/src/components/MarkdownMessage.vue
+      - frontend/src/components/MarkdownComposer.vue
+
 
   frontend/src/avatar.ts:
     role: frontend active-avatar configuration loader
     responsibilities:
       - define current source-selected avatar id
-      - load avatar.yaml and standard.png through Vite asset discovery
+      - load registered avatar.yaml and standard.png assets through explicit static Vite imports
       - parse avatar.yaml with YAML parser
       - require non-empty avatar name
-      - fail when required avatar configuration or image is missing
+      - fail when the requested registered avatar is missing
       - expose initialized active avatar to frontend components
     current_scope:
       - only avatar name is consumed
       - persona and instructions remain unused
       - current active avatar is selected in source code
+      - currently available avatars are declared in an explicit source registry
+      - adding another avatar requires adding its asset imports and registry entry
+
     dependencies:
       - yaml
       - frontend/src/assets/avatars/frieda1/avatar.yaml
@@ -859,8 +879,45 @@ modules:
       - frontend/src/services/backend.ts
       - frontend/src/types/chat.ts
 
+  frontend/src/components/MarkdownComposer.vue:
+    role: Vue provider boundary for user Markdown composition
+    responsibilities:
+      - own the MilkdownProvider required by the editor
+      - expose v-model compatible Markdown source
+      - forward keyboard events to ChatWindow
+      - forward expanded-mode toolbar enablement to the Milkdown editor
+    dependencies:
+      - "@milkdown/vue"
+      - frontend/src/components/MarkdownComposerEditor.vue
+    relevant_to:
+      - chat composer
+      - Markdown editing
+      - expanded composer toolbar
+      - frontend composer tests
+
+  frontend/src/components/MarkdownComposerEditor.vue:
+    role: Milkdown-backed WYSIWYG Markdown editor
+    responsibilities:
+      - initialize Milkdown from canonical Markdown source
+      - emit Markdown updates back through the composer v-model
+      - apply external Markdown-source updates without feedback loops
+      - use CommonMark and GFM editor presets
+      - expose formatting toolbar only when enabled by ChatWindow
+      - execute typed Milkdown commands for bold, italic, headings, lists, links, inline code, code blocks, blockquotes, horizontal rules, tables, and list indentation
+      - request link URLs through a simple browser prompt
+      - style code blocks and tables for visible editor structure
+    dependencies:
+      - "@milkdown/kit"
+      - "@milkdown/vue"
+    relevant_to:
+      - Markdown composer behavior
+      - formatting toolbar
+      - canonical Markdown synchronization
+      - frontend composer tests
+
   frontend/src/components/MarkdownMessage.vue:
     role: shared Markdown renderer for user and assistant messages
+
     responsibilities:
       - render standard Markdown with raw HTML disabled
       - render tables, lists, headings, blockquotes, and links
@@ -895,11 +952,14 @@ modules:
       - src-tauri/src/backend.rs
 
   frontend/src/services/inputShape.ts:
-    role: Tauri frontend boundary for native window input regions
+    role: Tauri frontend boundary for avatar geometry and native input regions
     responsibilities:
       - send generated input rectangles to native Tauri command
+      - resize the native avatar window to requested logical dimensions
     native_counterpart:
       - src-tauri/src/input_shape.rs
+      - src-tauri/src/main.rs
+
 
   frontend/src/assets/avatars/frieda1/avatar.yaml:
     role: current avatar identity and future persona configuration
@@ -924,7 +984,9 @@ modules:
       - manage backend process lifecycle
       - expose backend snapshot command
       - expose native input-region command
+      - expose avatar-window resize command with finite positive dimension validation
       - expose chat-window show/focus command
+
       - expose explicit application-exit command
       - exit application when avatar window is closed
       - hide chat window instead of destroying it on close
@@ -1240,6 +1302,9 @@ change_navigation:
       - frontend/src/services/backend.ts
       - frontend/src/types/chat.ts
       - frontend/src/components/MarkdownMessage.vue
+      - frontend/src/components/MarkdownComposer.vue
+      - frontend/src/components/MarkdownComposerEditor.vue
+
       - frontend/src/services/externalLinks.ts
       - frontend/src/services/chatWindow.ts
       - frontend/src/main.ts
@@ -1278,9 +1343,12 @@ change_navigation:
       - frontend/src/services/inputShape.ts
       - frontend/src/App.vue
       - frontend/src/styles.css
+      - tests/frontend/App.spec.ts
     notes:
       - Preserve alpha-derived avatar hit regions unless requirements change.
-      - Interactive overlays must be included in the native input-region union.
+      - Interactive controls must be included in the native input-region union.
+      - After native avatar resize, recalculate input regions from post-resize browser geometry rather than stale pre-resize bounds.
+
 
 architectural_constraints:
 
@@ -1354,7 +1422,13 @@ known_state:
     - avatar window always-on-top
     - pixel-accurate avatar alpha hit detection
     - native X11 click-through using SHAPE input regions
+    - session-local avatar scaling through Ctrl+Plus / Ctrl+Minus with native window resizing
+    - post-resize X11 input-shape resynchronization from updated browser geometry
     - transient frontend text chat with streamed assistant responses
+    - chat watermark behind the scrollable conversation area
+    - editable composer draft while assistant generation continues
+    - Milkdown WYSIWYG Markdown composer with canonical Markdown source
+    - expanded-composer Markdown formatting toolbar
     - client-side Stop / failure rollback of the complete active turn
     - New Chat reset for transient conversations
     - shared Markdown rendering for user and assistant messages
