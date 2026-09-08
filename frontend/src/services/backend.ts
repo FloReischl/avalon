@@ -5,13 +5,37 @@ export interface BackendHealth {
   service: string;
 }
 
+export interface ChatStreamRequest {
+  chatId?: number;
+  message: string;
+}
+
 export interface ChatStreamHandlers {
+  onChat?: (chatId: number) => void;
   onChunk: (text: string) => void;
+  onDone?: () => void;
 }
 
 export interface ConversationMessage {
   role: "user" | "assistant";
   content: string;
+}
+
+export interface ChatSummary {
+  id: number;
+  title: string;
+  created_at: string;
+}
+
+export interface PersistentMessage {
+  id: number;
+  role: "user" | "assistant";
+  content: string;
+  created_at: string;
+}
+
+export interface ChatDetail extends ChatSummary {
+  messages: PersistentMessage[];
 }
 
 export interface TtsResponse {
@@ -20,8 +44,11 @@ export interface TtsResponse {
 }
 
 interface ChatChunkData {
-
   text: string;
+}
+
+interface ChatEventData {
+  id: string;
 }
 
 export async function getBackendHealth(): Promise<BackendHealth> {
@@ -32,17 +59,44 @@ export async function getBackendHealth(): Promise<BackendHealth> {
   return response.json() as Promise<BackendHealth>;
 }
 
+export async function getChats(): Promise<ChatSummary[]> {
+  const response = await fetch(`${BACKEND_BASE_URL}/api/v1/chats`);
+  if (!response.ok) {
+    throw new Error(`Chat list request failed with ${response.status}`);
+  }
+
+  return response.json() as Promise<ChatSummary[]>;
+}
+
+export async function getChat(chatId: number): Promise<ChatDetail> {
+  const response = await fetch(
+    `${BACKEND_BASE_URL}/api/v1/chats/${chatId}`,
+  );
+  if (!response.ok) {
+    throw new Error(`Chat request failed with ${response.status}`);
+  }
+
+  return response.json() as Promise<ChatDetail>;
+}
+
 export async function streamChatMessage(
-  messages: ConversationMessage[],
+  request: ChatStreamRequest,
   handlers: ChatStreamHandlers,
   signal: AbortSignal,
 ): Promise<void> {
+  const body = request.chatId === undefined
+    ? { message: request.message }
+    : {
+        chat_id: request.chatId,
+        message: request.message,
+      };
+
   const response = await fetch(`${BACKEND_BASE_URL}/api/v1/chat`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ messages }),
+    body: JSON.stringify(body),
     signal,
   });
 
@@ -146,11 +200,9 @@ export async function notifyTtsPlaybackEnded(
 }
 
 async function consumeChatStream(
-
   response: Response,
   handlers: ChatStreamHandlers,
 ): Promise<void> {
-
   if (!response.ok) {
     throw new Error(`Chat request failed with ${response.status}`);
   }
@@ -184,6 +236,18 @@ async function consumeChatStream(
         throw new Error("Invalid chat stream event");
       }
 
+      if (event === "chat") {
+        const parsed = JSON.parse(data) as Partial<ChatEventData>;
+        const chatId = Number(parsed.id);
+
+        if (!Number.isInteger(chatId) || chatId <= 0) {
+          throw new Error("Invalid chat stream chat ID");
+        }
+
+        handlers.onChat?.(chatId);
+        continue;
+      }
+
       if (event === "chunk") {
         const parsed = JSON.parse(data) as Partial<ChatChunkData>;
         if (typeof parsed.text !== "string") {
@@ -196,7 +260,8 @@ async function consumeChatStream(
 
       if (event === "done") {
         completed = true;
-        return;
+        handlers.onDone?.();
+        continue;
       }
 
       if (event === "error") {

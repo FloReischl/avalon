@@ -117,7 +117,7 @@ describe("streamChatMessage", () => {
     const chunks: string[] = [];
 
     await streamChatMessage(
-      [{ role: "user", content: "Hallo" }],
+      { message: "Hallo" },
       {
         onChunk: (text) => chunks.push(text),
       },
@@ -130,7 +130,7 @@ describe("streamChatMessage", () => {
       expect.objectContaining({
         method: "POST",
         body: JSON.stringify({
-          messages: [{ role: "user", content: "Hallo" }],
+          message: "Hallo",
         }),
       }),
     );
@@ -145,7 +145,7 @@ describe("streamChatMessage", () => {
 
     await expect(
       streamChatMessage(
-        [{ role: "user", content: "Hallo" }],
+        { message: "Hallo" },
         {
           onChunk: () => {},
         },
@@ -163,7 +163,7 @@ describe("streamChatMessage", () => {
 
     await expect(
       streamChatMessage(
-        [{ role: "user", content: "Hallo" }],
+        { message: "Hallo" },
         {
           onChunk: () => {},
         },

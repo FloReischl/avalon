@@ -1,6 +1,7 @@
 """FastAPI application entry point."""
 
 import sys
+import traceback
 from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
 
@@ -19,17 +20,32 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
 
     try:
         run_migrations()
-    except Exception as exc:
-        print(f"Database initialization failed: {exc}", file=sys.stderr)
+    except Exception:
+        traceback.print_exc(file=sys.stderr)
         raise
 
     yield
+
+
+class StderrExceptionMiddleware:
+    """Write uncaught backend exceptions with their full traceback to stderr."""
+
+    def __init__(self, app) -> None:
+        self.app = app
+
+    async def __call__(self, scope, receive, send) -> None:
+        try:
+            await self.app(scope, receive, send)
+        except Exception:
+            traceback.print_exc(file=sys.stderr)
+            raise
 
 
 def create_app() -> FastAPI:
     """Create the backend application."""
 
     application = FastAPI(title=settings.app_name, lifespan=lifespan)
+    application.add_middleware(StderrExceptionMiddleware)
     application.add_middleware(
         CORSMiddleware,
         allow_origins=[settings.frontend_dev_origin],

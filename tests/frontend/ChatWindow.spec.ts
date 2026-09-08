@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
   abortAudioRecordingMock,
+  getChatMock,
+  getChatsMock,
   notifyTtsPlaybackEndedMock,
   startAudioRecordingMock,
   streamAudioResponseMock,
@@ -10,6 +12,8 @@ const {
   synthesizeSpeechMock,
 } = vi.hoisted(() => ({
   abortAudioRecordingMock: vi.fn(),
+  getChatMock: vi.fn(),
+  getChatsMock: vi.fn(),
   notifyTtsPlaybackEndedMock: vi.fn(),
   startAudioRecordingMock: vi.fn(),
   streamAudioResponseMock: vi.fn(),
@@ -26,6 +30,8 @@ vi.mock("../../frontend/src/services/backend", async (importOriginal) => {
   return {
     ...original,
     abortAudioRecording: abortAudioRecordingMock,
+    getChat: getChatMock,
+    getChats: getChatsMock,
     notifyTtsPlaybackEnded: notifyTtsPlaybackEndedMock,
     startAudioRecording: startAudioRecordingMock,
     streamAudioResponse: streamAudioResponseMock,
@@ -41,6 +47,12 @@ describe("ChatWindow", () => {
   beforeEach(() => {
     abortAudioRecordingMock.mockReset();
     abortAudioRecordingMock.mockResolvedValue(undefined);
+
+    getChatMock.mockReset();
+
+    getChatsMock.mockReset();
+    getChatsMock.mockResolvedValue([]);
+
     notifyTtsPlaybackEndedMock.mockReset();
     notifyTtsPlaybackEndedMock.mockResolvedValue(undefined);
     startAudioRecordingMock.mockReset();
@@ -255,9 +267,9 @@ describe("ChatWindow", () => {
     await flushPromises();
 
     expect(streamChatMessageMock).toHaveBeenCalledTimes(1);
-    expect(streamChatMessageMock.mock.calls[0][0]).toEqual([
-      { role: "user", content: "Hallo" },
-    ]);
+    expect(streamChatMessageMock.mock.calls[0][0]).toEqual({
+      message: "Hallo",
+    });
     expect(wrapper.get('[data-testid="message-user"]').text()).toContain(
       "Hallo",
     );
@@ -602,12 +614,9 @@ describe("ChatWindow", () => {
     await flushPromises();
 
     expect(streamChatMessageMock).toHaveBeenCalledTimes(1);
-    expect(streamChatMessageMock.mock.calls[0][0]).toEqual([
-      {
-        role: "user",
-        content: "Zeile 1\nZeile 2",
-      },
-    ]);
+    expect(streamChatMessageMock.mock.calls[0][0]).toEqual({
+      message: "Zeile 1\nZeile 2",
+    });
   });
 
   it("does not send with Shift+Enter", async () => {
@@ -700,18 +709,20 @@ describe("ChatWindow", () => {
     ).toBe("Hallo");
   });
 
-  it("starts a new empty chat and aborts a running response", async () => {
+  it("starts a new empty chat without aborting a running response", async () => {
     let aborted = false;
 
     streamChatMessageMock.mockImplementation(
-      (_message, _handlers, signal) => (
-        new Promise<void>((_resolve, reject) => {
+      (_request, handlers, signal) => {
+        handlers.onChat?.(42);
+
+        return new Promise<void>((_resolve, reject) => {
           signal.addEventListener("abort", () => {
             aborted = true;
             reject(new DOMException("Aborted", "AbortError"));
           });
-        })
-      ),
+        });
+      },
     );
 
     const wrapper = mount(ChatWindow);
@@ -723,7 +734,7 @@ describe("ChatWindow", () => {
     await wrapper.get('[data-testid="new-chat"]').trigger("click");
     await flushPromises();
 
-    expect(aborted).toBe(true);
+    expect(aborted).toBe(false);
     expect(wrapper.findAll(".message")).toHaveLength(0);
     expect(
       (wrapper.get('[data-testid="chat-input"]').element as HTMLTextAreaElement)
@@ -731,4 +742,154 @@ describe("ChatWindow", () => {
     ).toBe("");
     expect(wrapper.find('[data-testid="chat-error"]').exists()).toBe(false);
   });
+
+  it("loads persisted chats into the sidebar", async () => {
+    getChatsMock.mockResolvedValue([
+      {
+        id: 42,
+        title: "Persistenter Chat",
+        created_at: "2026-09-07T10:00:00",
+      },
+      {
+        id: 7,
+        title: "Älterer Chat",
+        created_at: "2026-09-06T10:00:00",
+      },
+    ]);
+
+    const wrapper = mount(ChatWindow);
+    await flushPromises();
+
+    expect(wrapper.get('[data-testid="chat-42"]').text()).toContain(
+      "Persistenter Chat",
+    );
+    expect(wrapper.get('[data-testid="chat-7"]').text()).toContain(
+      "Älterer Chat",
+    );
+    expect(
+      wrapper.find(".chat-history-placeholder").exists(),
+    ).toBe(false);
+  });
+
+  it("loads a persisted chat and discards unsent composer text", async () => {
+    getChatsMock.mockResolvedValue([
+      {
+        id: 42,
+        title: "Persistenter Chat",
+        created_at: "2026-09-07T10:00:00",
+      },
+    ]);
+
+    getChatMock.mockResolvedValue({
+      id: 42,
+      title: "Persistenter Chat",
+      created_at: "2026-09-07T10:00:00",
+      messages: [
+        {
+          id: 1,
+          role: "user",
+          content: "Frage",
+          created_at: "2026-09-07T10:00:01",
+        },
+        {
+          id: 2,
+          role: "assistant",
+          content: "Antwort",
+          created_at: "2026-09-07T10:00:02",
+        },
+      ],
+    });
+
+    const wrapper = mount(ChatWindow);
+    await flushPromises();
+
+    await wrapper.get('[data-testid="chat-input"]').setValue(
+      "ungesendet",
+    );
+    await wrapper.get('[data-testid="chat-42"]').trigger("click");
+    await flushPromises();
+
+    expect(getChatMock).toHaveBeenCalledWith(42);
+    expect(wrapper.findAll(".message")).toHaveLength(2);
+    expect(wrapper.get('[data-testid="message-user"]').text()).toContain(
+      "Frage",
+    );
+    expect(
+      wrapper.get('[data-testid="message-assistant"]').text(),
+    ).toContain("Antwort");
+    expect(
+      (wrapper.get('[data-testid="chat-input"]').element as HTMLTextAreaElement)
+        .value,
+    ).toBe("");
+  });
+
+  it("continues a persisted chat using its chat ID", async () => {
+    getChatsMock.mockResolvedValue([
+      {
+        id: 42,
+        title: "Persistenter Chat",
+        created_at: "2026-09-07T10:00:00",
+      },
+    ]);
+
+    getChatMock.mockResolvedValue({
+      id: 42,
+      title: "Persistenter Chat",
+      created_at: "2026-09-07T10:00:00",
+      messages: [],
+    });
+
+    streamChatMessageMock.mockImplementation(
+      async (_request, handlers) => {
+        handlers.onChat?.(42);
+        handlers.onChunk("Antwort");
+      },
+    );
+
+    const wrapper = mount(ChatWindow);
+    await flushPromises();
+
+    await wrapper.get('[data-testid="chat-42"]').trigger("click");
+    await flushPromises();
+
+    await wrapper.get('[data-testid="chat-input"]').setValue(
+      "Weiter",
+    );
+    await wrapper.get('[data-testid="send-chat"]').trigger("click");
+    await flushPromises();
+
+    expect(streamChatMessageMock.mock.calls[0][0]).toEqual({
+      chatId: 42,
+      message: "Weiter",
+    });
+  });
+
+  it("keeps the current chat visible when loading another chat fails", async () => {
+    getChatsMock.mockResolvedValue([
+      {
+        id: 42,
+        title: "Kaputter Chat",
+        created_at: "2026-09-07T10:00:00",
+      },
+    ]);
+
+    getChatMock.mockRejectedValue(new Error("failed"));
+
+    const wrapper = mount(ChatWindow);
+    await flushPromises();
+
+    await wrapper.get('[data-testid="chat-input"]').setValue(
+      "bleibt erhalten",
+    );
+    await wrapper.get('[data-testid="chat-42"]').trigger("click");
+    await flushPromises();
+
+    expect(
+      (wrapper.get('[data-testid="chat-input"]').element as HTMLTextAreaElement)
+        .value,
+    ).toBe("bleibt erhalten");
+    expect(wrapper.get('[data-testid="chat-error"]').text()).toBe(
+      "Chat konnte nicht geladen werden.",
+    );
+});
 });

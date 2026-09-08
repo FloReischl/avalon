@@ -1,5 +1,11 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, ref, watch } from "vue";
+import {
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  watch,
+} from "vue";
 
 import MarkdownMessage from "./components/MarkdownMessage.vue";
 
@@ -20,6 +26,12 @@ const {
   input,
   isGenerating,
   errorMessage,
+  chatSummaries,
+  selectedChatId,
+  refreshChats,
+  selectChat,
+  newChat,
+  isChatRunning,
   send,
   sendAudio,
   stop,
@@ -139,6 +151,10 @@ async function abortAudioRecording() {
     errorMessage.value = "Audioaufnahme konnte nicht verworfen werden.";
   }
 }
+
+onMounted(() => {
+  void refreshChats(true, 20);
+});
 
 onBeforeUnmount(() => {
   if (isRecording.value) {
@@ -374,24 +390,6 @@ function toggleComposerExpanded() {
   isComposerExpanded.value = !isComposerExpanded.value;
 }
 
-function newChat() {
-  if (isGenerating.value) {
-    stop();
-  }
-
-  if (
-    messages.value.length === 0
-    && input.value.length === 0
-    && errorMessage.value === undefined
-  ) {
-    return;
-  }
-
-  messages.value = [];
-  input.value = "";
-  errorMessage.value = undefined;
-}
-
 
 function handleInputKeydown(event: KeyboardEvent) {
   if (event.key !== "Enter") {
@@ -442,9 +440,45 @@ function handleInputKeydown(event: KeyboardEvent) {
         </svg>
       </button>
 
-      <div class="chat-history-placeholder">
+      <div
+        v-if="chatSummaries.length === 0"
+        class="chat-history-placeholder"
+      >
         Noch keine gespeicherten Chats
       </div>
+
+      <nav
+        v-else
+        class="chat-history"
+        aria-label="Gespeicherte Chats"
+      >
+        <button
+          v-for="chat in chatSummaries"
+          :key="chat.id"
+          class="chat-history-item"
+          :class="{
+            'chat-history-item--selected': selectedChatId === chat.id,
+          }"
+          type="button"
+          :data-testid="`chat-${chat.id}`"
+          @click="selectChat(chat.id)"
+        >
+          <span
+            class="chat-history-title"
+            :title="chat.title"
+          >
+            {{ chat.title }}
+          </span>
+
+          <span
+            v-if="isChatRunning(chat.id)"
+            class="chat-running-indicator"
+            data-testid="chat-running"
+            aria-label="Antwort läuft"
+            title="Antwort läuft"
+          />
+        </button>
+      </nav>
     </aside>
 
     <div
@@ -752,6 +786,58 @@ function handleInputKeydown(event: KeyboardEvent) {
   padding: 1rem;
   color: #666666;
   font-size: 0.9rem;
+}
+
+.chat-history {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 0.5rem 1rem;
+}
+
+.chat-history-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.65rem 0.75rem;
+  border: 0;
+  border-radius: 0.4rem;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.chat-history-item:hover {
+  background: #e4e4e4;
+}
+
+.chat-history-item--selected {
+  background: #dddddd;
+}
+
+.chat-history-title {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-running-indicator {
+  width: 0.55rem;
+  height: 0.55rem;
+  flex: 0 0 auto;
+  border: 2px solid #a0a0a0;
+  border-top-color: #333333;
+  border-radius: 50%;
+  animation: chat-running-spin 0.8s linear infinite;
+}
+
+@keyframes chat-running-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .sidebar-splitter {
