@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import {
+  computed,
   nextTick,
   onBeforeUnmount,
   onMounted,
   ref,
   watch,
 } from "vue";
+
 
 import MarkdownComposer from "./components/MarkdownComposer.vue";
 import MarkdownMessage from "./components/MarkdownMessage.vue";
@@ -35,8 +37,12 @@ const {
   refreshChats,
   selectChat,
   newChat,
+  renameChat,
+  setChatPinned,
+  deleteChat,
   isChatRunning,
   send,
+
   sendAudio,
   stop,
 } = useTransientChat();
@@ -48,7 +54,21 @@ const isRecording = ref(false);
 const remainingRecordingSeconds = ref(30);
 const isTtsSynthesizing = ref(false);
 
+const pinnedChats = computed(
+  () => chatSummaries.value.filter((chat) => chat.pinned),
+);
+const historyChats = computed(
+  () => chatSummaries.value.filter((chat) => !chat.pinned),
+);
+
+const openChatMenuId = ref<number>();
+const renameChatId = ref<number>();
+const renameTitle = ref("");
+const renameValidationError = ref<string>();
+const deleteChatId = ref<number>();
+
 let recordingTimer: number | undefined;
+
 
 let recordingStartPending = false;
 let recordingReleaseAction: "finish" | "abort" | undefined;
@@ -156,11 +176,119 @@ async function abortAudioRecording() {
   }
 }
 
+function closeChatMenu() {
+  openChatMenuId.value = undefined;
+}
+
+function toggleChatMenu(chatId: number) {
+  openChatMenuId.value =
+    openChatMenuId.value === chatId ? undefined : chatId;
+}
+
+function openRenameDialog(chatId: number) {
+  const chat = chatSummaries.value.find(
+    (summary) => summary.id === chatId,
+  );
+  if (!chat) {
+    return;
+  }
+
+  closeChatMenu();
+  renameChatId.value = chatId;
+  renameTitle.value = chat.title;
+  renameValidationError.value = undefined;
+}
+
+function closeRenameDialog() {
+  renameChatId.value = undefined;
+  renameTitle.value = "";
+  renameValidationError.value = undefined;
+}
+
+async function confirmRename() {
+  const chatId = renameChatId.value;
+  if (chatId === undefined) {
+    return;
+  }
+
+  const title = renameTitle.value.trim();
+  if (title.length === 0) {
+    renameValidationError.value =
+      "Der Chatname darf nicht leer sein.";
+    return;
+  }
+
+  if (await renameChat(chatId, title)) {
+    closeRenameDialog();
+  }
+}
+
+function openDeleteDialog(chatId: number) {
+  closeChatMenu();
+  deleteChatId.value = chatId;
+}
+
+function closeDeleteDialog() {
+  deleteChatId.value = undefined;
+}
+
+async function confirmDelete() {
+  const chatId = deleteChatId.value;
+  if (chatId === undefined) {
+    return;
+  }
+
+  if (await deleteChat(chatId)) {
+    closeDeleteDialog();
+  }
+}
+
+function deleteChatTitle() {
+  if (deleteChatId.value === undefined) {
+    return "";
+  }
+
+  return chatSummaries.value.find(
+    (chat) => chat.id === deleteChatId.value,
+  )?.title ?? "";
+}
+
+async function togglePinned(
+  chatId: number,
+  pinned: boolean,
+) {
+  closeChatMenu();
+  await setChatPinned(chatId, !pinned);
+}
+
+function handleWindowKeydown(event: KeyboardEvent) {
+  if (event.key !== "Escape") {
+    return;
+  }
+
+  if (renameChatId.value !== undefined) {
+    closeRenameDialog();
+    return;
+  }
+
+  if (deleteChatId.value !== undefined) {
+    closeDeleteDialog();
+    return;
+  }
+
+  closeChatMenu();
+}
+
 onMounted(() => {
+  document.addEventListener("pointerdown", closeChatMenu);
+  window.addEventListener("keydown", handleWindowKeydown);
   void refreshChats(true, 20);
 });
 
 onBeforeUnmount(() => {
+  document.removeEventListener("pointerdown", closeChatMenu);
+  window.removeEventListener("keydown", handleWindowKeydown);
+
   if (isRecording.value) {
     void abortBackendAudioRecording();
   }
@@ -168,6 +296,7 @@ onBeforeUnmount(() => {
   replaceCurrentTts();
   resetRecordingState();
 });
+
 
 
 type MarkdownMessageInstance = {
@@ -450,45 +579,221 @@ function handleInputKeydown(event: KeyboardEvent) {
         </svg>
       </button>
 
-      <div
-        v-if="chatSummaries.length === 0"
-        class="chat-history-placeholder"
+      <section
+        class="chat-list-section chat-list-section--pinned"
+        data-testid="pinned-chats"
       >
-        Noch keine gespeicherten Chats
-      </div>
 
-      <nav
-        v-else
-        class="chat-history"
-        aria-label="Gespeicherte Chats"
-      >
-        <button
-          v-for="chat in chatSummaries"
-          :key="chat.id"
-          class="chat-history-item"
-          :class="{
-            'chat-history-item--selected': selectedChatId === chat.id,
-          }"
-          type="button"
-          :data-testid="`chat-${chat.id}`"
-          @click="selectChat(chat.id)"
+        <h2 class="chat-list-heading">
+          Pinned Chats
+        </h2>
+
+        <nav
+          class="chat-history"
+          aria-label="Angeheftete Chats"
         >
-          <span
-            class="chat-history-title"
-            :title="chat.title"
+          <div
+            v-for="chat in pinnedChats"
+            :key="chat.id"
+            class="chat-history-item"
+            :class="{
+              'chat-history-item--selected': selectedChatId === chat.id,
+            }"
+            :data-testid="`chat-${chat.id}`"
+            @click="selectChat(chat.id)"
           >
-            {{ chat.title }}
-          </span>
+            <span
+              class="chat-history-title"
+              :title="chat.title"
+            >
+              {{ chat.title }}
+            </span>
 
-          <span
-            v-if="isChatRunning(chat.id)"
-            class="chat-running-indicator"
-            data-testid="chat-running"
-            aria-label="Antwort läuft"
-            title="Antwort läuft"
-          />
-        </button>
-      </nav>
+            <span
+              v-if="isChatRunning(chat.id)"
+              class="chat-running-indicator"
+              data-testid="chat-running"
+              aria-label="Antwort läuft"
+              title="Antwort läuft"
+            />
+
+            <div
+              class="chat-menu-container"
+              @click.stop
+              @pointerdown.stop
+            >
+              <button
+                class="chat-menu-button"
+                type="button"
+                :data-testid="`chat-menu-${chat.id}`"
+                aria-label="Chat-Menü"
+                title="Chat-Menü"
+                @click="toggleChatMenu(chat.id)"
+              >
+                ⋮
+              </button>
+
+              <div
+                v-if="openChatMenuId === chat.id"
+                class="chat-menu"
+                :data-testid="`chat-menu-popup-${chat.id}`"
+                role="menu"
+              >
+                <button
+                  class="chat-menu-item"
+                  type="button"
+                  role="menuitemcheckbox"
+                  :aria-checked="chat.pinned"
+                  :data-testid="`chat-pin-${chat.id}`"
+                  @click="togglePinned(chat.id, chat.pinned)"
+                >
+                  Pin
+                  <span class="chat-menu-check">
+                    {{ chat.pinned ? "✓" : "" }}
+                  </span>
+                </button>
+                <button
+                  class="chat-menu-item"
+                  type="button"
+                  role="menuitem"
+                  :data-testid="`chat-rename-${chat.id}`"
+                  @click="openRenameDialog(chat.id)"
+                >
+                  Rename
+                </button>
+                <button
+                  class="chat-menu-item"
+                  type="button"
+                  role="menuitem"
+                  :data-testid="`chat-export-${chat.id}`"
+                  disabled
+                >
+                  Export
+                </button>
+                <button
+                  class="chat-menu-item chat-menu-item--danger"
+                  type="button"
+                  role="menuitem"
+                  :data-testid="`chat-delete-${chat.id}`"
+                  @click="openDeleteDialog(chat.id)"
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        </nav>
+      </section>
+
+      <section class="chat-list-section chat-list-section--history">
+        <h2 class="chat-list-heading">
+          Chats
+        </h2>
+
+        <div
+          v-if="historyChats.length === 0"
+          class="chat-history-placeholder"
+        >
+          Noch keine gespeicherten Chats
+        </div>
+
+        <nav
+          v-else
+          class="chat-history"
+          aria-label="Gespeicherte Chats"
+        >
+          <div
+            v-for="chat in historyChats"
+            :key="chat.id"
+            class="chat-history-item"
+            :class="{
+              'chat-history-item--selected': selectedChatId === chat.id,
+            }"
+            :data-testid="`chat-${chat.id}`"
+            @click="selectChat(chat.id)"
+          >
+            <span
+              class="chat-history-title"
+              :title="chat.title"
+            >
+              {{ chat.title }}
+            </span>
+
+            <span
+              v-if="isChatRunning(chat.id)"
+              class="chat-running-indicator"
+              data-testid="chat-running"
+              aria-label="Antwort läuft"
+              title="Antwort läuft"
+            />
+
+            <div
+              class="chat-menu-container"
+              @click.stop
+              @pointerdown.stop
+            >
+              <button
+                class="chat-menu-button"
+                type="button"
+                :data-testid="`chat-menu-${chat.id}`"
+                aria-label="Chat-Menü"
+                title="Chat-Menü"
+                @click="toggleChatMenu(chat.id)"
+              >
+                ⋮
+              </button>
+
+              <div
+                v-if="openChatMenuId === chat.id"
+                class="chat-menu"
+                :data-testid="`chat-menu-popup-${chat.id}`"
+                role="menu"
+              >
+                <button
+                  class="chat-menu-item"
+                  type="button"
+                  role="menuitemcheckbox"
+                  :aria-checked="chat.pinned"
+                  :data-testid="`chat-pin-${chat.id}`"
+                  @click="togglePinned(chat.id, chat.pinned)"
+                >
+                  Pin
+                  <span class="chat-menu-check">
+                    {{ chat.pinned ? "✓" : "" }}
+                  </span>
+                </button>
+                <button
+                  class="chat-menu-item"
+                  type="button"
+                  role="menuitem"
+                  :data-testid="`chat-rename-${chat.id}`"
+                  @click="openRenameDialog(chat.id)"
+                >
+                  Rename
+                </button>
+                <button
+                  class="chat-menu-item"
+                  type="button"
+                  role="menuitem"
+                  :data-testid="`chat-export-${chat.id}`"
+                  disabled
+                >
+                  Export
+                </button>
+                <button
+                  class="chat-menu-item chat-menu-item--danger"
+                  type="button"
+                  role="menuitem"
+                  :data-testid="`chat-delete-${chat.id}`"
+                  @click="openDeleteDialog(chat.id)"
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        </nav>
+      </section>
     </aside>
 
     <div
@@ -498,6 +803,91 @@ function handleInputKeydown(event: KeyboardEvent) {
       aria-orientation="vertical"
       @pointerdown="startSidebarResize"
     />
+
+    <div
+      v-if="renameChatId !== undefined"
+      class="modal-backdrop"
+      data-testid="rename-chat-dialog"
+      @pointerdown.self="closeRenameDialog"
+    >
+      <form
+        class="chat-dialog"
+        @submit.prevent="confirmRename"
+      >
+        <h2>Chat umbenennen</h2>
+
+        <input
+          v-model="renameTitle"
+          class="chat-dialog-input"
+          data-testid="rename-chat-input"
+          aria-label="Chatname"
+          autofocus
+        >
+
+        <div
+          v-if="renameValidationError"
+          class="chat-dialog-validation"
+          role="alert"
+        >
+          {{ renameValidationError }}
+        </div>
+
+        <div class="chat-dialog-actions">
+          <button
+            type="button"
+            data-testid="rename-chat-cancel"
+            @click="closeRenameDialog"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            data-testid="rename-chat-confirm"
+          >
+            Rename
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <div
+      v-if="deleteChatId !== undefined"
+      class="modal-backdrop"
+      data-testid="delete-chat-dialog"
+      @pointerdown.self="closeDeleteDialog"
+    >
+      <section
+        class="chat-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="delete-chat-title"
+      >
+        <h2 id="delete-chat-title">
+          Chat löschen
+        </h2>
+
+        <p>
+          Chat ‚{{ deleteChatTitle() }}‘ wirklich löschen?
+        </p>
+
+        <div class="chat-dialog-actions">
+          <button
+            type="button"
+            data-testid="delete-chat-cancel"
+            @click="closeDeleteDialog"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            data-testid="delete-chat-confirm"
+            @click="confirmDelete"
+          >
+            Delete
+          </button>
+        </div>
+      </section>
+    </div>
 
     <section class="chat-main">
       <section
@@ -806,8 +1196,38 @@ function handleInputKeydown(event: KeyboardEvent) {
   cursor: default;
 }
 
+.chat-list-section {
+  position: relative;
+  flex: 0 0 auto;
+  min-height: 0;
+}
+
+.chat-list-section--pinned {
+  z-index: 2;
+}
+
+.chat-list-section--pinned .chat-history {
+  overflow: visible;
+}
+
+.chat-list-section--history {
+  z-index: 1;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.chat-list-heading {
+  margin: 0;
+  padding: 0.45rem 1rem;
+  color: #666666;
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
 .chat-history-placeholder {
-  padding: 1rem;
+  padding: 0.65rem 1rem 1rem;
   color: #666666;
   font-size: 0.9rem;
 }
@@ -815,15 +1235,21 @@ function handleInputKeydown(event: KeyboardEvent) {
 .chat-history {
   min-height: 0;
   overflow-y: auto;
-  padding: 0 0.5rem 1rem;
+  padding: 0 0.5rem 0.5rem;
+}
+
+.chat-list-section--history .chat-history {
+  flex: 1;
 }
 
 .chat-history-item {
+  position: relative;
   width: 100%;
   display: flex;
   align-items: center;
   gap: 0.5rem;
   padding: 0.65rem 0.75rem;
+  box-sizing: border-box;
   border: 0;
   border-radius: 0.4rem;
   background: transparent;
@@ -847,6 +1273,147 @@ function handleInputKeydown(event: KeyboardEvent) {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.chat-menu-container {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.chat-menu-button {
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
+  border: 0;
+  border-radius: 0.3rem;
+  background: transparent;
+  color: inherit;
+  font-size: 1.25rem;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  visibility: hidden;
+}
+
+.chat-history-item:hover .chat-menu-button,
+.chat-menu-container:focus-within .chat-menu-button {
+  opacity: 1;
+  visibility: visible;
+}
+
+.chat-menu-button:hover {
+  background: #d8d8d8;
+}
+
+.chat-menu {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 0.2rem);
+  right: 0;
+  min-width: 9rem;
+  padding: 0.25rem;
+  border: 1px solid #cccccc;
+  border-radius: 0.4rem;
+  background: #ffffff;
+  box-shadow: 0 0.3rem 0.8rem rgb(0 0 0 / 15%);
+}
+
+.chat-menu-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.45rem 0.55rem;
+  border: 0;
+  border-radius: 0.3rem;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.chat-menu-item:hover:not(:disabled) {
+  background: #eeeeee;
+}
+
+.chat-menu-item:disabled {
+  color: #aaaaaa;
+  cursor: default;
+}
+
+.chat-menu-item--danger {
+  color: #a00000;
+}
+
+.chat-menu-check {
+  width: 1rem;
+  flex: 0 0 1rem;
+  margin-left: auto;
+  text-align: center;
+}
+
+.modal-backdrop {
+  position: fixed;
+  z-index: 100;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgb(0 0 0 / 35%);
+}
+
+.chat-dialog {
+  width: min(24rem, calc(100vw - 3rem));
+  box-sizing: border-box;
+  padding: 1.25rem;
+  border-radius: 0.6rem;
+  background: #ffffff;
+  box-shadow: 0 0.6rem 2rem rgb(0 0 0 / 20%);
+}
+
+.chat-dialog h2 {
+  margin: 0 0 1rem;
+  font-size: 1.1rem;
+}
+
+.chat-dialog p {
+  margin: 0 0 1rem;
+}
+
+.chat-dialog-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid #bbbbbb;
+  border-radius: 0.35rem;
+  font: inherit;
+}
+
+.chat-dialog-validation {
+  margin-top: 0.5rem;
+  color: #a00000;
+  font-size: 0.85rem;
+}
+
+.chat-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.chat-dialog-actions button {
+  padding: 0.45rem 0.8rem;
+  border: 1px solid #bbbbbb;
+  border-radius: 0.35rem;
+  background: #ffffff;
+  color: inherit;
+  cursor: pointer;
+}
+
+.chat-dialog-actions button:hover {
+  background: #eeeeee;
+}
+
 
 .chat-running-indicator {
   width: 0.55rem;

@@ -842,6 +842,179 @@ describe("ChatWindow", () => {
     expect(wrapper.find('[data-testid="chat-error"]').exists()).toBe(false);
   });
 
+  it("separates pinned chats from normal history and always shows the pinned section", async () => {
+    getChatsMock.mockResolvedValue([
+      {
+        id: 42,
+        title: "Angeheftet",
+        pinned: true,
+        created_at: "2026-09-07T10:00:00",
+      },
+      {
+        id: 7,
+        title: "Normal",
+        pinned: false,
+        created_at: "2026-09-06T10:00:00",
+      },
+    ]);
+
+    const wrapper = mount(ChatWindow);
+    await flushPromises();
+
+    const pinned = wrapper.get('[data-testid="pinned-chats"]');
+
+    expect(pinned.text()).toContain("Pinned Chats");
+    expect(pinned.find('[data-testid="chat-42"]').exists()).toBe(true);
+    expect(pinned.find('[data-testid="chat-7"]').exists()).toBe(false);
+    expect(wrapper.findAll('[data-testid="chat-42"]')).toHaveLength(1);
+    expect(wrapper.findAll('[data-testid="chat-7"]')).toHaveLength(1);
+  });
+
+  it("shows the pinned section when no chats exist", async () => {
+    const wrapper = mount(ChatWindow);
+    await flushPromises();
+
+    expect(
+      wrapper.get('[data-testid="pinned-chats"]').text(),
+    ).toContain("Pinned Chats");
+  });
+
+  it("opens the chat menu and exposes all management actions", async () => {
+    getChatsMock.mockResolvedValue([
+      {
+        id: 42,
+        title: "Chat",
+        pinned: false,
+        created_at: "2026-09-07T10:00:00",
+      },
+    ]);
+
+    const wrapper = mount(ChatWindow);
+    await flushPromises();
+
+    await wrapper
+      .get('[data-testid="chat-menu-42"]')
+      .trigger("click");
+
+    expect(
+      wrapper.get('[data-testid="chat-pin-42"]').text(),
+    ).toContain("Pin");
+    expect(
+      wrapper.get('[data-testid="chat-rename-42"]').text(),
+    ).toBe("Rename");
+    expect(
+      wrapper.get('[data-testid="chat-export-42"]').text(),
+    ).toBe("Export");
+    expect(
+      wrapper.get('[data-testid="chat-export-42"]').attributes("disabled"),
+    ).toBeDefined();
+    expect(
+      wrapper.get('[data-testid="chat-delete-42"]').text(),
+    ).toBe("Delete");
+  });
+
+  it("closes the chat menu on outside pointer interaction and Escape", async () => {
+    getChatsMock.mockResolvedValue([
+      {
+        id: 42,
+        title: "Chat",
+        pinned: false,
+        created_at: "2026-09-07T10:00:00",
+      },
+    ]);
+
+    const wrapper = mount(ChatWindow);
+    await flushPromises();
+
+    const menuButton = wrapper.get('[data-testid="chat-menu-42"]');
+
+    await menuButton.trigger("click");
+    expect(
+      wrapper.find('[data-testid="chat-menu-popup-42"]').exists(),
+    ).toBe(true);
+
+    document.dispatchEvent(new Event("pointerdown"));
+    await wrapper.vm.$nextTick();
+
+    expect(
+      wrapper.find('[data-testid="chat-menu-popup-42"]').exists(),
+    ).toBe(false);
+
+    await menuButton.trigger("click");
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape" }),
+    );
+    await wrapper.vm.$nextTick();
+
+    expect(
+      wrapper.find('[data-testid="chat-menu-popup-42"]').exists(),
+    ).toBe(false);
+  });
+
+  it("opens rename with the current title and rejects an empty trimmed title", async () => {
+    getChatsMock.mockResolvedValue([
+      {
+        id: 42,
+        title: "Alter Name",
+        pinned: false,
+        created_at: "2026-09-07T10:00:00",
+      },
+    ]);
+
+    const wrapper = mount(ChatWindow);
+    await flushPromises();
+
+    await wrapper
+      .get('[data-testid="chat-menu-42"]')
+      .trigger("click");
+    await wrapper
+      .get('[data-testid="chat-rename-42"]')
+      .trigger("click");
+
+    const input = wrapper.get('[data-testid="rename-chat-input"]');
+
+    expect((input.element as HTMLInputElement).value).toBe(
+      "Alter Name",
+    );
+
+    await input.setValue("   ");
+    await wrapper
+      .get('[data-testid="rename-chat-dialog"] form')
+      .trigger("submit");
+
+    expect(
+      wrapper.find('[data-testid="rename-chat-dialog"]').exists(),
+    ).toBe(true);
+    expect(wrapper.get('[role="alert"]').text()).toContain(
+      "darf nicht leer sein",
+    );
+  });
+
+  it("shows the current chat title in the delete confirmation", async () => {
+    getChatsMock.mockResolvedValue([
+      {
+        id: 42,
+        title: "Mein Chat",
+        pinned: false,
+        created_at: "2026-09-07T10:00:00",
+      },
+    ]);
+
+    const wrapper = mount(ChatWindow);
+    await flushPromises();
+
+    await wrapper
+      .get('[data-testid="chat-menu-42"]')
+      .trigger("click");
+    await wrapper
+      .get('[data-testid="chat-delete-42"]')
+      .trigger("click");
+
+    expect(
+      wrapper.get('[data-testid="delete-chat-dialog"]').text(),
+    ).toContain("Chat ‚Mein Chat‘ wirklich löschen?");
+  });
+
   it("loads persisted chats into the sidebar", async () => {
     getChatsMock.mockResolvedValue([
       {
