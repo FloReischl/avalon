@@ -23,6 +23,7 @@ import {
   startAudioRecording as startBackendAudioRecording,
   synthesizeSpeech,
 } from "./services/backend";
+import { exportChatToMarkdown } from "./services/chatExport";
 
 
 const avatar = getActiveAvatar();
@@ -259,6 +260,16 @@ async function togglePinned(
 ) {
   closeChatMenu();
   await setChatPinned(chatId, !pinned);
+}
+
+async function exportChat(chatId: number) {
+  closeChatMenu();
+
+  try {
+    await exportChatToMarkdown(chatId, avatar.name);
+  } catch {
+    errorMessage.value = "Chat konnte nicht exportiert werden.";
+  }
 }
 
 function handleWindowKeydown(event: KeyboardEvent) {
@@ -666,7 +677,7 @@ function handleInputKeydown(event: KeyboardEvent) {
                   type="button"
                   role="menuitem"
                   :data-testid="`chat-export-${chat.id}`"
-                  disabled
+                  @click="exportChat(chat.id)"
                 >
                   Export
                 </button>
@@ -776,7 +787,7 @@ function handleInputKeydown(event: KeyboardEvent) {
                   type="button"
                   role="menuitem"
                   :data-testid="`chat-export-${chat.id}`"
-                  disabled
+                  @click="exportChat(chat.id)"
                 >
                   Export
                 </button>

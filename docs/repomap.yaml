@@ -99,7 +99,9 @@ architecture:
       - manual chat titles suppress automatic title generation permanently
       - chats have a persisted pinned flag
       - pinned and unpinned chats remain in backend activity order; frontend separates them for sidebar presentation
-      - persisted chats can be manually renamed, pinned/unpinned, and physically deleted
+      - persisted chats can be manually renamed, pinned/unpinned, physically deleted, and exported as Markdown
+      - Markdown export reloads the persisted chat detail before writing so exported content reflects stored chronological messages
+      - exported message content is preserved as stored, with H1 role headings and separators only between messages
       - deleting the currently visible persisted chat returns the frontend to an empty transient New Chat state
       - text and audio UI continue to share the visible frontend conversation
       - audio user turns remain represented by the transient "🎤 Sprachnachricht" placeholder
@@ -733,7 +735,9 @@ modules:
       - preserves backend activity ordering inside pinned and normal sections
       - renders persisted chat titles with ellipsis and full native tooltip
       - exposes a hover-only per-chat management menu
-      - menu provides Pin, Rename, Export, and Delete entries; Export is currently disabled pending implementation
+      - menu provides Pin, Rename, Export, and Delete entries
+      - Export opens the native desktop save dialog and writes the complete persisted chat as Markdown
+      - export cancellation is silent; load or write failures use the existing chat error area
       - Pin toggles persisted pinned state
       - Rename uses a modal dialog with the current title prefilled and trims input before saving
       - whitespace-only rename is rejected without changing the existing title
@@ -789,6 +793,30 @@ modules:
       - frontend/src/composables/useTransientChat.ts
       - frontend/src/components/MarkdownMessage.vue
       - frontend/src/components/MarkdownComposer.vue
+      - frontend/src/services/chatExport.ts
+
+
+  frontend/src/services/chatExport.ts:
+    role: persisted-chat Markdown export and native desktop save boundary
+    responsibilities:
+      - reload persisted chat detail before export
+      - serialize stored messages chronologically without transforming message Markdown
+      - label user messages as User and assistant messages with the active avatar name
+      - separate messages with Markdown horizontal rules without a trailing separator
+      - sanitize problematic filename characters and fall back to chat.md when necessary
+      - open the native Tauri save dialog with a Markdown filename
+      - write the selected file through the Tauri filesystem plugin
+      - treat save-dialog cancellation as a successful no-op
+      - propagate chat-load and file-write failures to the caller
+    dependencies:
+      - frontend/src/services/backend.ts
+      - "@tauri-apps/plugin-dialog"
+      - "@tauri-apps/plugin-fs"
+    relevant_to:
+      - persisted chat export
+      - native save dialog
+      - Markdown export format
+      - chat management menu
 
 
   frontend/src/avatar.ts:

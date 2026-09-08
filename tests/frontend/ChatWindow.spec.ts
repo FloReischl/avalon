@@ -10,6 +10,7 @@ const {
   streamAudioResponseMock,
   streamChatMessageMock,
   synthesizeSpeechMock,
+  exportChatToMarkdownMock,
 } = vi.hoisted(() => ({
   abortAudioRecordingMock: vi.fn(),
   getChatMock: vi.fn(),
@@ -19,6 +20,7 @@ const {
   streamAudioResponseMock: vi.fn(),
   streamChatMessageMock: vi.fn(),
   synthesizeSpeechMock: vi.fn(),
+  exportChatToMarkdownMock: vi.fn(),
 }));
 
 
@@ -40,6 +42,10 @@ vi.mock("../../frontend/src/services/backend", async (importOriginal) => {
 
   };
 });
+
+vi.mock("../../frontend/src/services/chatExport", () => ({
+  exportChatToMarkdown: exportChatToMarkdownMock,
+}));
 
 vi.mock("../../frontend/src/components/MarkdownComposer.vue", async () => {
   const { defineComponent, h } = await import("vue");
@@ -102,6 +108,8 @@ describe("ChatWindow", () => {
     streamAudioResponseMock.mockReset();
     streamChatMessageMock.mockReset();
     synthesizeSpeechMock.mockReset();
+    exportChatToMarkdownMock.mockReset();
+    exportChatToMarkdownMock.mockResolvedValue(undefined);
 
   });
 
@@ -907,10 +915,72 @@ describe("ChatWindow", () => {
     ).toBe("Export");
     expect(
       wrapper.get('[data-testid="chat-export-42"]').attributes("disabled"),
-    ).toBeDefined();
+    ).toBeUndefined();
     expect(
       wrapper.get('[data-testid="chat-delete-42"]').text(),
     ).toBe("Delete");
+  });
+
+  it("exports a persisted chat from its menu", async () => {
+    getChatsMock.mockResolvedValue([
+      {
+        id: 42,
+        title: "Chat",
+        pinned: false,
+        created_at: "2026-09-07T10:00:00",
+      },
+    ]);
+
+    const wrapper = mount(ChatWindow);
+    await flushPromises();
+
+    await wrapper
+      .get('[data-testid="chat-menu-42"]')
+      .trigger("click");
+    await wrapper
+      .get('[data-testid="chat-export-42"]')
+      .trigger("click");
+    await flushPromises();
+
+    expect(exportChatToMarkdownMock).toHaveBeenCalledWith(
+      42,
+      "Frieda",
+    );
+    expect(
+      wrapper.find('[data-testid="chat-menu-popup-42"]').exists(),
+    ).toBe(false);
+    expect(
+      wrapper.find('[data-testid="chat-error"]').exists(),
+    ).toBe(false);
+  });
+
+  it("shows the existing chat error area when export fails", async () => {
+    getChatsMock.mockResolvedValue([
+      {
+        id: 42,
+        title: "Chat",
+        pinned: false,
+        created_at: "2026-09-07T10:00:00",
+      },
+    ]);
+    exportChatToMarkdownMock.mockRejectedValue(
+      new Error("export failed"),
+    );
+
+    const wrapper = mount(ChatWindow);
+    await flushPromises();
+
+    await wrapper
+      .get('[data-testid="chat-menu-42"]')
+      .trigger("click");
+    await wrapper
+      .get('[data-testid="chat-export-42"]')
+      .trigger("click");
+    await flushPromises();
+
+    expect(wrapper.get('[data-testid="chat-error"]').text()).toBe(
+      "Chat konnte nicht exportiert werden.",
+    );
   });
 
   it("closes the chat menu on outside pointer interaction and Escape", async () => {
