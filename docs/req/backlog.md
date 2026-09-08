@@ -2,9 +2,7 @@ todo
 
 - search/persona/instructions
 - error logging
-  - Chatliste konnte nicht geladen werden.
   - Audio in funktioniert nicht: Sprachantwort konnte nicht erzeugt werden.
-  - Avatar wird nicht geladen.
 - avatar window smaller
 - avatar resizable
 - window icon
