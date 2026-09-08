@@ -12,3 +12,10 @@ export async function setWindowInputRegions(
 ): Promise<void> {
   await invoke("set_window_input_regions", { rectangles });
 }
+
+export async function resizeAvatarWindow(
+  width: number,
+  height: number,
+): Promise<void> {
+  await invoke("resize_avatar_window", { width, height });
+}

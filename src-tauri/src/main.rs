@@ -5,7 +5,6 @@ use backend::{BackendProcess, BackendSnapshot};
 use input_shape::InputRect;
 use tauri::Manager;
 
-
 #[tauri::command]
 fn get_backend_snapshot(
     backend: tauri::State<'_, BackendProcess>,
@@ -19,6 +18,23 @@ fn set_window_input_regions(
     rectangles: Vec<InputRect>,
 ) -> Result<(), String> {
     input_shape::set_window_input_regions(&window, rectangles)
+}
+
+#[tauri::command]
+fn resize_avatar_window(
+    window: tauri::WebviewWindow,
+    width: f64,
+    height: f64,
+) -> Result<(), String> {
+    if !width.is_finite() || !height.is_finite() || width <= 0.0 || height <= 0.0 {
+        return Err("Avatar window size must be finite and positive".to_string());
+    }
+
+    window
+        .set_size(tauri::LogicalSize::new(width, height))
+        .map_err(|error| error.to_string())?;
+
+    Ok(())
 }
 
 #[tauri::command]
@@ -48,6 +64,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             get_backend_snapshot,
             set_window_input_regions,
+            resize_avatar_window,
             show_chat_window,
             exit_app
         ])

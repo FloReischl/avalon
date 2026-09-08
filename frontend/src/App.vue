@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import {
+  nextTick,
   onBeforeUnmount,
   onMounted,
   ref,
   useTemplateRef,
+  watch,
 } from "vue";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 
@@ -13,6 +15,7 @@ import {
   listenToBackendLifecycle,
 } from "./services/backendLifecycle";
 import {
+  resizeAvatarWindow,
   setWindowInputRegions,
   type InputRegionRect,
 } from "./services/inputShape";
@@ -25,11 +28,18 @@ type AudioState = "idle" | "recording";
 const avatar = getActiveAvatar();
 const MAX_AUDIO_SECONDS = 30;
 const AVATAR_DRAG_THRESHOLD_PX = 5;
+const AVATAR_MIN_PERCENT = 50;
+const AVATAR_MAX_PERCENT = 150;
+const AVATAR_SCALE_STEP_PERCENT = 10;
+const AVATAR_WINDOW_MIN_WIDTH_PX = 320;
+const AVATAR_WINDOW_PADDING_PX = 48;
 
 const backendStatus = ref("initializing");
 const backendLogs = ref<string[]>([]);
 const audioState = ref<AudioState>("idle");
 const remainingRecordingSeconds = ref(MAX_AUDIO_SECONDS);
+const avatarScalePercent = ref(100);
+const avatarStage = useTemplateRef<HTMLDivElement>("avatarStage");
 const avatarImage = useTemplateRef<HTMLImageElement>("avatarImage");
 const audioButton = useTemplateRef<HTMLButtonElement>("audioButton");
 const exitButton = useTemplateRef<HTMLButtonElement>("exitButton");
@@ -37,14 +47,97 @@ const exitButton = useTemplateRef<HTMLButtonElement>("exitButton");
 let avatarPointerStart: { x: number; y: number } | undefined;
 let recordingTimer: number | undefined;
 let audioPointerHeld = false;
+let avatarLoaded = false;
 let unlisten: UnlistenFn | undefined;
 
 function addLog(message: string) {
   backendLogs.value.push(message);
 }
 
+
+async function syncAvatarWindowSize() {
+  if (!avatarLoaded || backendStatus.value !== "ready") {
+    return;
+  }
+
+  const stage = avatarStage.value;
+  if (!stage) {
+    return;
+  }
+
+  const bounds = stage.getBoundingClientRect();
+  if (bounds.width <= 0 || bounds.height <= 0) {
+    return;
+  }
+
+  const width = Math.max(
+    AVATAR_WINDOW_MIN_WIDTH_PX,
+    Math.ceil(bounds.width + AVATAR_WINDOW_PADDING_PX * 2),
+  );
+  const height = Math.ceil(
+    bounds.height + AVATAR_WINDOW_PADDING_PX * 2,
+  );
+
+  try {
+    await resizeAvatarWindow(width, height);
+  } catch (error) {
+    console.error("[avatar-window] failed to resize avatar window", error);
+  }
+}
+
+async function changeAvatarScale(delta: number) {
+  const nextScale = Math.min(
+    AVATAR_MAX_PERCENT,
+    Math.max(AVATAR_MIN_PERCENT, avatarScalePercent.value + delta),
+  );
+
+  if (nextScale === avatarScalePercent.value) {
+    return;
+  }
+
+  avatarScalePercent.value = nextScale;
+
+  await nextTick();
+  await syncAvatarWindowSize();
+  await nextTick();
+  await applyAvatarInputShape();
+}
+
+function handleAvatarScaleKeydown(event: KeyboardEvent) {
+  if (!event.ctrlKey || event.repeat) {
+    return;
+  }
+
+  const increase =
+    event.key === "+" ||
+    event.code === "NumpadAdd";
+
+  const decrease =
+    event.key === "-" ||
+    event.code === "NumpadSubtract";
+
+  if (!increase && !decrease) {
+    return;
+  }
+
+  event.preventDefault();
+
+  void changeAvatarScale(
+    increase ? AVATAR_SCALE_STEP_PERCENT : -AVATAR_SCALE_STEP_PERCENT,
+  );
+}
+
 function initializeAvatar() {
+  avatarLoaded = true;
   void applyAvatarInputShape();
+
+  if (backendStatus.value === "ready") {
+    void nextTick().then(async () => {
+      await syncAvatarWindowSize();
+      await nextTick();
+      await applyAvatarInputShape();
+    });
+  }
 }
 
 function clearRecordingTimer() {
@@ -197,19 +290,24 @@ async function applyAvatarInputShape() {
     activeRuns = nextRuns;
   }
 
-  for (const button of [audioButton.value, exitButton.value]) {
-    if (!button) {
+  const controls: Array<HTMLElement | null> = [
+    audioButton.value,
+    exitButton.value,
+  ];
+
+  for (const control of controls) {
+    if (!control) {
       continue;
     }
 
-    const buttonBounds = button.getBoundingClientRect();
+    const controlBounds = control.getBoundingClientRect();
 
-    if (buttonBounds.width > 0 && buttonBounds.height > 0) {
+    if (controlBounds.width > 0 && controlBounds.height > 0) {
       rectangles.push({
-        x: Math.round(buttonBounds.left * scale),
-        y: Math.round(buttonBounds.top * scale),
-        width: Math.max(1, Math.round(buttonBounds.width * scale)),
-        height: Math.max(1, Math.round(buttonBounds.height * scale)),
+        x: Math.round(controlBounds.left * scale),
+        y: Math.round(controlBounds.top * scale),
+        width: Math.max(1, Math.round(controlBounds.width * scale)),
+        height: Math.max(1, Math.round(controlBounds.height * scale)),
       });
     }
   }
@@ -277,6 +375,8 @@ async function handleExit() {
 }
 
 onMounted(async () => {
+  window.addEventListener("keydown", handleAvatarScaleKeydown);
+
   try {
     unlisten = await listenToBackendLifecycle({
       onStatus: (status) => {
@@ -298,8 +398,21 @@ onMounted(async () => {
   }
 });
 
+watch(backendStatus, (status) => {
+  if (status !== "ready" || !avatarLoaded) {
+    return;
+  }
+
+  void nextTick().then(async () => {
+    await syncAvatarWindowSize();
+    await nextTick();
+    await applyAvatarInputShape();
+  });
+});
+
 onBeforeUnmount(() => {
   audioPointerHeld = false;
+  window.removeEventListener("keydown", handleAvatarScaleKeydown);
   resetAudioRecordingState();
   unlisten?.();
 });
@@ -328,77 +441,89 @@ onBeforeUnmount(() => {
     </section>
 
     <div
-      class="avatar-region"
-      data-testid="avatar-region"
-      @pointerdown="handleAvatarPointerDown"
-      @pointermove="handleAvatarPointerMove"
-      @pointerup="handleAvatarPointerUp"
-      @pointercancel="handleAvatarPointerUp"
-      @dblclick="handleAvatarDoubleClick"
+      ref="avatarStage"
+      class="avatar-stage"
+      data-testid="avatar-stage"
     >
-      <img
-        ref="avatarImage"
-        class="avatar"
-        :src="avatar.imageUrl"
-        :alt="avatar.name"
-        data-testid="avatar"
-        @load="initializeAvatar"
-      />
-    </div>
+      <div
+        class="avatar-region"
+        :style="{ width: `${24 * avatarScalePercent / 100}rem` }"
+        data-testid="avatar-region"
 
-    <div class="audio-control">
-      <div class="avatar-control-buttons">
-        <button
-          ref="audioButton"
-          class="audio-button"
-          :class="{ 'audio-button--recording': audioState === 'recording' }"
-          type="button"
-          aria-label="Push to talk"
-          :aria-pressed="audioState === 'recording'"
-          data-testid="audio-button"
-          @pointerdown="startAudioRecording"
-          @pointerup="finishAudioRecording"
-          @pointercancel="abortAudioRecording"
-        >
-          <svg
-            class="audio-icon"
-            viewBox="0 0 24 24"
-            aria-hidden="true"
-          >
-            <path
-              d="M12 15a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21H8v2h8v-2h-3v-2.08A7 7 0 0 0 19 12h-2Z"
-            />
-          </svg>
-        </button>
-
-        <button
-          ref="exitButton"
-          class="audio-button"
-          type="button"
-          aria-label="Exit"
-          title="Exit"
-          data-testid="exit-button"
-          @click="handleExit"
-        >
-          <svg
-            class="audio-icon"
-            viewBox="0 0 24 24"
-            aria-hidden="true"
-          >
-            <path
-              d="M10 5H5v14h5M14 8l4 4-4 4M8 12h10"
-            />
-          </svg>
-        </button>
+        @pointerdown="handleAvatarPointerDown"
+        @pointermove="handleAvatarPointerMove"
+        @pointerup="handleAvatarPointerUp"
+        @pointercancel="handleAvatarPointerUp"
+        @dblclick="handleAvatarDoubleClick"
+      >
+        <img
+          ref="avatarImage"
+          class="avatar"
+          :src="avatar.imageUrl"
+          :alt="avatar.name"
+          data-testid="avatar"
+          @load="initializeAvatar"
+        />
       </div>
 
-      <span
-        v-if="audioState === 'recording'"
-        class="audio-countdown"
-        data-testid="audio-countdown"
+      <div
+        class="audio-control"
+        :style="{ width: `${24 * avatarScalePercent / 100}rem` }"
       >
-        {{ remainingRecordingSeconds }}
-      </span>
+        <div class="avatar-control-buttons">
+          <button
+            ref="audioButton"
+            class="audio-button"
+            :class="{ 'audio-button--recording': audioState === 'recording' }"
+            type="button"
+            aria-label="Push to talk"
+            :aria-pressed="audioState === 'recording'"
+            data-testid="audio-button"
+            @pointerdown="startAudioRecording"
+            @pointerup="finishAudioRecording"
+            @pointercancel="abortAudioRecording"
+          >
+            <svg
+              class="audio-icon"
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+            >
+              <path
+                d="M12 15a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21H8v2h8v-2h-3v-2.08A7 7 0 0 0 19 12h-2Z"
+              />
+            </svg>
+          </button>
+
+          <button
+            ref="exitButton"
+            class="audio-button"
+            type="button"
+            aria-label="Exit"
+            title="Exit"
+            data-testid="exit-button"
+            @click="handleExit"
+          >
+            <svg
+              class="audio-icon"
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+            >
+              <path
+                d="M10 5H5v14h5M14 8l4 4-4 4M8 12h10"
+              />
+            </svg>
+          </button>
+        </div>
+
+        <span
+          v-if="audioState === 'recording'"
+          class="audio-countdown"
+          data-testid="audio-countdown"
+        >
+          {{ remainingRecordingSeconds }}
+        </span>
+      </div>
+
     </div>
 
     <span

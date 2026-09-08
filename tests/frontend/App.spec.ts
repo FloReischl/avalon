@@ -7,12 +7,16 @@ const {
   listenToBackendLifecycleMock,
   showChatWindowMock,
   startDraggingMock,
+  resizeAvatarWindowMock,
+  setWindowInputRegionsMock,
 } = vi.hoisted(() => ({
   exitAvaloMock: vi.fn(),
   getBackendSnapshotMock: vi.fn(),
   listenToBackendLifecycleMock: vi.fn(),
   showChatWindowMock: vi.fn(),
   startDraggingMock: vi.fn(),
+  resizeAvatarWindowMock: vi.fn(),
+  setWindowInputRegionsMock: vi.fn(),
 }));
 
 vi.mock("../../frontend/src/services/backendLifecycle", () => ({
@@ -32,6 +36,11 @@ vi.mock("../../frontend/src/services/windowDrag", () => ({
   startAvatarWindowDrag: startDraggingMock,
 }));
 
+vi.mock("../../frontend/src/services/inputShape", () => ({
+  resizeAvatarWindow: resizeAvatarWindowMock,
+  setWindowInputRegions: setWindowInputRegionsMock,
+}));
+
 import App from "../../frontend/src/App.vue";
 
 describe("App", () => {
@@ -41,10 +50,14 @@ describe("App", () => {
     listenToBackendLifecycleMock.mockReset();
     showChatWindowMock.mockReset();
     startDraggingMock.mockReset();
+    resizeAvatarWindowMock.mockReset();
+    setWindowInputRegionsMock.mockReset();
     exitAvaloMock.mockResolvedValue(undefined);
     listenToBackendLifecycleMock.mockResolvedValue(() => {});
     showChatWindowMock.mockResolvedValue(undefined);
     startDraggingMock.mockResolvedValue(undefined);
+    resizeAvatarWindowMock.mockResolvedValue(undefined);
+    setWindowInputRegionsMock.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -183,6 +196,100 @@ describe("App", () => {
     await avatarRegion.trigger("dblclick");
 
     expect(showChatWindowMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("resizes the Avatar in ten percent steps with Ctrl+ and Ctrl-", async () => {
+    getBackendSnapshotMock.mockResolvedValue({
+      status: "ready",
+      logs: ["Backend ready"],
+    });
+
+    const wrapper = mount(App);
+    await flushPromises();
+
+    await wrapper.get('[data-testid="avatar"]').trigger("load");
+    await flushPromises();
+
+    const stage = wrapper.get('[data-testid="avatar-stage"]');
+    stage.element.getBoundingClientRect = vi.fn(() => ({
+      x: 0,
+      y: 0,
+      top: 0,
+      right: 480,
+      bottom: 600,
+      left: 0,
+      width: 480,
+      height: 600,
+      toJSON: () => ({}),
+    }));
+
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "+",
+        ctrlKey: true,
+        bubbles: true,
+      }),
+    );
+    await flushPromises();
+
+    expect(
+      wrapper.get('[data-testid="avatar-region"]').attributes("style"),
+    ).toContain("26.4rem");
+    expect(resizeAvatarWindowMock).toHaveBeenLastCalledWith(576, 696);
+
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "-",
+        ctrlKey: true,
+        bubbles: true,
+      }),
+    );
+    await flushPromises();
+
+    expect(
+      wrapper.get('[data-testid="avatar-region"]').attributes("style"),
+    ).toContain("24rem");
+    expect(resizeAvatarWindowMock).toHaveBeenLastCalledWith(576, 696);
+  });
+
+  it("limits Avatar keyboard resizing to fifty through one hundred fifty percent", async () => {
+    getBackendSnapshotMock.mockResolvedValue({
+      status: "ready",
+      logs: ["Backend ready"],
+    });
+
+    const wrapper = mount(App);
+    await flushPromises();
+
+    for (let index = 0; index < 10; index += 1) {
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "-",
+          ctrlKey: true,
+          bubbles: true,
+        }),
+      );
+      await wrapper.vm.$nextTick();
+    }
+
+    expect(
+      wrapper.get('[data-testid="avatar-region"]').attributes("style"),
+    ).toContain("12rem");
+
+    for (let index = 0; index < 20; index += 1) {
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "+",
+          ctrlKey: true,
+          bubbles: true,
+        }),
+      );
+      await wrapper.vm.$nextTick();
+    }
+
+    expect(
+      wrapper.get('[data-testid="avatar-region"]').attributes("style"),
+    ).toContain("36rem");
   });
 
   it("exits Avalo from the exit button", async () => {
