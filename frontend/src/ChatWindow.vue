@@ -406,13 +406,18 @@ function handleInputKeydown(event: KeyboardEvent) {
     return;
   }
 
-  if (event.shiftKey || input.value.includes("\n")) {
+  if (
+    isComposerExpanded.value
+    || event.shiftKey
+    || input.value.includes("\n")
+  ) {
     return;
   }
 
   event.preventDefault();
   void send();
 }
+
 
 </script>
 
@@ -649,8 +654,10 @@ function handleInputKeydown(event: KeyboardEvent) {
           <MarkdownComposer
             v-model="input"
             placeholder="Dein Prompt hier"
+            :toolbar-enabled="isComposerExpanded"
             @keydown="handleInputKeydown"
           />
+
 
 
         </div>
@@ -998,7 +1005,12 @@ function handleInputKeydown(event: KeyboardEvent) {
   height: auto;
 }
 
+.composer--expanded .composer-expand-button {
+  top: 0.35rem;
+}
+
 .composer-expand-button {
+
   position: absolute;
   z-index: 1;
   top: 0.5rem;

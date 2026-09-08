@@ -70,4 +70,40 @@ describe("MarkdownComposer", () => {
 
     expect(wrapper.get(".ProseMirror").text()).toBe("");
   });
+
+  it("shows the formatting toolbar only when enabled", async () => {
+    const wrapper = mount(MarkdownComposer, {
+      props: {
+        modelValue: "",
+        placeholder: "Dein Prompt hier",
+      },
+    });
+
+    await flushPromises();
+
+    expect(wrapper.find('[data-testid="markdown-toolbar"]').exists()).toBe(false);
+
+    await wrapper.setProps({
+      toolbarEnabled: true,
+    });
+
+    expect(wrapper.find('[data-testid="markdown-toolbar"]').exists()).toBe(true);
+  });
+
+  it("executes Milkdown formatting commands from the toolbar", async () => {
+    const wrapper = mount(MarkdownComposer, {
+      props: {
+        modelValue: "Hallo",
+        placeholder: "Dein Prompt hier",
+        toolbarEnabled: true,
+      },
+    });
+
+    await flushPromises();
+
+    await wrapper.get('[data-testid="format-heading-1"]').trigger("click");
+    await flushPromises();
+
+    expect(wrapper.get(".ProseMirror h1").text()).toBe("Hallo");
+  });
 });

@@ -3,10 +3,16 @@ import { MilkdownProvider } from "@milkdown/vue";
 
 import MarkdownComposerEditor from "./MarkdownComposerEditor.vue";
 
-defineProps<{
-  modelValue: string;
-  placeholder: string;
-}>();
+const props = withDefaults(
+  defineProps<{
+    modelValue: string;
+    placeholder: string;
+    toolbarEnabled?: boolean;
+  }>(),
+  {
+    toolbarEnabled: false,
+  },
+);
 
 const emit = defineEmits<{
   "update:modelValue": [value: string];
@@ -17,8 +23,9 @@ const emit = defineEmits<{
 <template>
   <MilkdownProvider>
     <MarkdownComposerEditor
-      :model-value="modelValue"
-      :placeholder="placeholder"
+      :model-value="props.modelValue"
+      :placeholder="props.placeholder"
+      :toolbar-enabled="props.toolbarEnabled"
       @update:model-value="emit('update:modelValue', $event)"
       @keydown="emit('keydown', $event)"
     />
