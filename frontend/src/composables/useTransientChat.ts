@@ -104,8 +104,8 @@ export function useTransientChat(
     turn: ActiveTurn,
   ) {
     state.messages.splice(turn.startIndex);
-    state.input = turn.prompt;
   }
+
 
   function conversationContext(
     state: ChatState,

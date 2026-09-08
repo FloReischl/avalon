@@ -9,7 +9,9 @@ import {
 
 import MarkdownMessage from "./components/MarkdownMessage.vue";
 
+import watermarkUrl from "./assets/watermark.png";
 import { getActiveAvatar } from "./avatar";
+
 import { useTransientChat } from "./composables/useTransientChat";
 import {
   abortAudioRecording as abortBackendAudioRecording,
@@ -392,7 +394,10 @@ function toggleComposerExpanded() {
 
 
 function handleInputKeydown(event: KeyboardEvent) {
-  if (event.key !== "Enter") {
+  if (
+    event.key !== "Enter"
+    || isGenerating.value
+  ) {
     return;
   }
 
@@ -409,6 +414,7 @@ function handleInputKeydown(event: KeyboardEvent) {
   event.preventDefault();
   void send();
 }
+
 </script>
 
 <template>
@@ -492,29 +498,41 @@ function handleInputKeydown(event: KeyboardEvent) {
     <section class="chat-main">
       <section
         v-show="!isComposerExpanded"
-        ref="messagesElement"
-        class="messages"
-        data-testid="messages"
-        aria-live="polite"
+        class="messages-shell"
       >
-        <article
-          v-for="(message, index) in messages"
-          :key="index"
-          class="message"
-          :class="[
-            `message-${message.role}`,
-            { 'message-audio': message.kind === 'audio' },
-          ]"
-          :data-testid="`message-${message.role}`"
+        <img
+          class="chat-watermark"
+          :src="watermarkUrl"
+          alt=""
+          aria-hidden="true"
         >
-          <div class="message-role">
-            {{ message.role === "user" ? "Du" : avatar.name }}
-          </div>
-          <MarkdownMessage
-            :ref="(instance) => setMessageRenderer(index, instance)"
-            class="message-content"
-            :content="message.content"
-          />
+
+        <section
+          ref="messagesElement"
+          class="messages"
+          data-testid="messages"
+          aria-live="polite"
+        >
+          <article
+            v-for="(message, index) in messages"
+            :key="index"
+            class="message"
+            :class="[
+              `message-${message.role}`,
+              { 'message-audio': message.kind === 'audio' },
+            ]"
+            :data-testid="`message-${message.role}`"
+          >
+            <div class="message-role">
+              {{ message.role === "user" ? "Du" : avatar.name }}
+            </div>
+            <MarkdownMessage
+              :ref="(instance) => setMessageRenderer(index, instance)"
+              class="message-content"
+              :content="message.content"
+              :preserve-line-breaks="message.role === 'user'"
+            />
+
 
           <div
             class="message-actions"
@@ -594,11 +612,13 @@ function handleInputKeydown(event: KeyboardEvent) {
                 <path d="m13 7 4 4" />
               </svg>
             </button>
-          </div>
-        </article>
+            </div>
+          </article>
+        </section>
       </section>
 
       <footer
+
         class="composer"
         :class="{ 'composer--expanded': isComposerExpanded }"
       >
@@ -632,10 +652,10 @@ function handleInputKeydown(event: KeyboardEvent) {
             data-testid="chat-input"
             aria-label="Nachricht"
             placeholder="Dein Prompt hier"
-            :disabled="isGenerating"
             rows="3"
             @keydown="handleInputKeydown"
           />
+
         </div>
 
         <div class="composer-actions">
@@ -864,11 +884,35 @@ function handleInputKeydown(event: KeyboardEvent) {
   flex-direction: column;
 }
 
-.messages {
+.messages-shell {
+  position: relative;
+  min-height: 0;
   flex: 1;
+  overflow: hidden;
+}
+
+.chat-watermark {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: min(90%, 48rem);
+  max-height: 90%;
+  transform: translate(-50%, -50%);
+  object-fit: contain;
+  opacity: 0.4;
+  pointer-events: none;
+  user-select: none;
+}
+
+.messages {
+  position: relative;
+  z-index: 1;
+  height: 100%;
+  box-sizing: border-box;
   overflow-y: auto;
   padding: 1.5rem;
 }
+
 
 .message {
   max-width: 48rem;
@@ -927,10 +971,13 @@ function handleInputKeydown(event: KeyboardEvent) {
 }
 
 .composer {
+  position: relative;
+  z-index: 2;
   padding: 0.75rem 1.5rem 1rem;
   border-top: 1px solid #e2e2e2;
   background: #ffffff;
 }
+
 
 .composer-input {
   position: relative;

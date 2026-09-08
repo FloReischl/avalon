@@ -41,7 +41,8 @@ describe("useTransientChat", () => {
     expect(chat.errorMessage.value).toBeUndefined();
   });
 
-  it("rolls back the whole turn and restores the exact prompt on stop", async () => {
+  it("rolls back the whole turn without overwriting a new composer draft on stop", async () => {
+
     let resolveStream: (() => void) | undefined;
 
     const streamer: ChatStreamer = async (
@@ -70,39 +71,56 @@ describe("useTransientChat", () => {
       expect(chat.messages.value[1]?.content).toBe("Teilantwort");
     });
 
+    chat.input.value = "Nächster Prompt";
     chat.stop();
 
     expect(chat.messages.value).toEqual([]);
-    expect(chat.input.value).toBe("Zeile 1\nZeile 2");
+    expect(chat.input.value).toBe("Nächster Prompt");
     expect(chat.isGenerating.value).toBe(false);
+
     expect(chat.errorMessage.value).toBeUndefined();
 
     await sending;
     resolveStream?.();
   });
 
-  it("rolls back and exposes a user-facing error after generation failure", async () => {
+  it("rolls back and exposes a user-facing error without overwriting a new draft", async () => {
+    let rejectStream: ((error: Error) => void) | undefined;
+
     const streamer: ChatStreamer = async (
       _request,
       handlers,
     ) => {
       handlers.onChat?.(42);
       handlers.onChunk("Teilantwort");
-      throw new Error("technical details");
+
+      await new Promise<void>((_resolve, reject) => {
+        rejectStream = reject;
+      });
     };
 
     const chat = useTransientChat(streamer);
     chat.input.value = "Hallo";
 
-    await chat.send();
+    const sending = chat.send();
+
+    await vi.waitFor(() => {
+      expect(chat.messages.value[1]?.content).toBe("Teilantwort");
+    });
+
+    chat.input.value = "Nächster Prompt";
+    rejectStream?.(new Error("technical details"));
+
+    await sending;
 
     expect(chat.messages.value).toEqual([]);
-    expect(chat.input.value).toBe("Hallo");
+    expect(chat.input.value).toBe("Nächster Prompt");
     expect(chat.isGenerating.value).toBe(false);
     expect(chat.errorMessage.value).toBe(
       "Antwort konnte nicht erzeugt werden.",
     );
   });
+
 
   it("keeps an audio message and streams a response with prior context", async () => {
     const audioStreamer = vi.fn(async (_messages, handlers) => {

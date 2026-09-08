@@ -42,7 +42,32 @@ describe("MarkdownMessage", () => {
     expect(wrapper.find("table").exists()).toBe(true);
   });
 
+  it("preserves soft line breaks when requested while keeping Markdown active", () => {
+    const wrapper = mount(MarkdownMessage, {
+      props: {
+        content: "Zeile 1\n**Zeile 2**\nZeile 3",
+        preserveLineBreaks: true,
+      },
+    });
+
+    expect(wrapper.findAll("br")).toHaveLength(2);
+    expect(wrapper.find("strong").text()).toBe("Zeile 2");
+    expect(wrapper.text()).toContain("Zeile 1");
+    expect(wrapper.text()).toContain("Zeile 3");
+  });
+
+  it("keeps normal Markdown soft-break behavior by default", () => {
+    const wrapper = mount(MarkdownMessage, {
+      props: {
+        content: "Zeile 1\nZeile 2",
+      },
+    });
+
+    expect(wrapper.find("br").exists()).toBe(false);
+  });
+
   it("renders fenced code with syntax highlighting and a Copy button", () => {
+
     const wrapper = mount(MarkdownMessage, {
       props: {
         content: "```ts\nconst answer = 42;\n```",

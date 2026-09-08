@@ -8,9 +8,16 @@ import "highlight.js/styles/github.css";
 
 import { openExternalLink } from "../services/externalLinks";
 
-defineProps<{
-  content: string;
-}>();
+const props = withDefaults(
+  defineProps<{
+    content: string;
+    preserveLineBreaks?: boolean;
+  }>(),
+  {
+    preserveLineBreaks: false,
+  },
+);
+
 
 const rootElement = ref<HTMLElement>();
 
@@ -53,28 +60,44 @@ function highlightCode(code: string, language: string): string {
   return MarkdownIt().utils.escapeHtml(code);
 }
 
-const markdown = new MarkdownIt({
-  html: false,
-  linkify: true,
-  breaks: false,
-  highlight: highlightCode,
-});
+function createMarkdown(breaks: boolean) {
+  const instance = new MarkdownIt({
+    html: false,
+    linkify: true,
+    breaks,
+    highlight: highlightCode,
+  });
 
-markdown.renderer.rules.fence = (tokens, index): string => {
-  const token = tokens[index];
-  const language = token.info.trim().split(/\s+/)[0];
-  const highlighted = highlightCode(token.content, language);
-  const languageClass = language
-    ? ` class="hljs language-${markdown.utils.escapeHtml(language)}"`
-    : ' class="hljs"';
+  instance.renderer.rules.fence = (tokens, index): string => {
+    const token = tokens[index];
+    const language = token.info.trim().split(/\s+/)[0];
+    const highlighted = highlightCode(token.content, language);
+    const languageClass = language
+      ? ` class="hljs language-${instance.utils.escapeHtml(language)}"`
+      : ' class="hljs"';
 
-  return [
-    '<div class="code-block">',
-    '<button type="button" class="copy-code-button" data-copy-code>Copy</button>',
-    `<pre><code${languageClass}>${highlighted}</code></pre>`,
-    "</div>",
-  ].join("");
-};
+    return [
+      '<div class="code-block">',
+      '<button type="button" class="copy-code-button" data-copy-code>Copy</button>',
+      `<pre><code${languageClass}>${highlighted}</code></pre>`,
+      "</div>",
+    ].join("");
+  };
+
+  return instance;
+}
+
+const markdown = createMarkdown(false);
+const markdownWithLineBreaks = createMarkdown(true);
+
+function renderMarkdown(): string {
+  return (
+    props.preserveLineBreaks
+      ? markdownWithLineBreaks
+      : markdown
+  ).render(props.content);
+}
+
 
 async function handleClick(event: MouseEvent) {
   const target = event.target;
@@ -118,7 +141,8 @@ async function handleClick(event: MouseEvent) {
     class="markdown-message"
     data-testid="markdown-message"
     @click="handleClick"
-    v-html="markdown.render(content)"
+    v-html="renderMarkdown()"
+
   />
 </template>
 

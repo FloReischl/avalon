@@ -190,8 +190,9 @@ describe("ChatWindow", () => {
     await wrapper.get('[data-testid="toggle-composer"]').trigger("click");
 
     expect(
-      wrapper.get('[data-testid="messages"]').attributes("style"),
+      wrapper.get(".messages-shell").attributes("style"),
     ).toContain("display: none");
+
     expect(wrapper.get(".composer").classes()).toContain("composer--expanded");
     expect(wrapper.get('[data-testid="toggle-composer"]').attributes("aria-label")).toBe(
       "Eingabe verkleinern",
@@ -203,7 +204,7 @@ describe("ChatWindow", () => {
     await wrapper.get('[data-testid="toggle-composer"]').trigger("click");
 
     expect(
-      wrapper.get('[data-testid="messages"]').attributes("style") ?? "",
+      wrapper.get(".messages-shell").attributes("style") ?? "",
     ).not.toContain("display: none");
     expect(wrapper.get(".composer").classes()).not.toContain("composer--expanded");
     expect(wrapper.get('[data-testid="chat-input"]').element).toBe(inputElement);
@@ -276,6 +277,37 @@ describe("ChatWindow", () => {
     expect(
       wrapper.get('[data-testid="message-assistant"]').text(),
     ).toContain("Hallo Flo");
+  });
+
+  it("preserves user line breaks while rendering Markdown", async () => {
+    streamChatMessageMock.mockResolvedValue(undefined);
+
+    const wrapper = mount(ChatWindow);
+    const input = wrapper.get('[data-testid="chat-input"]');
+
+    await input.setValue("Zeile 1\n**Zeile 2**\nZeile 3");
+    await input.trigger("keydown", {
+      key: "Enter",
+      ctrlKey: true,
+    });
+    await flushPromises();
+
+    const userMessage = wrapper.get(
+      '[data-testid="message-user"] [data-testid="markdown-message"]',
+    );
+
+    expect(userMessage.findAll("br")).toHaveLength(2);
+    expect(userMessage.find("strong").text()).toBe("Zeile 2");
+  });
+
+  it("renders the watermark behind the scrolling message area", () => {
+    const wrapper = mount(ChatWindow);
+
+    const watermark = wrapper.get(".chat-watermark");
+
+    expect(watermark.attributes("src")).toContain("watermark");
+    expect(watermark.attributes("aria-hidden")).toBe("true");
+    expect(wrapper.get(".messages-shell").exists()).toBe(true);
   });
 
   it("renders role-specific message actions", async () => {
@@ -632,7 +664,7 @@ describe("ChatWindow", () => {
     expect(streamChatMessageMock).not.toHaveBeenCalled();
   });
 
-  it("disables input and offers Stop while generating", async () => {
+  it("keeps the composer editable but disables sending while generating", async () => {
     streamChatMessageMock.mockImplementation(
       () => new Promise(() => {}),
     );
@@ -646,8 +678,20 @@ describe("ChatWindow", () => {
 
     expect(
       wrapper.get('[data-testid="chat-input"]').attributes("disabled"),
-    ).toBeDefined();
+    ).toBeUndefined();
     expect(wrapper.find('[data-testid="send-chat"]').exists()).toBe(false);
+    expect(
+      wrapper.get('[data-testid="record-audio"]').attributes("disabled"),
+    ).toBeDefined();
+
+    await wrapper.get('[data-testid="chat-input"]').setValue(
+      "Nächster Prompt",
+    );
+
+    expect(
+      (wrapper.get('[data-testid="chat-input"]').element as HTMLTextAreaElement)
+        .value,
+    ).toBe("Nächster Prompt");
 
     const stopButton = wrapper.get('[data-testid="stop-chat"]');
     expect(stopButton.exists()).toBe(true);
@@ -656,7 +700,9 @@ describe("ChatWindow", () => {
     expect(stopButton.text()).toBe("");
   });
 
-  it("stops and rolls back the current turn", async () => {
+
+  it("stops and rolls back the current turn without replacing a new draft", async () => {
+
     streamChatMessageMock.mockImplementation(
       (_message, handlers, signal) => {
         handlers.onChunk("Teilantwort");
@@ -676,6 +722,7 @@ describe("ChatWindow", () => {
     await wrapper.get('[data-testid="send-chat"]').trigger("click");
     await flushPromises();
 
+    await input.setValue("Nächster Prompt");
     await wrapper.get('[data-testid="stop-chat"]').trigger("click");
     await flushPromises();
 
@@ -683,13 +730,18 @@ describe("ChatWindow", () => {
     expect(
       (wrapper.get('[data-testid="chat-input"]').element as HTMLTextAreaElement)
         .value,
-    ).toBe("Mein Prompt");
+    ).toBe("Nächster Prompt");
+
     expect(wrapper.find('[data-testid="chat-error"]').exists()).toBe(false);
   });
 
-  it("shows a short error and restores the prompt on generation failure", async () => {
-    streamChatMessageMock.mockRejectedValue(
-      new Error("technical details"),
+  it("shows a short error without replacing a new composer draft", async () => {
+    let rejectStream: ((error: Error) => void) | undefined;
+
+    streamChatMessageMock.mockImplementation(
+      () => new Promise<void>((_resolve, reject) => {
+        rejectStream = reject;
+      }),
     );
 
     const wrapper = mount(ChatWindow);
@@ -699,6 +751,10 @@ describe("ChatWindow", () => {
     await wrapper.get('[data-testid="send-chat"]').trigger("click");
     await flushPromises();
 
+    await input.setValue("Nächster Prompt");
+    rejectStream?.(new Error("technical details"));
+    await flushPromises();
+
     expect(wrapper.findAll(".message")).toHaveLength(0);
     expect(wrapper.get('[data-testid="chat-error"]').text()).toBe(
       "Antwort konnte nicht erzeugt werden.",
@@ -706,8 +762,9 @@ describe("ChatWindow", () => {
     expect(
       (wrapper.get('[data-testid="chat-input"]').element as HTMLTextAreaElement)
         .value,
-    ).toBe("Hallo");
+    ).toBe("Nächster Prompt");
   });
+
 
   it("starts a new empty chat without aborting a running response", async () => {
     let aborted = false;
