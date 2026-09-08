@@ -97,6 +97,10 @@ architecture:
       - chat titles start as timestamp-based New titles
       - one automatic title attempt occurs after exactly two complete text roundtrips
       - manual chat titles suppress automatic title generation permanently
+      - chats have a persisted pinned flag
+      - pinned and unpinned chats remain in backend activity order; frontend separates them for sidebar presentation
+      - persisted chats can be manually renamed, pinned/unpinned, and physically deleted
+      - deleting the currently visible persisted chat returns the frontend to an empty transient New Chat state
       - text and audio UI continue to share the visible frontend conversation
       - audio user turns remain represented by the transient "🎤 Sprachnachricht" placeholder
       - prior audio UI placeholders are excluded from semantic model context
@@ -120,6 +124,7 @@ key_flows:
       - database startup failures write their full traceback to server stderr
       - uncaught request exceptions write their full traceback to server stderr
       - configures frontend CORS origin
+      - allows browser frontend GET, POST, PATCH, and DELETE requests
       - installs API router
 
   health:
@@ -313,6 +318,22 @@ modules:
         semantics:
           - omitted chat_id creates a persistent chat with the first user message
           - supplied chat_id continues an existing persistent chat
+      ChatSummaryResponse:
+        fields:
+          id: int
+          title: str
+          pinned: bool
+          created_at: datetime
+      ChatDetailResponse:
+        extends: ChatSummaryResponse
+        fields:
+          messages: list[PersistentMessageResponse]
+      RenameChatRequest:
+        fields:
+          title: non_empty_str_max_200
+      SetChatPinnedRequest:
+        fields:
+          pinned: bool
       AudioResponseRequest:
         fields:
           messages: list[ConversationMessage]
@@ -354,6 +375,7 @@ modules:
       list: "GET /api/v1/chats"
       detail: "GET /api/v1/chats/{id}"
       rename: "PATCH /api/v1/chats/{id}"
+      pin: "PATCH /api/v1/chats/{id}/pinned"
       delete: "DELETE /api/v1/chats/{id}"
     response_media_type: text/event-stream
     dependencies:
@@ -706,7 +728,18 @@ modules:
       - starts with a fresh transient New Chat
       - loads persisted chat summaries into the conversation sidebar
       - retries the initial sidebar load up to 20 times with 500 ms delay while backend startup may still be in progress
+      - always renders a separate Pinned Chats section before normal chat history
+      - filters pinned chats out of normal history without duplicating entries
+      - preserves backend activity ordering inside pinned and normal sections
       - renders persisted chat titles with ellipsis and full native tooltip
+      - exposes a hover-only per-chat management menu
+      - menu provides Pin, Rename, Export, and Delete entries; Export is currently disabled pending implementation
+      - Pin toggles persisted pinned state
+      - Rename uses a modal dialog with the current title prefilled and trims input before saving
+      - whitespace-only rename is rejected without changing the existing title
+      - Delete uses a modal confirmation and physically removes the chat through the backend
+      - Escape closes chat menus and management dialogs
+      - outside pointer interaction closes an open chat menu
       - shows an activity indicator for persisted chats with running requests
       - loads complete persisted history when an existing chat is selected
       - leaves the current chat unchanged when loading another chat fails
@@ -814,6 +847,10 @@ modules:
       - health calls
       - list persisted chats through GET /api/v1/chats
       - load persisted chat detail through GET /api/v1/chats/{id}
+      - rename persisted chats through PATCH /api/v1/chats/{id}
+      - update persisted pinned state through PATCH /api/v1/chats/{id}/pinned
+      - delete persisted chats through DELETE /api/v1/chats/{id}
+      - expose pinned state on persisted chat summaries and details
       - POST streaming text requests as chat_id plus message to /api/v1/chat
       - accept the persistent chat id from the initial SSE chat event
       - start backend recording through /api/v1/audio/recording/start
@@ -856,6 +893,10 @@ modules:
     responsibilities:
       - hold the currently visible chat state and transient New Chat state
       - maintain persisted chat summaries for the sidebar
+      - update chat summaries after successful rename and pin changes
+      - remove deleted chats from frontend summary/state caches only after backend success
+      - return to a fresh transient New Chat state when the currently visible chat is deleted
+      - keep rename, pin, and delete state unchanged when the backend operation fails and expose a user-facing error
       - load persisted chat history before switching visible state
       - keep independent frontend state for persisted chats with running requests
       - allow text generation in different chats concurrently
