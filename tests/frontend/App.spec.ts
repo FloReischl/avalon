@@ -198,6 +198,104 @@ describe("App", () => {
     expect(showChatWindowMock).toHaveBeenCalledTimes(1);
   });
 
+  it("waits for the WebView resize event before rebuilding the Avatar input shape", async () => {
+    let emitStatus: ((status: string) => void) | undefined;
+
+    listenToBackendLifecycleMock.mockImplementation(
+      async (handlers: { onStatus: (status: string) => void }) => {
+        emitStatus = handlers.onStatus;
+        return () => {};
+      },
+    );
+
+    getBackendSnapshotMock.mockResolvedValue({
+      status: "waiting-for-health",
+      logs: ["Waiting for backend health endpoint"],
+    });
+
+    const getContextSpy = vi
+      .spyOn(HTMLCanvasElement.prototype, "getContext")
+      .mockReturnValue({
+        drawImage: vi.fn(),
+        getImageData: vi.fn(() => ({
+          data: new Uint8ClampedArray(16).fill(255),
+        })),
+      } as unknown as CanvasRenderingContext2D);
+
+    const wrapper = mount(App);
+
+    try {
+      await flushPromises();
+
+      wrapper.get('[data-testid="avatar-stage"]').element.getBoundingClientRect =
+        vi.fn(() => ({
+          x: 0,
+          y: 0,
+          top: 0,
+          right: 10,
+          bottom: 20,
+          left: 0,
+          width: 10,
+          height: 20,
+          toJSON: () => ({}),
+        }));
+
+      const avatar = wrapper.get('[data-testid="avatar"]');
+      avatar.element.getBoundingClientRect = vi.fn(() => ({
+        x: 0,
+        y: 0,
+        top: 0,
+        right: 2,
+        bottom: 2,
+        left: 0,
+        width: 2,
+        height: 2,
+        toJSON: () => ({}),
+      }));
+
+      await avatar.trigger("load");
+      await flushPromises();
+
+      expect(setWindowInputRegionsMock).toHaveBeenCalledTimes(1);
+
+      emitStatus?.("ready");
+      await flushPromises();
+
+      expect(resizeAvatarWindowMock).toHaveBeenCalledTimes(1);
+      expect(setWindowInputRegionsMock).toHaveBeenCalledTimes(1);
+
+      avatar.element.getBoundingClientRect = vi.fn(() => ({
+        x: 10,
+        y: 20,
+        top: 20,
+        right: 12,
+        bottom: 22,
+        left: 10,
+        width: 2,
+        height: 2,
+        toJSON: () => ({}),
+      }));
+
+      window.dispatchEvent(new Event("resize"));
+      await flushPromises();
+
+      expect(setWindowInputRegionsMock).toHaveBeenCalledTimes(2);
+
+      const latestRectangles =
+        setWindowInputRegionsMock.mock.calls.at(-1)?.[0];
+
+      expect(latestRectangles?.[0]).toMatchObject({
+        x: 10,
+        y: 20,
+        width: 2,
+        height: 2,
+      });
+    } finally {
+      wrapper.unmount();
+      getContextSpy.mockRestore();
+    }
+  });
+
   it("resizes the Avatar in ten percent steps with Ctrl+ and Ctrl-", async () => {
     getBackendSnapshotMock.mockResolvedValue({
       status: "ready",

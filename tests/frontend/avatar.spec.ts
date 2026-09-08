@@ -9,6 +9,7 @@ describe("avatar", () => {
   it("loads the configured active avatar data", () => {
     expect(loadAvatar("frieda1")).toMatchObject({
       name: "Frieda",
+      imageUrl: expect.any(String),
     });
   });
 

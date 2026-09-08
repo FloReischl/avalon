@@ -48,26 +48,27 @@ let avatarPointerStart: { x: number; y: number } | undefined;
 let recordingTimer: number | undefined;
 let audioPointerHeld = false;
 let avatarLoaded = false;
+let avatarSyncRunning = false;
+let avatarSyncPending = false;
 let unlisten: UnlistenFn | undefined;
 
 function addLog(message: string) {
   backendLogs.value.push(message);
 }
 
-
-async function syncAvatarWindowSize() {
+async function syncAvatarWindowSize(): Promise<boolean> {
   if (!avatarLoaded || backendStatus.value !== "ready") {
-    return;
+    return false;
   }
 
   const stage = avatarStage.value;
   if (!stage) {
-    return;
+    return false;
   }
 
   const bounds = stage.getBoundingClientRect();
   if (bounds.width <= 0 || bounds.height <= 0) {
-    return;
+    return false;
   }
 
   const width = Math.max(
@@ -80,9 +81,52 @@ async function syncAvatarWindowSize() {
 
   try {
     await resizeAvatarWindow(width, height);
+    return true;
   } catch (error) {
     console.error("[avatar-window] failed to resize avatar window", error);
+    return false;
   }
+}
+
+function requestAvatarSync() {
+  avatarSyncPending = true;
+
+  if (avatarSyncRunning) {
+    return;
+  }
+
+  avatarSyncRunning = true;
+  void runAvatarSync();
+}
+
+async function runAvatarSync() {
+  try {
+    do {
+      avatarSyncPending = false;
+
+      await nextTick();
+      const resizeRequested = await syncAvatarWindowSize();
+
+      if (!resizeRequested) {
+        await nextTick();
+        await applyAvatarInputShape();
+      }
+    } while (avatarSyncPending);
+  } finally {
+    avatarSyncRunning = false;
+
+    if (avatarSyncPending) {
+      requestAvatarSync();
+    }
+  }
+}
+
+function handleAvatarWindowResize() {
+  if (!avatarLoaded) {
+    return;
+  }
+
+  void nextTick().then(() => applyAvatarInputShape());
 }
 
 async function changeAvatarScale(delta: number) {
@@ -96,11 +140,7 @@ async function changeAvatarScale(delta: number) {
   }
 
   avatarScalePercent.value = nextScale;
-
-  await nextTick();
-  await syncAvatarWindowSize();
-  await nextTick();
-  await applyAvatarInputShape();
+  requestAvatarSync();
 }
 
 function handleAvatarScaleKeydown(event: KeyboardEvent) {
@@ -129,15 +169,7 @@ function handleAvatarScaleKeydown(event: KeyboardEvent) {
 
 function initializeAvatar() {
   avatarLoaded = true;
-  void applyAvatarInputShape();
-
-  if (backendStatus.value === "ready") {
-    void nextTick().then(async () => {
-      await syncAvatarWindowSize();
-      await nextTick();
-      await applyAvatarInputShape();
-    });
-  }
+  requestAvatarSync();
 }
 
 function clearRecordingTimer() {
@@ -376,6 +408,7 @@ async function handleExit() {
 
 onMounted(async () => {
   window.addEventListener("keydown", handleAvatarScaleKeydown);
+  window.addEventListener("resize", handleAvatarWindowResize);
 
   try {
     unlisten = await listenToBackendLifecycle({
@@ -403,19 +436,17 @@ watch(backendStatus, (status) => {
     return;
   }
 
-  void nextTick().then(async () => {
-    await syncAvatarWindowSize();
-    await nextTick();
-    await applyAvatarInputShape();
-  });
+  requestAvatarSync();
 });
 
 onBeforeUnmount(() => {
   audioPointerHeld = false;
   window.removeEventListener("keydown", handleAvatarScaleKeydown);
+  window.removeEventListener("resize", handleAvatarWindowResize);
   resetAudioRecordingState();
   unlisten?.();
 });
+
 </script>
 
 <template>

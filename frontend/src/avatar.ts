@@ -1,6 +1,10 @@
 import { parse } from "yaml";
 
+import frieda1Config from "./assets/avatars/frieda1/avatar.yaml?raw";
+import frieda1ImageUrl from "./assets/avatars/frieda1/standard.png?url";
+
 export const ACTIVE_AVATAR_ID = "frieda1";
+
 
 export type Avatar = {
   name: string;
@@ -11,38 +15,30 @@ type AvatarConfig = {
   name: string;
 };
 
-const avatarYamlFiles = import.meta.glob(
-  "./assets/avatars/*/avatar.yaml",
-  {
-    eager: true,
-    query: "?raw",
-    import: "default",
-  },
-) as Record<string, string>;
+type AvatarAssets = {
+  config: string;
+  imageUrl: string;
+};
 
-const avatarImageFiles = import.meta.glob(
-  "./assets/avatars/*/standard.png",
-  {
-    eager: true,
-    query: "?url",
-    import: "default",
+const avatarAssets: Record<string, AvatarAssets> = {
+  frieda1: {
+    config: frieda1Config,
+    imageUrl: frieda1ImageUrl,
   },
-) as Record<string, string>;
+};
 
 let activeAvatar: Avatar | undefined;
 
-function requireAsset(
-  files: Record<string, string>,
-  path: string,
-): string {
-  const value = files[path];
+function requireAvatarAssets(id: string): AvatarAssets {
+  const assets = avatarAssets[id];
 
-  if (typeof value !== "string" || value.length === 0) {
-    throw new Error(`Required avatar asset is missing: ${path}`);
+  if (!assets) {
+    throw new Error(`Required avatar asset is missing: ./assets/avatars/${id}/avatar.yaml`);
   }
 
-  return value;
+  return assets;
 }
+
 
 export function parseAvatarConfig(raw: string): AvatarConfig {
   const parsed = parse(raw);
@@ -67,18 +63,15 @@ export function parseAvatarConfig(raw: string): AvatarConfig {
 }
 
 export function loadAvatar(id: string): Avatar {
-  const yamlPath = `./assets/avatars/${id}/avatar.yaml`;
-  const imagePath = `./assets/avatars/${id}/standard.png`;
-
-  const config = parseAvatarConfig(
-    requireAsset(avatarYamlFiles, yamlPath),
-  );
+  const assets = requireAvatarAssets(id);
+  const config = parseAvatarConfig(assets.config);
 
   return {
     name: config.name,
-    imageUrl: requireAsset(avatarImageFiles, imagePath),
+    imageUrl: assets.imageUrl,
   };
 }
+
 
 export function initializeActiveAvatar(): Avatar {
   activeAvatar = loadAvatar(ACTIVE_AVATAR_ID);
