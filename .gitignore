@@ -30,8 +30,11 @@ src-tauri/target/debug/
 artifacts/tts-spike/
 :memory:.ses
 
-# docs
-scripts/data/
+# scripting
+data/patch.p2c
+data/code2prompt-adrs.md
+data/code2prompt-file-list.md
+data/diff.patch
 
 # TTS (text-to-speech)
 data/tts/generated

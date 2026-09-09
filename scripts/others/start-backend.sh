@@ -9,7 +9,7 @@ if [[ "${AVALO_TAURI_MANAGED:-0}" == "1" ]]; then
 fi
 
 exec "${project_root}/.venv/bin/python" -m uvicorn app.main:app \
-  --app-dir "${project_root}/backend" \
+  --app-dir "~/dev/avalo/backend" \
   --host 127.0.0.1 \
   --port 8095 \
   "${reload_args[@]}"

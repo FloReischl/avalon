@@ -20,7 +20,7 @@ file_list=$(IFS=,; echo "${lines[*]}")
 code2prompt ~/dev/avalo \
    --include="$file_list" \
    -F markdown \
-   --output-file=./data/code2prompt-file-list.md
+   --output-file=~/dev/avalo/data/code2prompt-file-list.md
 
 
 # #!/bin/bash

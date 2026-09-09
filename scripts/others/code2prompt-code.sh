@@ -1,7 +1,7 @@
 #!/bin/bash
 
 code2prompt ~/dev/avalo/ \
-  -O ./data/code2prompt-code.md \
+  -O ~/dev/avalo/data/code2prompt-code.md \
   -F markdown \
   --exclude="**/node_modules/**" \
   --exclude="**/__pycache__/**" \
