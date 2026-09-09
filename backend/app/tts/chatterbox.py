@@ -42,9 +42,9 @@ class ChatterboxTextToSpeech:
         self._reference_audio = (
             reference_audio
             if reference_audio is not None
-            else PROJECT_ROOT / settings.tts_reference_audio
+            else PROJECT_ROOT / settings.tts_chatterbox_reference_audio
         )
-        self._model_revision = model_revision or settings.tts_model_revision
+        self._model_revision = model_revision or settings.tts_chatterbox_model_revision
         self._model: Any | None = None
         self._device: str | None = None
 

@@ -295,8 +295,8 @@ modules:
           ollama_model: str
           tts_engine: str
           tts_device: str
-          tts_reference_audio: str
-          tts_model_revision: str
+          tts_chatterbox_reference_audio: str
+          tts_chatterbox_model_revision: str
           tts_kokoro_model: str
           tts_kokoro_voice: str
           tts_kokoro_config: str

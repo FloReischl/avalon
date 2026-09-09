@@ -18,9 +18,9 @@ def test_ollama_runtime_settings_are_recorded() -> None:
 
 def test_chatterbox_tts_settings_are_recorded() -> None:
     assert settings.tts_device == "auto"
-    assert settings.tts_reference_audio == "data/tts/chatterbox/frieda1.wav"
+    assert settings.tts_chatterbox_reference_audio == "data/tts/chatterbox/frieda1.wav"
     assert (
-        settings.tts_model_revision
+        settings.tts_chatterbox_model_revision
         == "5bb1f6ee58e50c3b8d408bc82a6d3740c2db6e18"
     )
     assert settings.tts_idle_unload_seconds == 300.0
