@@ -13,7 +13,7 @@ Lokales Entwicklungsgerüst für Avalo. Produktidee, Arbeitsweise und Architektu
 ```bash
 python3 -m venv .venv
 ./.venv/bin/pip install -e ".[dev]"
-./scripts/xstart-backend.sh
+./scripts/others/start-backend.sh
 ```
 
 Der Health-Endpunkt ist danach unter `http://127.0.0.1:8095/health` erreichbar. Der Chat-Endpunkt ist absichtlich nur ein Stub und antwortet mit HTTP 501.

@@ -17,10 +17,13 @@ done
 
 file_list=$(IFS=,; echo "${lines[*]}")
 
-code2prompt ~/dev/avalo \
-   --include="$file_list" \
-   -F markdown \
-   --output-file=~/dev/avalo/data/code2prompt-file-list.md
+# code2prompt ~/dev/avalo \
+#    --include="$file_list" \
+#    -F markdown \
+#    --output-file=~/dev/avalo/data/frieda-files.md
+#    # --output-file=/home/flo/dev/avalo/data/frieda-files.md
+
+code2prompt ~/dev/avalo --include="$file_list" -F markdown --output-file=../data/frieda-files.md
 
 
 # #!/bin/bash
