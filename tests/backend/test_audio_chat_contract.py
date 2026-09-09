@@ -6,6 +6,7 @@ from httpx import ASGITransport, AsyncClient
 from app.api.routes.audio import get_audio_chat_service
 from app.audio.capture import CaptureError
 from app.main import create_app
+from app.services.audio_chat import AudioStreamEvent
 
 
 class FakeAudioChatService:
@@ -13,6 +14,7 @@ class FakeAudioChatService:
         self.started = False
         self.aborted = False
         self.received_messages: list[dict[str, str]] | None = None
+        self.received_chat_id: int | None = None
         self.error: Exception | None = None
 
     async def start_recording(self) -> None:
@@ -23,15 +25,19 @@ class FakeAudioChatService:
     async def abort_recording(self) -> None:
         self.aborted = True
 
-    async def stream_response(
+    async def stream_response_with_transcription(
         self,
         messages: list[dict[str, str]],
-    ) -> AsyncIterator[str]:
+        chat_id: int | None = None,
+    ) -> AsyncIterator[AudioStreamEvent]:
         self.received_messages = messages
+        self.received_chat_id = chat_id
         if self.error:
             raise self.error
-        yield "Hallo "
-        yield "Flo"
+        yield AudioStreamEvent(kind="transcript", text="Mein ")
+        yield AudioStreamEvent(kind="assistant", text="Hallo ")
+        yield AudioStreamEvent(kind="transcript", text="Text")
+        yield AudioStreamEvent(kind="assistant", text="Flo")
 
 
 def request(method: str, path: str, service: FakeAudioChatService, **kwargs):
@@ -74,13 +80,16 @@ def test_audio_stop_streams_response_with_conversation_context() -> None:
         "POST",
         "/api/v1/audio/recording/stop",
         service,
-        json={"messages": messages},
+        json={"chat_id": 42, "messages": messages},
     )
 
     assert response.status_code == 200
     assert service.received_messages == messages
+    assert service.received_chat_id == 42
     assert response.text == (
+        'event: transcript_chunk\ndata: {"text": "Mein "}\n\n'
         'event: chunk\ndata: {"text": "Hallo "}\n\n'
+        'event: transcript_chunk\ndata: {"text": "Text"}\n\n'
         'event: chunk\ndata: {"text": "Flo"}\n\n'
         "event: done\ndata: {}\n\n"
     )

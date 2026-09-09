@@ -148,6 +148,75 @@ class OllamaRuntime(ModelRuntime):
         except (httpx.RequestError, httpx.HTTPStatusError, ValueError) as exc:
             raise RuntimeError(f"Ollama error: {exc}") from exc
 
+    async def transcribe_audio_stream(
+        self,
+        audio_file: Path,
+    ) -> AsyncIterator[str]:
+        """Stream a plain transcription of native audio without chat context."""
+        try:
+            audio_base64 = base64.b64encode(audio_file.read_bytes()).decode("utf-8")
+
+            messages: list[dict[str, object]] = [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": (
+                                "Transcribe the spoken audio. "
+                                "Return only the transcription text."
+                            ),
+                        },
+                        {
+                            "type": "input_audio",
+                            "input_audio": {
+                                "data": audio_base64,
+                                "format": "wav",
+                            },
+                        },
+                    ],
+                }
+            ]
+
+            async with httpx.AsyncClient(timeout=120.0) as client:
+                async with client.stream(
+                    "POST",
+                    f"http://{settings.ollama_host}/v1/chat/completions",
+                    json={
+                        "model": settings.ollama_model,
+                        "messages": messages,
+                        "stream": True,
+                    },
+                ) as response:
+                    response.raise_for_status()
+
+                    async for line in response.aiter_lines():
+                        if not line.startswith("data: "):
+                            continue
+
+                        payload = line.removeprefix("data: ")
+                        if payload == "[DONE]":
+                            continue
+
+                        data = json.loads(payload)
+                        choices = data.get("choices")
+                        if not isinstance(choices, list) or not choices:
+                            continue
+
+                        delta = choices[0].get("delta")
+                        if not isinstance(delta, dict):
+                            raise ValueError("Invalid Ollama stream response")
+
+                        text = delta.get("content")
+                        if text is None:
+                            continue
+                        if not isinstance(text, str):
+                            raise ValueError("Invalid Ollama stream response")
+                        if text:
+                            yield text
+        except (httpx.RequestError, httpx.HTTPStatusError, ValueError) as exc:
+            raise RuntimeError(f"Ollama error: {exc}") from exc
+
     async def generate_from_audio_stream(
         self,
         audio_file: Path,

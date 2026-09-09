@@ -198,6 +198,7 @@ describe("ChatWindow", () => {
       [],
       expect.any(Object),
       expect.any(AbortSignal),
+      undefined,
     );
 
     const callButton = wrapper.get('[data-testid="dialog-call"]');
@@ -493,6 +494,7 @@ describe("ChatWindow", () => {
       [],
       expect.any(Object),
       expect.any(AbortSignal),
+      undefined,
     );
     expect(wrapper.get('[data-testid="message-user"]').text()).toContain(
       "🎤 Sprachnachricht",

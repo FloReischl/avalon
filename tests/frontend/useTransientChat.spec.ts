@@ -348,10 +348,14 @@ describe("useTransientChat", () => {
   });
 
 
-  it("keeps an audio message and streams a response with prior context", async () => {
+  it("replaces an audio placeholder with the streamed transcript", async () => {
     const audioStreamer = vi.fn(async (_messages, handlers) => {
+      handlers.onChat?.(42);
+      handlers.onTranscriptChunk?.("Mein ");
       handlers.onChunk("**Hallo** ");
+      handlers.onTranscriptChunk?.("Text");
       handlers.onChunk("Flo");
+      handlers.onDone?.();
     });
 
     const chat = useTransientChat(undefined, audioStreamer);
@@ -368,10 +372,11 @@ describe("useTransientChat", () => {
       { role: "assistant", content: "Hallo Flo." },
     ]);
 
+    expect(chat.selectedChatId.value).toBe(42);
     expect(chat.messages.value.slice(-2)).toEqual([
       {
         role: "user",
-        content: "🎤 Sprachnachricht",
+        content: "Mein Text",
         kind: "audio",
       },
       {
@@ -379,6 +384,31 @@ describe("useTransientChat", () => {
         content: "**Hallo** Flo",
       },
     ]);
+  });
+
+  it("keeps the audio placeholder when transcription fails", async () => {
+    const audioStreamer = vi.fn(async (_messages, handlers) => {
+      handlers.onTranscriptChunk?.("Teil");
+      handlers.onTranscriptError?.();
+      handlers.onChunk("Antwort");
+      handlers.onDone?.();
+    });
+    const chat = useTransientChat(undefined, audioStreamer);
+
+    await chat.sendAudio();
+
+    expect(chat.messages.value).toEqual([
+      {
+        role: "user",
+        content: "🎤 Sprachnachricht",
+        kind: "audio",
+      },
+      {
+        role: "assistant",
+        content: "Antwort",
+      },
+    ]);
+    expect(chat.errorMessage.value).toBeUndefined();
   });
 
   it("keeps an audio message when response generation fails", async () => {

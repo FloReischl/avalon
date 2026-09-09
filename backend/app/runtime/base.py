@@ -34,3 +34,10 @@ class ModelRuntime(Protocol):
     ) -> AsyncIterator[str]:
         """Generate response text incrementally from audio and chat context."""
         ...
+
+    def transcribe_audio_stream(
+        self,
+        audio_file: Path,
+    ) -> AsyncIterator[str]:
+        """Transcribe native audio incrementally without chat context."""
+        ...

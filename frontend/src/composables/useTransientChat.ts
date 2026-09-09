@@ -33,6 +33,7 @@ export type AudioStreamer = (
   messages: ConversationMessage[],
   handlers: ChatStreamHandlers,
   signal: AbortSignal,
+  chatId?: number,
 ) => Promise<void>;
 
 export interface DialogTurnResult {
@@ -152,6 +153,22 @@ export function useTransientChat(
   }
 
 
+  function acceptAudioChatId(
+    state: ChatState,
+    chatId: number,
+  ) {
+    if (
+      state.chatId !== undefined
+      && state.chatId !== chatId
+    ) {
+      throw new Error("Audio stream returned a different chat ID");
+    }
+
+    state.chatId = chatId;
+    chatStates.set(chatId, state);
+    runningChatIds.add(chatId);
+  }
+
   function conversationContext(
     state: ChatState,
   ): ConversationMessage[] {
@@ -159,7 +176,11 @@ export function useTransientChat(
       .filter(
         (message) =>
           message.content.length > 0
-          && !(message.role === "user" && message.kind === "audio"),
+          && !(
+            message.role === "user"
+            && message.kind === "audio"
+            && message.content === "🎤 Sprachnachricht"
+          ),
       )
       .map(({ role, content }) => ({ role, content }));
   }
@@ -460,17 +481,46 @@ export function useTransientChat(
       runningChatIds.add(state.chatId);
     }
 
+    let transcript = "";
+    let transcriptFailed = false;
+
     try {
       await streamAudio(
         context,
         {
+          onChat(chatId) {
+            acceptAudioChatId(state, chatId);
+          },
           onChunk(text) {
             if (state.activeTurn === turn) {
               state.messages[turn.assistantIndex].content += text;
             }
           },
+          onTranscriptChunk(text) {
+            if (state.activeTurn !== turn || transcriptFailed) {
+              return;
+            }
+
+            transcript += text;
+            state.messages[startIndex].content = transcript;
+          },
+          onTranscriptError() {
+            if (state.activeTurn !== turn) {
+              return;
+            }
+
+            transcriptFailed = true;
+            transcript = "";
+            state.messages[startIndex].content = "🎤 Sprachnachricht";
+          },
+          onDone() {
+            if (state.activeTurn === turn) {
+              turn.done = true;
+            }
+          },
         },
         controller.signal,
+        state.chatId,
       );
     } catch (error) {
       if (state.activeTurn !== turn) {
@@ -520,34 +570,70 @@ export function useTransientChat(
     state.errorMessage = undefined;
 
     let responseStarted = false;
+    let messagesCreated = false;
+    let transcript = "";
+    let transcriptFailed = false;
+
+    function ensureMessages() {
+      if (messagesCreated) {
+        return;
+      }
+
+      messagesCreated = true;
+      state.messages.push(
+        {
+          role: "user",
+          content: "🎤 Sprachnachricht",
+          kind: "audio",
+        },
+        {
+          role: "assistant",
+          content: "",
+        },
+      );
+    }
 
     try {
       await streamDialog(
         context,
         {
+          onChat(chatId) {
+            acceptAudioChatId(state, chatId);
+          },
           onChunk(text) {
             if (state.activeTurn !== turn) {
               return;
             }
 
+            ensureMessages();
+
             if (!responseStarted) {
               responseStarted = true;
               turn.responding = true;
-
-              state.messages.push(
-                {
-                  role: "user",
-                  content: "🎤 Sprachnachricht",
-                  kind: "audio",
-                },
-                {
-                  role: "assistant",
-                  content: "",
-                },
-              );
             }
 
             state.messages[turn.assistantIndex].content += text;
+          },
+          onTranscriptChunk(text) {
+            if (state.activeTurn !== turn || transcriptFailed) {
+              return;
+            }
+
+            ensureMessages();
+            transcript += text;
+            state.messages[startIndex].content = transcript;
+          },
+          onTranscriptError() {
+            if (state.activeTurn !== turn) {
+              return;
+            }
+
+            transcriptFailed = true;
+            transcript = "";
+
+            if (messagesCreated) {
+              state.messages[startIndex].content = "🎤 Sprachnachricht";
+            }
           },
           onDone() {
             if (state.activeTurn === turn) {
@@ -556,6 +642,7 @@ export function useTransientChat(
           },
         },
         controller.signal,
+        state.chatId,
       );
 
       if (!responseStarted) {
@@ -570,7 +657,7 @@ export function useTransientChat(
         return undefined;
       }
 
-      if (responseStarted) {
+      if (messagesCreated) {
         state.messages.splice(turn.assistantIndex, 1);
       }
 
@@ -615,8 +702,13 @@ export function useTransientChat(
 
     turn.controller.abort();
 
-    if (turn.kind === "audio") {
-      state.messages.splice(turn.assistantIndex, 1);
+    if (turn.kind === "audio" || turn.kind === "dialog") {
+      const userMessage = state.messages[turn.startIndex];
+
+      if (userMessage?.role === "user") {
+        userMessage.content = "🎤 Sprachnachricht";
+        state.messages.splice(turn.assistantIndex, 1);
+      }
     } else {
       rollbackTurn(state, turn);
     }

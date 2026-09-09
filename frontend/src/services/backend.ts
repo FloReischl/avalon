@@ -13,6 +13,8 @@ export interface ChatStreamRequest {
 export interface ChatStreamHandlers {
   onChat?: (chatId: number) => void;
   onChunk: (text: string) => void;
+  onTranscriptChunk?: (text: string) => void;
+  onTranscriptError?: () => void;
   onDone?: () => void;
 }
 
@@ -189,6 +191,7 @@ export async function streamAudioResponse(
   messages: ConversationMessage[],
   handlers: ChatStreamHandlers,
   signal: AbortSignal,
+  chatId?: number,
 ): Promise<void> {
   const response = await fetch(
     `${BACKEND_BASE_URL}/api/v1/audio/recording/stop`,
@@ -197,7 +200,11 @@ export async function streamAudioResponse(
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ messages }),
+      body: JSON.stringify(
+        chatId === undefined
+          ? { messages }
+          : { chat_id: chatId, messages },
+      ),
       signal,
     },
   );
@@ -209,6 +216,7 @@ export async function streamDialogResponse(
   messages: ConversationMessage[],
   handlers: ChatStreamHandlers,
   signal: AbortSignal,
+  chatId?: number,
 ): Promise<void> {
   const response = await fetch(
     `${BACKEND_BASE_URL}/api/v1/audio/dialog/turn`,
@@ -217,7 +225,11 @@ export async function streamDialogResponse(
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ messages }),
+      body: JSON.stringify(
+        chatId === undefined
+          ? { messages }
+          : { chat_id: chatId, messages },
+      ),
       signal,
     },
   );
@@ -337,6 +349,21 @@ async function consumeChatStream(
         }
 
         handlers.onChunk(parsed.text);
+        continue;
+      }
+
+      if (event === "transcript_chunk") {
+        const parsed = JSON.parse(data) as Partial<ChatChunkData>;
+        if (typeof parsed.text !== "string") {
+          throw new Error("Invalid chat stream transcript chunk");
+        }
+
+        handlers.onTranscriptChunk?.(parsed.text);
+        continue;
+      }
+
+      if (event === "transcript_error") {
+        handlers.onTranscriptError?.();
         continue;
       }
 

@@ -239,7 +239,7 @@ describe("useTransientChat dialog turns", () => {
   });
 
 
-  it("excludes audio placeholders from the next dialog context", async () => {
+  it("uses completed audio transcripts in the next dialog context", async () => {
     const contexts: Array<
       Array<{ role: "user" | "assistant"; content: string }>
     > = [];
@@ -250,6 +250,11 @@ describe("useTransientChat dialog turns", () => {
     ) => {
       contexts.push(messages);
 
+      handlers.onTranscriptChunk?.(
+        contexts.length === 1
+          ? "Erste Frage"
+          : "Zweite Frage",
+      );
       handlers.onChunk(
         contexts.length === 1
           ? "Erste Antwort"
@@ -271,6 +276,10 @@ describe("useTransientChat dialog turns", () => {
     expect(contexts).toEqual([
       [],
       [
+        {
+          role: "user",
+          content: "Erste Frage",
+        },
         {
           role: "assistant",
           content: "Erste Antwort",

@@ -176,6 +176,8 @@ describe("streamChatMessage", () => {
     vi.spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(new Response(null, { status: 204 }))
       .mockResolvedValueOnce(createStreamingResponse([
+        'event: chat\ndata: {"id": "42"}\n\n',
+        'event: transcript_chunk\ndata: {"text": "Gesprochener Text"}\n\n',
         'event: chunk\ndata: {"text": "Hallo"}\n\n',
         "event: done\ndata: {}\n\n",
       ]))
@@ -183,19 +185,30 @@ describe("streamChatMessage", () => {
 
     await startAudioRecording();
     const chunks: string[] = [];
+    const transcriptChunks: string[] = [];
+    const onChat = vi.fn();
+
     await streamAudioResponse(
       [{ role: "user", content: "Kontext" }],
-      { onChunk: (text) => chunks.push(text) },
+      {
+        onChat,
+        onChunk: (text) => chunks.push(text),
+        onTranscriptChunk: (text) => transcriptChunks.push(text),
+      },
       new AbortController().signal,
+      42,
     );
     await abortAudioRecording();
 
     expect(chunks).toEqual(["Hallo"]);
+    expect(transcriptChunks).toEqual(["Gesprochener Text"]);
+    expect(onChat).toHaveBeenCalledWith(42);
     expect(fetch).toHaveBeenNthCalledWith(
       2,
       "http://127.0.0.1:8095/api/v1/audio/recording/stop",
       expect.objectContaining({
         body: JSON.stringify({
+          chat_id: 42,
           messages: [{ role: "user", content: "Kontext" }],
         }),
       }),

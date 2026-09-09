@@ -65,6 +65,24 @@ class ChatRepository:
             session.refresh(message)
             return message
 
+    def update_message_content(
+        self,
+        message_id: int,
+        content: str,
+    ) -> bool:
+        """Replace the content of one existing message."""
+        if not content:
+            raise ValueError("Message content must not be empty.")
+
+        with self._session_factory() as session:
+            message = session.get(Message, message_id)
+            if message is None:
+                return False
+
+            message.content = content
+            session.commit()
+            return True
+
     def get_chat(self, chat_id: int) -> Chat | None:
         """Return one chat or None when it does not exist."""
         with self._session_factory() as session:

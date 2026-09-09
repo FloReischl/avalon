@@ -68,6 +68,7 @@ class AudioResponseRequest(BaseModel):
 
     """Conversation context accompanying a completed audio turn."""
 
+    chat_id: int | None = Field(default=None, gt=0)
     messages: list[ConversationMessage] = Field(default_factory=list)
 
 

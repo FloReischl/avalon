@@ -13,6 +13,10 @@ describe("streamDialogResponse", () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(
         [
+          'event: chat\ndata: {"id":"42"}',
+          "",
+          'event: transcript_chunk\ndata: {"text":"Hallo Flo"}',
+          "",
           'event: chunk\ndata: {"text":"Hallo"}',
           "",
           'event: chunk\ndata: {"text":" Flo"}',
@@ -31,6 +35,8 @@ describe("streamDialogResponse", () => {
 
     const controller = new AbortController();
     const chunks: string[] = [];
+    const transcriptChunks: string[] = [];
+    const onChat = vi.fn();
     const onDone = vi.fn();
 
     await streamDialogResponse(
@@ -45,12 +51,17 @@ describe("streamDialogResponse", () => {
         },
       ],
       {
+        onChat,
         onChunk(text) {
           chunks.push(text);
+        },
+        onTranscriptChunk(text) {
+          transcriptChunks.push(text);
         },
         onDone,
       },
       controller.signal,
+      42,
     );
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -68,6 +79,7 @@ describe("streamDialogResponse", () => {
       signal: controller.signal,
     });
     expect(JSON.parse(String(options?.body))).toEqual({
+      chat_id: 42,
       messages: [
         {
           role: "user",
@@ -81,6 +93,8 @@ describe("streamDialogResponse", () => {
     });
 
     expect(chunks).toEqual(["Hallo", " Flo"]);
+    expect(transcriptChunks).toEqual(["Hallo Flo"]);
+    expect(onChat).toHaveBeenCalledWith(42);
     expect(onDone).toHaveBeenCalledTimes(1);
   });
 
