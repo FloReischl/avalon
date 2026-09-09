@@ -173,30 +173,49 @@ key_flows:
       - cancellation propagates through service and runtime without becoming an error event
 
   native_audio:
-      flow:
-        - chat-window push-to-talk interaction
-        - POST /api/v1/audio/recording/start
-        - backend-local microphone capture through PipeWireRecorder
-        - POST /api/v1/audio/recording/stop with prior conversation context
-        - AudioChatService stops capture and passes WAV plus context to ModelRuntime
-        - OllamaRuntime sends prior context plus native audio to /v1/chat/completions
-        - model response streams back through Avalo SSE
+      flows:
+        push_to_talk:
+          - chat-window pointer-held recording interaction
+          - POST /api/v1/audio/recording/start
+          - backend-local microphone capture through PipeWireRecorder
+          - POST /api/v1/audio/recording/stop with prior conversation context
+          - AudioChatService stops capture and passes WAV plus context to ModelRuntime
+          - model response streams back through Avalo SSE
+        dialog:
+          - chat-window Call action activates continuous dialog mode
+          - POST /api/v1/audio/dialog/turn with prior conversation context
+          - backend waits indefinitely for speech without creating empty turns
+          - simple PCM amplitude detection starts the turn on speech
+          - 3 seconds of consecutive silence or 30 seconds from speech start completes the turn
+          - AudioChatService passes the captured WAV plus context to ModelRuntime
+          - model response streams back through Avalo SSE
+          - completed assistant text is read aloud unless TTS was explicitly skipped or stopped
+          - after response completion the next dialog listener starts automatically
+          - dialog remains active until explicitly ended
       capture_location: python_backend
       capture_adapter: backend/app/audio/capture.py:PipeWireRecorder
       application_service: backend/app/services/audio_chat.py:AudioChatService
-      status: end_to_end_spike_implemented
+      status: push_to_talk_and_dialog_implemented
       notes:
         - browser/WebView microphone capture via MediaRecorder was rejected after WebKitGTK produced zero-byte chunks
         - backend microphone capture uses PipeWire pw-record
-        - frontend push-to-talk controls backend recording lifecycle
-        - quick pointer release while backend start is pending is completed after start succeeds
-        - pointer cancellation aborts and discards capture
-        - reaching the duration limit aborts capture and discards the incomplete audio fragment
+        - push-to-talk and dialog capture share one recorder and cannot run concurrently
+        - push-to-talk reaching the 30-second duration limit aborts and discards the incomplete fragment
+        - dialog reaching the 30-second duration limit completes and submits the current turn
+        - dialog silence before first speech is ignored indefinitely
+        - dialog silence detection uses a simple configurable RMS threshold without a VAD dependency
+        - ending dialog while listening or recording discards the current partial turn
+        - dialog has no audio barge-in while the model or TTS response is active
+        - stopping dialog response audio does not abort model generation
+        - stopping before TTS starts skips TTS for that response while model text continues
         - visible audio user turns use the UI placeholder "🎤 Sprachnachricht"
         - previous audio placeholders are not sent back as semantic model context
         - no transcript is currently retained for previous audio user turns
+        - audio route failures are logged with technical exception details and traceback to backend stderr
       constraints:
         max_duration_seconds: 30
+        dialog_silence_seconds: 3
+        dialog_speech_threshold: 0.015
         target_sample_rate_hz: 16000
         target_channels: 1
         initial_language: de
@@ -448,16 +467,17 @@ modules:
     role: native-audio chat use-case boundary
     symbols:
       AudioChatService:
-        role: coordinate microphone capture lifecycle and model response generation
+        role: coordinate push-to-talk and dialog capture with model response generation
     dependencies:
       - backend/app/audio/capture.py:PipeWireRecorder
       - backend/app/runtime/base.py:ModelRuntime
     behavior:
-      - start and abort backend-local recording
-      - stop capture and pass WAV plus prior conversation context to runtime
-      - stream assistant response
-      - clean temporary captured audio after generation
-    status: implemented_spike
+      - start and abort backend-local push-to-talk recording
+      - stop push-to-talk capture and pass WAV plus prior conversation context to runtime
+      - capture one automatic dialog speech turn and pass WAV plus prior context to runtime
+      - stream assistant response for both audio interaction modes
+      - clean temporary captured audio after generation or cancellation
+    status: implemented
 
   backend/app/runtime/base.py:
     role: model runtime abstraction
@@ -567,15 +587,24 @@ modules:
           duration_seconds: float
           sample_rate_hz: int
           channels: int
+      _DialogTurnBuffer:
+        role: detect one speech turn from signed 16-bit mono PCM using RMS amplitude
       PipeWireRecorder:
-        role: single push-to-talk capture lifecycle through pw-record
+        role: mutually exclusive push-to-talk and automatic dialog capture through pw-record
         methods:
           start:
+            role: start push-to-talk WAV capture
             async: true
           stop:
             signature: "() -> CapturedAudio"
+            role: finish push-to-talk capture
+            async: true
+          capture_dialog_turn:
+            signature: "() -> CapturedAudio"
+            role: wait for speech and finish on silence or duration limit
             async: true
           abort:
+            role: stop and discard whichever capture mode is active
             async: true
       inspect_wav:
         signature: "(path: Path) -> CapturedAudio"
@@ -584,12 +613,17 @@ modules:
       - backend/app/config.py:settings.audio_max_seconds
     behavior:
       - only one recording may be active per recorder
-      - stop terminates pw-record with SIGINT and validates resulting WAV metadata
-      - abort terminates capture and removes the temporary WAV
-      - duration timeout aborts and discards the incomplete recording
-      - invalid or failed captures are removed
+      - recorder tracks whether the active process belongs to push-to-talk or dialog mode
+      - push-to-talk captures directly to WAV
+      - dialog captures 16 kHz mono signed-16 PCM from pw-record stdout
+      - dialog ignores pre-speech silence and starts buffering at the first chunk above the RMS speech threshold
+      - dialog completes after 3 seconds of consecutive post-speech silence and removes trailing silence
+      - dialog completes and truncates exactly at the configured 30-second speech-turn limit
+      - push-to-talk duration timeout still aborts and discards the recording
+      - abort terminates capture and removes temporary output
+      - unexpected early pw-record exit reports return code and process stderr
       - hung process shutdown escalates from SIGINT to kill after 2 seconds
-    status: implemented_spike
+    status: implemented
 
   backend/app/audio/input.py:
     role: native audio normalization and validation boundary
@@ -829,9 +863,16 @@ modules:
       - supports draggable sidebar splitter with bounded width
       - automatically follows streamed assistant output
       - implements push-to-talk backend recording control
-      - shows 30-second recording countdown
-      - aborts and discards recording at the duration limit
+      - shows 30-second push-to-talk recording countdown
+      - aborts and discards push-to-talk recording at the duration limit
       - handles pointer release that occurs while backend recording start is still pending
+      - provides a separate Call control between microphone and Send for continuous dialog mode
+      - Call control distinguishes inactive, listening/hang-up, and response/Stop states
+      - dialog mode automatically alternates backend speech turns and assistant read-aloud responses
+      - ending dialog while listening aborts and discards the pending speech turn
+      - response Stop affects only dialog TTS; model text generation continues
+      - stopping before TTS begins skips read-aloud for the current response
+      - PTT and normal Send are unavailable while dialog mode is active
       - renders audio user turns as "🎤 Sprachnachricht"
       - streams audio-triggered assistant responses into the normal conversation
     relevant_to:
@@ -936,7 +977,8 @@ modules:
       - accept the persistent chat id from the initial SSE chat event
       - start backend recording through /api/v1/audio/recording/start
       - abort backend recording through /api/v1/audio/recording/abort
-      - stop recording and stream native-audio response through /api/v1/audio/recording/stop
+      - stop recording and stream push-to-talk native-audio response through /api/v1/audio/recording/stop
+      - stream one automatic dialog speech turn through /api/v1/audio/dialog/turn
       - synthesize plain text through /api/v1/tts and return WAV response plus playback id
       - notify backend playback completion through /api/v1/tts/playback-ended
       - parse Avalo SSE chat / chunk / done / error events
@@ -990,6 +1032,11 @@ modules:
       - keep the active turn internally until EOF so automatic-title finalization cannot race a new same-chat send
       - derive audio model context from current visible UI messages
       - exclude prior audio UI placeholders from semantic model context
+      - start dialog turns without adding a visible user or assistant message while only listening
+      - add the audio placeholder and assistant response only once the dialog model response begins
+      - expose dialog listening cancellation separately from model-response generation
+      - keep dialog model generation running after response audio is stopped
+      - log non-abort dialog transport failures to console.error
       - append assistant chunks incrementally
       - abort only the active turn belonging to the selected chat
       - roll back complete text turn on Stop or technical failure
@@ -1427,9 +1474,12 @@ change_navigation:
       - frontend/src/services/backend.ts
       - frontend/src/types/chat.ts
       - tests/backend/test_ollama_runtime.py
+      - tests/backend/test_audio_dialog.py
       - tests/frontend/ChatWindow.spec.ts
       - tests/frontend/useTransientChat.spec.ts
+      - tests/frontend/useTransientChat.dialog.spec.ts
       - tests/frontend/backend.spec.ts
+      - tests/frontend/backend.dialog.spec.ts
     maybe_inspect:
       - backend/app/config.py
       - tests/integration/test_ollama_integration.py

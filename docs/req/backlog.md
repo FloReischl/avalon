@@ -1,7 +1,7 @@
 todo
 
 - search/persona/instructions
-- error logging
+- ERROR LOGGING!
   - Audio in funktioniert nicht: Sprachantwort konnte nicht erzeugt werden.
 - window icon
 - audio in -> text
