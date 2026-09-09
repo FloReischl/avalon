@@ -204,32 +204,44 @@ key_flows:
 
   tts:
     contract: backend/app/tts/base.py:TextToSpeech
-    adapter: backend/app/tts/chatterbox.py:ChatterboxTextToSpeech
+    factory: backend/app/tts/factory.py:create_tts_engine
     service: backend/app/services/tts.py:TtsService
+    engines:
+      kokoro:
+        adapter: backend/app/tts/kokoro.py:KokoroTextToSpeech
+        status: default
+        model: Kikiri German Victoria / Kokoro-82M
+        sample_rate_hz: 24000
+      chatterbox:
+        adapter: backend/app/tts/chatterbox.py:ChatterboxTextToSpeech
+        status: available
+        model: Chatterbox Multilingual V2
+        quantization: bitsandbytes_4bit
     endpoints:
       synthesize: "POST /api/v1/tts"
       playback_ended: "POST /api/v1/tts/playback-ended"
     status: read_aloud_implemented
-    engine: Chatterbox Multilingual V2
-    quantization: bitsandbytes_4bit
     behavior:
-      - lazy model load on first synthesis
+      - configured engine is selected once during backend composition
+      - unsupported configured engine fails backend startup
+      - engine runtime is loaded lazily on first synthesis
       - one synthesis at a time; no queue
       - frontend playback identity controls idle lifecycle
-      - model unload after 300 seconds without synthesis or active playback
+      - engine unload after 300 seconds without synthesis or active playback
       - stale playback-ended notifications are ignored
       - completed Markdown is converted to plain text in the frontend
       - backend returns one complete WAV response
-      - long text is partitioned primarily at sentence boundaries
-      - sentences above roughly 300 characters fall back to clause boundaries then whitespace
+      - Kokoro uses local Victoria model, voice, and config artifacts
+      - Chatterbox partitions long text primarily at sentence boundaries
     resource_strategy:
       - Gemma remains fully GPU resident
-      - TTS is quantized to fit alongside the primary LLM
-      - full-message generation without partitioning can exceed available 8 GB VRAM
+      - Kokoro is the default because its smaller runtime provides substantially smoother local interaction
+      - Chatterbox remains available when its preferred voice quality justifies higher resource cost
     notes:
-      - Chatterbox V3 won the original quality comparison but the integrated quantized fork is V2.
-      - Current 4-bit quality loss is accepted for the first integration.
-      - Quantization depends on a pinned non-upstream Chatterbox fork.
+      - Kokoro device auto-selection prefers CUDA and falls back to CPU.
+      - Kokoro model artifacts are local data and are not downloaded by the runtime.
+      - Chatterbox V3 won the original quality comparison; the available Chatterbox implementation remains quantized V2.
+      - TtsService is engine-independent and owns the shared synthesis/playback/unload lifecycle.
 
 modules:
 
@@ -248,9 +260,13 @@ modules:
           audio_max_seconds: int
           ollama_host: str
           ollama_model: str
+          tts_engine: str
           tts_device: str
           tts_reference_audio: str
           tts_model_revision: str
+          tts_kokoro_model: str
+          tts_kokoro_voice: str
+          tts_kokoro_config: str
           tts_idle_unload_seconds: float
       settings:
         kind: singleton
@@ -636,6 +652,43 @@ modules:
             signature: "() -> None"
             async: true
     status: implemented_contract
+
+  backend/app/tts/factory.py:
+    role: configured TTS engine composition
+    symbols:
+      create_tts_engine:
+        signature: "(engine_name: str | None = None) -> TextToSpeech"
+    behavior:
+      - defaults to configured tts_engine
+      - creates Kokoro or Chatterbox adapter
+      - rejects unsupported engine names during backend composition
+    status: implemented
+
+  backend/app/tts/kokoro.py:
+    role: local Kikiri/Kokoro Victoria TTS adapter
+    symbols:
+      KokoroTextToSpeech:
+        methods:
+          synthesize:
+            signature: "(text: str) -> bytes"
+            async: true
+          unload:
+            signature: "() -> None"
+            async: true
+    dependencies:
+      - backend/app/config.py
+      - Kokoro-82M
+      - Kikiri German Victoria model and voice
+      - soundfile
+      - numpy
+      - torch
+    behavior:
+      - validates configured local model, voice, and config artifacts on lazy load
+      - device auto-selection prefers CUDA and falls back to CPU
+      - lazily loads model, German pipeline, and Victoria voice
+      - returns complete 24 kHz WAV audio
+      - releases model, pipeline, voice, and CUDA cache on unload
+    status: implemented_default
 
   backend/app/tts/chatterbox.py:
     role: local Chatterbox TTS adapter
@@ -1197,6 +1250,41 @@ tests:
       - backend/app/tts/base.py
       - backend/app/tts/chatterbox.py
 
+  tests/backend/test_tts_factory.py:
+    covers:
+      - explicit Kokoro engine selection
+      - retained Chatterbox engine selection
+      - unsupported engine rejection
+    inspect_with:
+      - backend/app/tts/factory.py
+      - backend/app/config.py
+
+  tests/backend/test_tts_kokoro.py:
+    covers:
+      - Kokoro lazy runtime load
+      - WAV synthesis contract without real model load
+      - unload and subsequent reload
+      - empty text rejection
+      - missing local artifact diagnostics
+    inspect_with:
+      - backend/app/tts/kokoro.py
+      - backend/app/config.py
+
+  tests/integration/test_kokoro_tts_integration.py:
+    covers:
+      - real Kokoro Victoria synthesis
+      - 24 kHz WAV output
+      - auto device selection
+      - real unload and reload lifecycle
+      - manually enabled static WAV asset generation
+    external_dependency:
+      - local Kokoro Victoria model, voice, and config artifacts
+      - torch CUDA when available
+    status: opt_in
+    activation:
+      - AVALO_RUN_TTS_INTEGRATION=1
+      - pytest integration marker
+
   tests/integration/test_ollama_integration.py:
     covers:
       - real configured Ollama model health
@@ -1349,11 +1437,19 @@ change_navigation:
   implement_tts:
     inspect:
       - backend/app/tts/base.py
+      - backend/app/tts/factory.py
+      - backend/app/tts/kokoro.py
       - backend/app/tts/chatterbox.py
+      - backend/app/services/tts.py
+      - backend/app/api/routes/tts.py
       - backend/app/config.py
-      - tests/backend/test_tts_blueprint.py
+      - tests/backend/test_tts_factory.py
+      - tests/backend/test_tts_kokoro.py
+      - tests/backend/test_tts_service.py
+      - tests/backend/test_tts_contract.py
     maybe_inspect:
-      - backend/app/application/chat_service.py
+      - tests/integration/test_kokoro_tts_integration.py
+      - tests/integration/test_chatterbox_tts_integration.py
 
   change_backend_network_or_cors:
     inspect:

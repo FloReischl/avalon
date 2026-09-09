@@ -141,7 +141,8 @@ def load_chatterbox(requested_device: str):
     revision = "5bb1f6ee58e50c3b8d408bc82a6d3740c2db6e18"
     filenames = ["ve.pt", "t3_mtl23ls_v3.safetensors", "s3gen.pt", "grapheme_mtl_merged_expanded_v1.json", "conds.pt", "Cangjie5_TC.json"]
     checkpoint_dir = Path(snapshot_download(repo_id="ResembleAI/chatterbox", revision=revision, allow_patterns=filenames))
-    model = ChatterboxMultilingualTTS.from_local(checkpoint_dir, device=device, t3_model="v3")
+    # model = ChatterboxMultilingualTTS.from_local(checkpoint_dir, device=device, t3_model="v3")
+    model = ChatterboxMultilingualTTS.from_local(checkpoint_dir, device=device)
     return model, device, {name: checkpoint_dir / name for name in filenames}
 
 

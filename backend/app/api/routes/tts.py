@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 from app.api.schemas import TtsPlaybackEndedRequest, TtsRequest
 from app.config import settings
 from app.services.tts import TtsBusyError, TtsService
-from app.tts.chatterbox import ChatterboxTextToSpeech
+from app.tts.factory import create_tts_engine
 
 
 PLAYBACK_ID_HEADER = "X-Avalo-TTS-Playback-ID"
@@ -19,7 +19,7 @@ PLAYBACK_ID_HEADER = "X-Avalo-TTS-Playback-ID"
 router = APIRouter(prefix="/tts", tags=["tts"])
 
 _tts_service = TtsService(
-    ChatterboxTextToSpeech(),
+    create_tts_engine(),
     idle_unload_seconds=settings.tts_idle_unload_seconds,
 )
 

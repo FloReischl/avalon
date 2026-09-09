@@ -1,7 +1,7 @@
 import { parse } from "yaml";
 
-import frieda1Config from "./assets/avatars/frieda1/avatar.yaml?raw";
-import frieda1ImageUrl from "./assets/avatars/frieda1/standard.png?url";
+import avatarConfig from "./assets/avatars/frieda1/avatar.yaml?raw";
+import avatarImageUrl from "./assets/avatars/frieda1/standard.png?url";
 
 export const ACTIVE_AVATAR_ID = "frieda1";
 
@@ -22,8 +22,8 @@ type AvatarAssets = {
 
 const avatarAssets: Record<string, AvatarAssets> = {
   frieda1: {
-    config: frieda1Config,
-    imageUrl: frieda1ImageUrl,
+    config: avatarConfig,
+    imageUrl: avatarImageUrl,
   },
 };
 
