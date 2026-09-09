@@ -32,3 +32,7 @@ artifacts/tts-spike/
 
 # docs
 scripts/data/
+
+# TTS (Text to Speech)
+data/tts/kokoro_victoria
+data/tts/generated

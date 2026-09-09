@@ -17,6 +17,10 @@ dependencies = [
     "setuptools>=75,<81",
     "torchaudio==2.6.0",
     "bitsandbytes==0.50.2",
+    "numpy>=1.26,<3",
+    "soundfile>=0.12,<1",
+    "misaki @ git+https://github.com/semidark/misaki.git@9cda9268309160120fffee216280a9ca83ac4644",
+    "kokoro-deutsch @ git+https://github.com/semidark/kikiri-tts.git@a12d0410e89841e6f3c09958ae5c072f90ae1d49",
     "chatterbox-tts @ git+https://github.com/prathamesh-chavan-22/chatterbox.git@28dd1e642739c556e9d8728609055ea06bfb99cc",
 ]
 
