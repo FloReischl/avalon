@@ -205,6 +205,26 @@ export async function streamAudioResponse(
   await consumeChatStream(response, handlers);
 }
 
+export async function streamDialogResponse(
+  messages: ConversationMessage[],
+  handlers: ChatStreamHandlers,
+  signal: AbortSignal,
+): Promise<void> {
+  const response = await fetch(
+    `${BACKEND_BASE_URL}/api/v1/audio/dialog/turn`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ messages }),
+      signal,
+    },
+  );
+
+  await consumeChatStream(response, handlers);
+}
+
 export async function synthesizeSpeech(
   text: string,
   signal: AbortSignal,

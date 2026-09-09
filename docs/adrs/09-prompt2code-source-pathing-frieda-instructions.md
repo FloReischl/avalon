@@ -17,20 +17,34 @@ Supported operations:
 ### string-replace
 <path>
 string-replace
+[optional: p2c-position: N | p2c-count: N]
 p2c-old
 <exact non-empty old>
 p2c-new
 <exact non-empty new>
 
-`old` must occur exactly once in the current simulated content.
+Default: `old` must occur exactly once in the current simulated content.
+
+Optional selectors:
+- `p2c-position: N` selects exactly the N-th occurrence, 1-based.
+- `p2c-count: N` requires exactly N occurrences and replaces all of them.
+- `p2c-position` and `p2c-count` are mutually exclusive.
+- `N` must be a positive integer.
 
 ### string-remove
 <path>
 string-remove
+[optional: p2c-position: N | p2c-count: N]
 p2c-old
 <exact non-empty old>
 
-`old` must occur exactly once.
+Default: `old` must occur exactly once.
+
+Optional selectors:
+- `p2c-position: N` removes exactly the N-th occurrence, 1-based.
+- `p2c-count: N` requires exactly N occurrences and removes all of them.
+- `p2c-position` and `p2c-count` are mutually exclusive.
+- `N` must be a positive integer.
 
 ### file-create
 <path>

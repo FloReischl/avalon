@@ -71,9 +71,29 @@ p2c-new
 
 Both payloads are required and must be non-empty.
 
-The `p2c-old` payload must occur exactly once in the current simulated file content.
+By default, the `p2c-old` payload must occur exactly once in the current simulated file content.
 
-Zero or multiple matches abort the complete patch before any filesystem changes are made.
+For repeated identical matches, an optional selector may be specified directly after `string-replace` and before `p2c-old`:
+
+```text
+p2c-position: N
+```
+
+selects exactly the N-th occurrence, using 1-based indexing.
+
+Alternatively:
+
+```text
+p2c-count: N
+```
+
+requires exactly N occurrences and replaces all of them.
+
+`p2c-position` and `p2c-count` are mutually exclusive. Both values must be positive integers.
+
+If neither selector is present, the existing exactly-once behavior applies.
+
+Any selector or match-count validation failure aborts the complete patch before any filesystem changes are made.
 
 ### string-remove
 
@@ -86,9 +106,16 @@ p2c-old
 
 The payload is required and must be non-empty.
 
-The payload must occur exactly once in the current simulated file content.
+By default, the payload must occur exactly once in the current simulated file content.
 
-The matched content is removed.
+The same optional selectors as for `string-replace` are supported directly after `string-remove` and before `p2c-old`:
+
+- `p2c-position: N` removes exactly the N-th occurrence, using 1-based indexing.
+- `p2c-count: N` requires exactly N occurrences and removes all of them.
+
+`p2c-position` and `p2c-count` are mutually exclusive. Both values must be positive integers.
+
+If neither selector is present, the existing exactly-once behavior applies.
 
 ### file-create
 
@@ -252,6 +279,10 @@ The implementation is covered by a small regression suite for the behavior that 
 
 - multiline `string-replace`,
 - `string-remove`,
+- positional selection of repeated matches,
+- exact-count replacement/removal of repeated matches,
+- rejection of combined `p2c-position` and `p2c-count`,
+- preservation of default exactly-once behavior,
 - `file-create` including parent-directory creation,
 - `file-delete`,
 - sequential changes to the same file,

@@ -23,7 +23,29 @@ class AudioChatService:
         self,
         messages: list[dict[str, str]],
     ) -> AsyncIterator[str]:
-        captured: CapturedAudio = await self._recorder.stop()
+        captured = await self._recorder.stop()
+        async for chunk in self._stream_captured_response(
+            captured,
+            messages,
+        ):
+            yield chunk
+
+    async def stream_dialog_response(
+        self,
+        messages: list[dict[str, str]],
+    ) -> AsyncIterator[str]:
+        captured = await self._recorder.capture_dialog_turn()
+        async for chunk in self._stream_captured_response(
+            captured,
+            messages,
+        ):
+            yield chunk
+
+    async def _stream_captured_response(
+        self,
+        captured: CapturedAudio,
+        messages: list[dict[str, str]],
+    ) -> AsyncIterator[str]:
         try:
             async for chunk in self._runtime.generate_from_audio_stream(
                 captured.path,

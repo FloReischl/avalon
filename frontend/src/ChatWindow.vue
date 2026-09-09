@@ -32,6 +32,7 @@ const {
   messages,
   input,
   isGenerating,
+  isDialogResponding,
   errorMessage,
   chatSummaries,
   selectedChatId,
@@ -45,6 +46,8 @@ const {
   send,
 
   sendAudio,
+  sendDialogAudio,
+  abortDialogTurn,
   stop,
 } = useTransientChat();
 
@@ -54,6 +57,13 @@ const isComposerExpanded = ref(false);
 const isRecording = ref(false);
 const remainingRecordingSeconds = ref(30);
 const isTtsSynthesizing = ref(false);
+const isDialogActive = ref(false);
+const isDialogTtsActive = ref(false);
+const skipDialogTts = ref(false);
+
+const isDialogRespondingOrSpeaking = computed(
+  () => isDialogResponding.value || isDialogTtsActive.value,
+);
 
 const pinnedChats = computed(
   () => chatSummaries.value.filter((chat) => chat.pinned),
@@ -304,6 +314,11 @@ onBeforeUnmount(() => {
     void abortBackendAudioRecording();
   }
 
+  if (isDialogActive.value) {
+    isDialogActive.value = false;
+    abortDialogTurn();
+  }
+
   replaceCurrentTts();
   resetRecordingState();
 });
@@ -322,6 +337,7 @@ let ttsAudio: HTMLAudioElement | undefined;
 let ttsObjectUrl: string | undefined;
 let ttsPlaybackId: string | undefined;
 let ttsRequestToken = 0;
+let ttsCompletionResolver: (() => void) | undefined;
 
 
 function cleanupTtsAudio() {
@@ -336,6 +352,10 @@ function cleanupTtsAudio() {
     URL.revokeObjectURL(ttsObjectUrl);
     ttsObjectUrl = undefined;
   }
+
+  const resolve = ttsCompletionResolver;
+  ttsCompletionResolver = undefined;
+  resolve?.();
 }
 
 function replaceCurrentTts() {
@@ -395,6 +415,10 @@ async function readMessageAloud(index: number) {
     const audio = new Audio(ttsObjectUrl);
     ttsAudio = audio;
 
+    const playbackCompleted = new Promise<void>((resolve) => {
+      ttsCompletionResolver = resolve;
+    });
+
     audio.onended = () => {
       if (requestToken !== ttsRequestToken) {
         return;
@@ -419,6 +443,7 @@ async function readMessageAloud(index: number) {
 
 
     await audio.play();
+    await playbackCompleted;
   } catch (error) {
     if (
       requestToken !== ttsRequestToken
@@ -441,6 +466,84 @@ async function readMessageAloud(index: number) {
       ttsAbortController = undefined;
     }
   }
+}
+
+async function runDialogLoop() {
+  while (isDialogActive.value) {
+    skipDialogTts.value = false;
+
+    const result = await sendDialogAudio();
+
+    if (!isDialogActive.value) {
+      return;
+    }
+
+    if (!result) {
+      isDialogActive.value = false;
+      return;
+    }
+
+    if (!skipDialogTts.value) {
+      await nextTick();
+
+      isDialogTtsActive.value = true;
+      try {
+        await readMessageAloud(result.assistantIndex);
+      } finally {
+        isDialogTtsActive.value = false;
+      }
+    }
+  }
+}
+
+function startDialog() {
+  if (
+    isDialogActive.value
+    || isRecording.value
+    || recordingStartPending
+    || isGenerating.value
+  ) {
+    return;
+  }
+
+  errorMessage.value = undefined;
+  isDialogActive.value = true;
+  void runDialogLoop();
+}
+
+function endDialog() {
+  if (!isDialogActive.value || isDialogRespondingOrSpeaking.value) {
+    return;
+  }
+
+  isDialogActive.value = false;
+  abortDialogTurn();
+}
+
+function stopDialogAudio() {
+  if (!isDialogActive.value || !isDialogRespondingOrSpeaking.value) {
+    return;
+  }
+
+  skipDialogTts.value = true;
+
+  if (isDialogTtsActive.value) {
+    replaceCurrentTts();
+  }
+}
+
+function handleDialogButton() {
+  if (!isDialogActive.value) {
+    startDialog();
+    return;
+  }
+
+  if (isDialogRespondingOrSpeaking.value) {
+    stopDialogAudio();
+    return;
+  }
+
+  endDialog();
 }
 
 const DEFAULT_SIDEBAR_WIDTH_PX = 280;
@@ -1089,7 +1192,7 @@ function handleInputKeydown(event: KeyboardEvent) {
             data-testid="record-audio"
             aria-label="Sprachnachricht aufnehmen"
             title="Zum Aufnehmen gedrückt halten"
-            :disabled="isGenerating"
+            :disabled="isGenerating || isDialogActive"
             @pointerdown="startAudioRecording"
           >
             <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -1098,9 +1201,54 @@ function handleInputKeydown(event: KeyboardEvent) {
             </svg>
           </button>
 
+          <button
+            class="icon-button dialog-button"
+            :class="{
+              'dialog-button--active':
+                isDialogActive && !isDialogRespondingOrSpeaking,
+              'dialog-button--stop':
+                isDialogRespondingOrSpeaking,
+            }"
+            type="button"
+            data-testid="dialog-call"
+            :aria-label="
+              !isDialogActive
+                ? 'Dialog starten'
+                : isDialogRespondingOrSpeaking
+                  ? 'Sprachausgabe stoppen'
+                  : 'Dialog beenden'
+            "
+            :title="
+              !isDialogActive
+                ? 'Dialog starten'
+                : isDialogRespondingOrSpeaking
+                  ? 'Sprachausgabe stoppen'
+                  : 'Dialog beenden'
+            "
+            :disabled="isRecording || recordingStartPending"
+            @click="handleDialogButton"
+          >
+            <svg
+              v-if="isDialogRespondingOrSpeaking"
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+            >
+              <rect x="7" y="7" width="10" height="10" />
+            </svg>
+            <svg
+              v-else
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+            >
+              <path
+                d="M7.4 3.5l2.2 4.1-1.7 1.7a15 15 0 0 0 6.8 6.8l1.7-1.7 4.1 2.2c.5.3.7.8.5 1.3l-.9 2.8c-.2.5-.7.8-1.2.8C9.8 21.5 2.5 14.2 2.5 5.1c0-.5.3-1 .8-1.2l2.8-.9c.5-.2 1 .1 1.3.5z"
+              />
+            </svg>
+          </button>
+
 
           <button
-            v-if="isGenerating"
+            v-if="isGenerating && !isDialogActive"
             class="icon-button"
             type="button"
             data-testid="stop-chat"
@@ -1117,13 +1265,13 @@ function handleInputKeydown(event: KeyboardEvent) {
           </button>
 
           <button
-            v-else
+            v-else-if="!isDialogActive"
             class="icon-button"
             type="button"
             data-testid="send-chat"
             aria-label="Nachricht senden"
             title="Nachricht senden"
-            :disabled="input.length === 0"
+            :disabled="input.length === 0 || isDialogActive"
             @click="send"
           >
             <svg
@@ -1620,6 +1768,17 @@ function handleInputKeydown(event: KeyboardEvent) {
 }
 
 .audio-record-button--recording {
+  border-color: #b91c1c;
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.dialog-button {
+  color: #2563eb;
+}
+
+.dialog-button--active,
+.dialog-button--stop {
   border-color: #b91c1c;
   background: #fee2e2;
   color: #b91c1c;

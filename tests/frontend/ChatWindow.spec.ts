@@ -1,3 +1,4 @@
+import { nextTick } from "vue";
 import { flushPromises, mount } from "@vue/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -9,6 +10,7 @@ const {
   startAudioRecordingMock,
   streamAudioResponseMock,
   streamChatMessageMock,
+  streamDialogResponseMock,
   synthesizeSpeechMock,
   exportChatToMarkdownMock,
 } = vi.hoisted(() => ({
@@ -19,6 +21,7 @@ const {
   startAudioRecordingMock: vi.fn(),
   streamAudioResponseMock: vi.fn(),
   streamChatMessageMock: vi.fn(),
+  streamDialogResponseMock: vi.fn(),
   synthesizeSpeechMock: vi.fn(),
   exportChatToMarkdownMock: vi.fn(),
 }));
@@ -38,6 +41,7 @@ vi.mock("../../frontend/src/services/backend", async (importOriginal) => {
     startAudioRecording: startAudioRecordingMock,
     streamAudioResponse: streamAudioResponseMock,
     streamChatMessage: streamChatMessageMock,
+    streamDialogResponse: streamDialogResponseMock,
     synthesizeSpeech: synthesizeSpeechMock,
 
   };
@@ -107,6 +111,7 @@ describe("ChatWindow", () => {
     startAudioRecordingMock.mockResolvedValue(undefined);
     streamAudioResponseMock.mockReset();
     streamChatMessageMock.mockReset();
+    streamDialogResponseMock.mockReset();
     synthesizeSpeechMock.mockReset();
     exportChatToMarkdownMock.mockReset();
     exportChatToMarkdownMock.mockResolvedValue(undefined);
@@ -156,6 +161,312 @@ describe("ChatWindow", () => {
       "Zum Aufnehmen gedrückt halten",
     );
   });
+
+  it("renders the dialog call button between audio and send", () => {
+    const wrapper = mount(ChatWindow);
+
+    const callButton = wrapper.get('[data-testid="dialog-call"]');
+
+    expect(callButton.attributes("aria-label")).toBe("Dialog starten");
+    expect(callButton.attributes("title")).toBe("Dialog starten");
+
+    const actions = wrapper.get(".composer-actions");
+    const testIds = actions
+      .findAll("[data-testid]")
+      .map((element) => element.attributes("data-testid"));
+
+    expect(testIds.indexOf("record-audio")).toBeLessThan(
+      testIds.indexOf("dialog-call"),
+    );
+    expect(testIds.indexOf("dialog-call")).toBeLessThan(
+      testIds.indexOf("send-chat"),
+    );
+  });
+
+
+  it("starts dialog listening without showing generation state", async () => {
+    streamDialogResponseMock.mockImplementation(
+      () => new Promise(() => {}),
+    );
+
+    const wrapper = mount(ChatWindow);
+
+    await wrapper.get('[data-testid="dialog-call"]').trigger("click");
+    await flushPromises();
+
+    expect(streamDialogResponseMock).toHaveBeenCalledWith(
+      [],
+      expect.any(Object),
+      expect.any(AbortSignal),
+    );
+
+    const callButton = wrapper.get('[data-testid="dialog-call"]');
+
+    expect(callButton.attributes("aria-label")).toBe("Dialog beenden");
+    expect(callButton.attributes("title")).toBe("Dialog beenden");
+    expect(wrapper.find('[data-testid="stop-chat"]').exists()).toBe(false);
+    expect(
+      wrapper.get('[data-testid="record-audio"]').attributes("disabled"),
+    ).toBeDefined();
+    expect(wrapper.find('[data-testid="send-chat"]').exists()).toBe(false);
+    expect(wrapper.findAll(".message")).toHaveLength(0);
+  });
+
+
+  it("hangs up while listening and aborts the pending dialog turn", async () => {
+    let dialogSignal: AbortSignal | undefined;
+
+    streamDialogResponseMock.mockImplementation(
+      (_messages, _handlers, signal) => {
+        dialogSignal = signal;
+
+        return new Promise<void>((_resolve, reject) => {
+          signal.addEventListener("abort", () => {
+            reject(new DOMException("Aborted", "AbortError"));
+          });
+        });
+      },
+    );
+
+    const wrapper = mount(ChatWindow);
+
+    await wrapper.get('[data-testid="dialog-call"]').trigger("click");
+    await flushPromises();
+
+    expect(dialogSignal?.aborted).toBe(false);
+
+    await wrapper.get('[data-testid="dialog-call"]').trigger("click");
+    await flushPromises();
+
+    expect(dialogSignal?.aborted).toBe(true);
+    expect(wrapper.get('[data-testid="dialog-call"]').attributes("aria-label"))
+      .toBe("Dialog starten");
+    expect(wrapper.findAll(".message")).toHaveLength(0);
+  });
+
+
+  it("shows dialog stop when the LLM response starts", async () => {
+    let releaseResponse: (() => void) | undefined;
+
+    streamDialogResponseMock.mockImplementation(
+      async (_messages, handlers) => {
+        handlers.onChunk("Hallo");
+
+        await new Promise<void>((resolve) => {
+          releaseResponse = resolve;
+        });
+
+        handlers.onChunk(" Flo");
+        handlers.onDone?.();
+      },
+    );
+
+    const wrapper = mount(ChatWindow);
+
+    await wrapper.get('[data-testid="dialog-call"]').trigger("click");
+    await flushPromises();
+
+    const callButton = wrapper.get('[data-testid="dialog-call"]');
+
+    expect(callButton.attributes("aria-label")).toBe(
+      "Sprachausgabe stoppen",
+    );
+    expect(callButton.attributes("title")).toBe(
+      "Sprachausgabe stoppen",
+    );
+    expect(wrapper.find('[data-testid="stop-chat"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="send-chat"]').exists()).toBe(false);
+    expect(wrapper.get('[data-testid="message-user"]').text()).toContain(
+      "🎤 Sprachnachricht",
+    );
+    expect(wrapper.get('[data-testid="message-assistant"]').text()).toContain(
+      "Hallo",
+    );
+
+    releaseResponse?.();
+    await flushPromises();
+  });
+
+
+  it("skips dialog TTS when stop is pressed during LLM generation", async () => {
+    let releaseResponse: (() => void) | undefined;
+
+    streamDialogResponseMock
+      .mockImplementationOnce(
+        async (_messages, handlers) => {
+          handlers.onChunk("Antwort");
+
+          await new Promise<void>((resolve) => {
+            releaseResponse = resolve;
+          });
+
+          handlers.onDone?.();
+        },
+      )
+      .mockImplementationOnce(
+        () => new Promise(() => {}),
+      );
+
+    const wrapper = mount(ChatWindow);
+
+    await wrapper.get('[data-testid="dialog-call"]').trigger("click");
+    await flushPromises();
+
+    await wrapper.get('[data-testid="dialog-call"]').trigger("click");
+    await flushPromises();
+
+    releaseResponse?.();
+    await flushPromises();
+
+    expect(synthesizeSpeechMock).not.toHaveBeenCalled();
+
+    expect(streamDialogResponseMock).toHaveBeenCalledTimes(2);
+
+    await nextTick();
+
+    expect(wrapper.get('[data-testid="dialog-call"]').attributes("aria-label"))
+      .toBe("Dialog beenden");
+  });
+
+
+  it("automatically reads a completed dialog response and listens again", async () => {
+    streamDialogResponseMock
+      .mockImplementationOnce(
+        async (_messages, handlers) => {
+          handlers.onChunk("**Hallo** Flo");
+          handlers.onDone?.();
+        },
+      )
+      .mockImplementationOnce(
+        () => new Promise(() => {}),
+      );
+
+    synthesizeSpeechMock.mockResolvedValue({
+      playbackId: "dialog-playback",
+      response: new Response(
+        new Blob(["wav"], { type: "audio/wav" }),
+        { status: 200 },
+      ),
+    });
+
+    const audios: Array<{
+      onended: (() => void) | null;
+      onerror: (() => void) | null;
+      play: ReturnType<typeof vi.fn>;
+      pause: ReturnType<typeof vi.fn>;
+    }> = [];
+
+    class AudioMock {
+      onended: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      play = vi.fn().mockResolvedValue(undefined);
+      pause = vi.fn();
+
+      constructor() {
+        audios.push(this);
+      }
+    }
+
+    vi.stubGlobal("Audio", AudioMock);
+    vi.stubGlobal("URL", {
+      createObjectURL: vi.fn(() => "blob:dialog-tts"),
+      revokeObjectURL: vi.fn(),
+    });
+
+    try {
+      const wrapper = mount(ChatWindow);
+
+      await wrapper.get('[data-testid="dialog-call"]').trigger("click");
+      await flushPromises();
+
+      expect(synthesizeSpeechMock).toHaveBeenCalledTimes(1);
+      expect(synthesizeSpeechMock.mock.calls[0][0]).toContain("Hallo Flo");
+      expect(audios).toHaveLength(1);
+      expect(audios[0].play).toHaveBeenCalledTimes(1);
+
+      expect(wrapper.get('[data-testid="dialog-call"]').attributes("aria-label"))
+        .toBe("Sprachausgabe stoppen");
+
+      audios[0].onended?.();
+      await flushPromises();
+
+      expect(notifyTtsPlaybackEndedMock).toHaveBeenCalledWith(
+        "dialog-playback",
+      );
+      expect(streamDialogResponseMock).toHaveBeenCalledTimes(2);
+      expect(wrapper.get('[data-testid="dialog-call"]').attributes("aria-label"))
+        .toBe("Dialog beenden");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+
+  it("stops dialog TTS without ending dialog mode", async () => {
+    streamDialogResponseMock
+      .mockImplementationOnce(
+        async (_messages, handlers) => {
+          handlers.onChunk("Antwort");
+          handlers.onDone?.();
+        },
+      )
+      .mockImplementationOnce(
+        () => new Promise(() => {}),
+      );
+
+    synthesizeSpeechMock.mockResolvedValue({
+      playbackId: "dialog-playback",
+      response: new Response(new Blob(["wav"])),
+    });
+
+    const audios: Array<{
+      onended: (() => void) | null;
+      onerror: (() => void) | null;
+      play: ReturnType<typeof vi.fn>;
+      pause: ReturnType<typeof vi.fn>;
+    }> = [];
+
+    class AudioMock {
+      onended: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      play = vi.fn().mockResolvedValue(undefined);
+      pause = vi.fn();
+
+      constructor() {
+        audios.push(this);
+      }
+    }
+
+    vi.stubGlobal("Audio", AudioMock);
+    vi.stubGlobal("URL", {
+      createObjectURL: vi.fn(() => "blob:dialog-tts"),
+      revokeObjectURL: vi.fn(),
+    });
+
+    try {
+      const wrapper = mount(ChatWindow);
+
+      await wrapper.get('[data-testid="dialog-call"]').trigger("click");
+      await flushPromises();
+
+      expect(audios).toHaveLength(1);
+
+      await wrapper.get('[data-testid="dialog-call"]').trigger("click");
+      await flushPromises();
+
+      expect(audios[0].pause).toHaveBeenCalledTimes(1);
+      expect(notifyTtsPlaybackEndedMock).toHaveBeenCalledWith(
+        "dialog-playback",
+      );
+
+      expect(streamDialogResponseMock).toHaveBeenCalledTimes(2);
+      expect(wrapper.get('[data-testid="dialog-call"]').attributes("aria-label"))
+        .toBe("Dialog beenden");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
 
   it("records while held and renders the streamed audio response", async () => {
     streamAudioResponseMock.mockImplementation(

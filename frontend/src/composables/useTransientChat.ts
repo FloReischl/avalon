@@ -13,6 +13,7 @@ import {
   setChatPinned as setBackendChatPinned,
   streamAudioResponse,
   streamChatMessage,
+  streamDialogResponse,
   type ChatDetail,
   type ChatStreamHandlers,
   type ChatStreamRequest,
@@ -33,6 +34,10 @@ export type AudioStreamer = (
   handlers: ChatStreamHandlers,
   signal: AbortSignal,
 ) => Promise<void>;
+
+export interface DialogTurnResult {
+  assistantIndex: number;
+}
 
 export interface ChatManagementClient {
   getChats: () => Promise<ChatSummary[]>;
@@ -70,8 +75,9 @@ interface ActiveTurn {
   startIndex: number;
   assistantIndex: number;
   controller: AbortController;
-  kind: "text" | "audio";
+  kind: "text" | "audio" | "dialog";
   done: boolean;
+  responding?: boolean;
 }
 
 function createChatState(
@@ -91,6 +97,7 @@ export function useTransientChat(
   streamMessage: ChatStreamer = streamChatMessage,
   streamAudio: AudioStreamer = streamAudioResponse,
   chatManagement: ChatManagementClient = defaultChatManagementClient,
+  streamDialog: AudioStreamer = streamDialogResponse,
 ) {
 
   const currentState = ref<ChatState>(createChatState());
@@ -119,10 +126,18 @@ export function useTransientChat(
     },
   });
 
-  const isGenerating = computed(
+  const isGenerating = computed(() => {
+    const turn = currentState.value.activeTurn;
+
+    return turn !== undefined
+      && !turn.done
+      && (turn.kind !== "dialog" || turn.responding === true);
+  });
+
+  const isDialogResponding = computed(
     () =>
-      currentState.value.activeTurn !== undefined
-      && !currentState.value.activeTurn.done,
+      currentState.value.activeTurn?.kind === "dialog"
+      && currentState.value.activeTurn.responding === true,
   );
 
   const selectedChatId = computed(
@@ -478,6 +493,116 @@ export function useTransientChat(
     }
   }
 
+  async function sendDialogAudio(): Promise<DialogTurnResult | undefined> {
+    const state = currentState.value;
+
+    if (state.activeTurn) {
+      return undefined;
+    }
+
+    const context = conversationContext(state);
+    const startIndex = state.messages.length;
+    const controller = new AbortController();
+
+    const turn: ActiveTurn = {
+      prompt: "",
+      startIndex,
+      assistantIndex: startIndex + 1,
+      controller,
+      kind: "dialog",
+      done: false,
+      responding: false,
+    };
+
+    state.activeTurn = markRaw(turn);
+    state.errorMessage = undefined;
+
+    let responseStarted = false;
+
+    try {
+      await streamDialog(
+        context,
+        {
+          onChunk(text) {
+            if (state.activeTurn !== turn) {
+              return;
+            }
+
+            if (!responseStarted) {
+              responseStarted = true;
+              turn.responding = true;
+
+              state.messages.push(
+                {
+                  role: "user",
+                  content: "🎤 Sprachnachricht",
+                  kind: "audio",
+                },
+                {
+                  role: "assistant",
+                  content: "",
+                },
+              );
+            }
+
+            state.messages[turn.assistantIndex].content += text;
+          },
+          onDone() {
+            if (state.activeTurn === turn) {
+              turn.done = true;
+            }
+          },
+        },
+        controller.signal,
+      );
+
+      if (!responseStarted) {
+        return undefined;
+      }
+
+      return {
+        assistantIndex: turn.assistantIndex,
+      };
+    } catch (error) {
+      if (state.activeTurn !== turn) {
+        return undefined;
+      }
+
+      if (responseStarted) {
+        state.messages.splice(turn.assistantIndex, 1);
+      }
+
+      if (!controller.signal.aborted) {
+        console.error("[audio-dialog] dialog turn failed", error);
+        state.errorMessage =
+          "Dialogantwort konnte nicht erzeugt werden.";
+      }
+
+      return undefined;
+    } finally {
+      if (state.activeTurn === turn) {
+        turn.responding = false;
+        state.activeTurn = undefined;
+      }
+    }
+  }
+
+  function abortDialogTurn() {
+    const state = currentState.value;
+    const turn = state.activeTurn;
+
+    if (
+      !turn
+      || turn.kind !== "dialog"
+      || turn.responding
+    ) {
+      return;
+    }
+
+    turn.controller.abort();
+    state.activeTurn = undefined;
+  }
+
   function stop() {
     const state = currentState.value;
     const turn = state.activeTurn;
@@ -509,6 +634,7 @@ export function useTransientChat(
     messages,
     input,
     isGenerating,
+    isDialogResponding,
     errorMessage,
     chatSummaries,
     selectedChatId,
@@ -522,6 +648,8 @@ export function useTransientChat(
     send,
 
     sendAudio,
+    sendDialogAudio,
+    abortDialogTurn,
     stop,
   };
 }

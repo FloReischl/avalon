@@ -22,6 +22,27 @@ def run_patch(patch_name: str, target_dir: Path):
     )
 
 
+def run_patch_text(patch: str, target_dir: Path):
+    patch_file = target_dir / "inline.p2c"
+    patch_file.write_text(
+        patch,
+        encoding="utf-8",
+    )
+
+    return subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "--input-script",
+            str(patch_file),
+            "--target-dir",
+            str(target_dir),
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+
 def test_string_replace_multiline(tmp_path):
     target = tmp_path / "app.py"
     target.write_text(
@@ -152,3 +173,130 @@ def test_path_must_not_escape_target_dir(tmp_path):
     assert result.returncode == 1
     assert "path escapes target directory" in result.stderr
     assert not escaped.exists()
+
+
+def test_string_replace_position_selects_nth_match(tmp_path):
+    target = tmp_path / "value.txt"
+    target.write_text(
+        "same\n"
+        "same\n"
+        "same\n",
+        encoding="utf-8",
+    )
+
+    result = run_patch_text(
+        "value.txt\n"
+        "string-replace\n"
+        "p2c-position: 2\n"
+        "p2c-old\n"
+        "same\n"
+        "p2c-new\n"
+        "changed",
+        tmp_path,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert target.read_text(encoding="utf-8") == (
+        "same\n"
+        "changed\n"
+        "same\n"
+    )
+
+
+def test_string_remove_count_removes_all_expected_matches(tmp_path):
+    target = tmp_path / "value.txt"
+    target.write_text(
+        "x\n"
+        "keep\n"
+        "x\n"
+        "x\n",
+        encoding="utf-8",
+    )
+
+    result = run_patch_text(
+        "value.txt\n"
+        "string-remove\n"
+        "p2c-count: 3\n"
+        "p2c-old\n"
+        "x\n",
+        tmp_path,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert target.read_text(encoding="utf-8") == "keep\n"
+
+
+def test_string_count_requires_exact_match_count(tmp_path):
+    target = tmp_path / "value.txt"
+    target.write_text(
+        "x\n"
+        "x\n",
+        encoding="utf-8",
+    )
+
+    result = run_patch_text(
+        "value.txt\n"
+        "string-remove\n"
+        "p2c-count: 3\n"
+        "p2c-old\n"
+        "x\n",
+        tmp_path,
+    )
+
+    assert result.returncode == 1
+    assert "expected p2c-old to occur exactly 3 time(s)" in result.stderr
+    assert "found 2" in result.stderr
+    assert target.read_text(encoding="utf-8") == (
+        "x\n"
+        "x\n"
+    )
+
+
+def test_position_and_count_are_mutually_exclusive(tmp_path):
+    target = tmp_path / "value.txt"
+    target.write_text(
+        "x\n"
+        "x\n",
+        encoding="utf-8",
+    )
+
+    result = run_patch_text(
+        "value.txt\n"
+        "string-remove\n"
+        "p2c-position: 1\n"
+        "p2c-count: 2\n"
+        "p2c-old\n"
+        "x\n",
+        tmp_path,
+    )
+
+    assert result.returncode == 1
+    assert (
+        "p2c-position and p2c-count are mutually exclusive"
+        in result.stderr
+    )
+    assert target.read_text(encoding="utf-8") == (
+        "x\n"
+        "x\n"
+    )
+
+
+def test_default_string_match_still_requires_exactly_one(tmp_path):
+    target = tmp_path / "value.txt"
+    target.write_text(
+        "x\n"
+        "x\n",
+        encoding="utf-8",
+    )
+
+    result = run_patch_text(
+        "value.txt\n"
+        "string-remove\n"
+        "p2c-old\n"
+        "x\n",
+        tmp_path,
+    )
+
+    assert result.returncode == 1
+    assert "expected p2c-old to occur exactly once" in result.stderr
+    assert "found 2" in result.stderr

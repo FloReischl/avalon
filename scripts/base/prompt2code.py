@@ -19,6 +19,8 @@ SUPPORTED_MODES = {
 MARKER_OLD = "p2c-old"
 MARKER_NEW = "p2c-new"
 MARKER_NEXT_CHANGE = "p2c-next-change"
+SELECTOR_POSITION_PREFIX = "p2c-position: "
+SELECTOR_COUNT_PREFIX = "p2c-count: "
 
 RESERVED_PAYLOAD_MARKERS = {
     MARKER_OLD,
@@ -39,6 +41,8 @@ class Change:
     old: str | None = None
     new: str | None = None
     content: str | None = None
+    position: int | None = None
+    count: int | None = None
 
 
 @dataclass(slots=True)
@@ -189,6 +193,73 @@ def require_payload(
             f"{marker} payload must not be empty",
             relative_path,
         )
+
+
+def parse_match_selector(
+    raw_lines: list[str],
+    start_index: int,
+    change_index: int,
+    relative_path: str,
+) -> tuple[int | None, int | None, int]:
+    position = None
+    count = None
+    index = start_index
+
+    while index < len(raw_lines):
+        line = line_content(raw_lines[index])
+
+        if line.startswith(SELECTOR_POSITION_PREFIX):
+            if position is not None:
+                raise error(
+                    change_index,
+                    "p2c-position may only be specified once",
+                    relative_path,
+                )
+
+            value = line[len(SELECTOR_POSITION_PREFIX):]
+
+            if not value.isdigit() or int(value) < 1:
+                raise error(
+                    change_index,
+                    "p2c-position must be a positive 1-based integer",
+                    relative_path,
+                )
+
+            position = int(value)
+            index += 1
+            continue
+
+        if line.startswith(SELECTOR_COUNT_PREFIX):
+            if count is not None:
+                raise error(
+                    change_index,
+                    "p2c-count may only be specified once",
+                    relative_path,
+                )
+
+            value = line[len(SELECTOR_COUNT_PREFIX):]
+
+            if not value.isdigit() or int(value) < 1:
+                raise error(
+                    change_index,
+                    "p2c-count must be a positive integer",
+                    relative_path,
+                )
+
+            count = int(value)
+            index += 1
+            continue
+
+        break
+
+    if position is not None and count is not None:
+        raise error(
+            change_index,
+            "p2c-position and p2c-count are mutually exclusive",
+            relative_path,
+        )
+
+    return position, count, index
 
 
 def split_change_blocks(
@@ -362,18 +433,38 @@ def parse_change_block(
             content=content,
         )
 
+    position, count, marker_index = parse_match_selector(
+        raw_lines,
+        2,
+        change_index,
+        relative_path,
+    )
+
+    if marker_index >= len(raw_lines):
+        raise error(
+            change_index,
+            f"{mode} requires marker '{MARKER_OLD}'",
+            relative_path,
+        )
+
+    first_marker = line_content(
+        raw_lines[marker_index]
+    )
+
     if first_marker != MARKER_OLD:
         raise error(
             change_index,
             (
                 f"{mode} requires marker "
-                f"'{MARKER_OLD}' on line 3"
+                f"'{MARKER_OLD}' after optional selector"
             ),
             relative_path,
         )
 
+    payload_start_index = marker_index + 1
+
     if mode == MODE_STRING_REMOVE:
-        payload_lines = raw_lines[3:]
+        payload_lines = raw_lines[payload_start_index:]
 
         reject_reserved_markers(
             payload_lines,
@@ -399,12 +490,14 @@ def parse_change_block(
             path=path,
             mode=mode,
             old=old,
+            position=position,
+            count=count,
         )
 
     new_marker_index = None
 
     for index in range(
-        3,
+        payload_start_index,
         len(raw_lines),
     ):
         marker = line_content(
@@ -438,7 +531,7 @@ def parse_change_block(
 
     old = payload_from_lines(
         raw_lines[
-            3:new_marker_index
+            payload_start_index:new_marker_index
         ],
         terminated_by_marker=True,
     )
@@ -479,6 +572,8 @@ def parse_change_block(
         mode=mode,
         old=old,
         new=new,
+        position=position,
+        count=count,
     )
 
 
@@ -592,27 +687,87 @@ def read_utf8_file(
     )
 
 
-def require_single_match(
+def apply_string_change(
     content: str,
     change: Change,
-):
+    replacement: str,
+) -> str:
     assert change.old is not None
 
-    count = content.count(
+    match_count = content.count(
         change.old
     )
 
-    if count != 1:
+    if change.position is not None:
+        if match_count < change.position:
+            raise error(
+                change.index,
+                (
+                    f"{change.mode} expected p2c-old "
+                    f"position {change.position} to exist, "
+                    f"found {match_count} match(es)"
+                ),
+                change.relative_path,
+                old=change.old,
+            )
+
+        start = 0
+
+        for _ in range(change.position):
+            start = content.find(
+                change.old,
+                start,
+            )
+
+            assert start >= 0
+
+            if _ + 1 < change.position:
+                start += len(change.old)
+
+        end = start + len(change.old)
+
+        return (
+            content[:start]
+            + replacement
+            + content[end:]
+        )
+
+    if change.count is not None:
+        if match_count != change.count:
+            raise error(
+                change.index,
+                (
+                    f"{change.mode} expected p2c-old "
+                    f"to occur exactly {change.count} time(s), "
+                    f"found {match_count}"
+                ),
+                change.relative_path,
+                old=change.old,
+            )
+
+        return content.replace(
+            change.old,
+            replacement,
+            change.count,
+        )
+
+    if match_count != 1:
         raise error(
             change.index,
             (
                 f"{change.mode} expected p2c-old "
                 "to occur exactly once, "
-                f"found {count}"
+                f"found {match_count}"
             ),
             change.relative_path,
             old=change.old,
         )
+
+    return content.replace(
+        change.old,
+        replacement,
+        1,
+    )
 
 
 def load_simulated_file(
@@ -723,17 +878,10 @@ def apply_change_in_memory(
         assert change.old is not None
         assert change.new is not None
 
-        require_single_match(
+        file.final_content = apply_string_change(
             file.final_content,
             change,
-        )
-
-        file.final_content = (
-            file.final_content.replace(
-                change.old,
-                change.new,
-                1,
-            )
+            change.new,
         )
 
         return
@@ -741,17 +889,10 @@ def apply_change_in_memory(
     if change.mode == MODE_STRING_REMOVE:
         assert change.old is not None
 
-        require_single_match(
+        file.final_content = apply_string_change(
             file.final_content,
             change,
-        )
-
-        file.final_content = (
-            file.final_content.replace(
-                change.old,
-                "",
-                1,
-            )
+            "",
         )
 
         return

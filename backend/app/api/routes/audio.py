@@ -1,6 +1,8 @@
 """Backend-local push-to-talk control and response streaming."""
 
 from collections.abc import AsyncIterator
+import sys
+import traceback
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from fastapi.responses import StreamingResponse
@@ -29,7 +31,19 @@ async def start_audio_recording(
     try:
         await service.start_recording()
     except CaptureError as exc:
+        print(
+            f"[audio] start recording failed: {type(exc).__name__}: {exc}",
+            file=sys.stderr,
+        )
+        traceback.print_exc(file=sys.stderr)
         raise HTTPException(status_code=409, detail="Audio recording unavailable.") from exc
+    except Exception as exc:
+        print(
+            f"[audio] unexpected start recording failure: {type(exc).__name__}: {exc}",
+            file=sys.stderr,
+        )
+        traceback.print_exc(file=sys.stderr)
+        raise
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -50,8 +64,13 @@ async def stream_audio_response(
     try:
         async for chunk in service.stream_response(messages):
             yield format_sse_event("chunk", {"text": chunk})
-    except (CaptureError, RuntimeError):
-        yield format_sse_event("error", {})
+    except Exception as exc:
+        print(
+            f"[audio] response stream failed: {type(exc).__name__}: {exc}",
+            file=sys.stderr,
+        )
+        traceback.print_exc(file=sys.stderr)
+        yield format_sse_event("error", {"message": str(exc)})
         return
 
     yield format_sse_event("done", {})
@@ -66,5 +85,38 @@ async def stop_audio_recording(
     messages = [message.model_dump() for message in request.messages]
     return StreamingResponse(
         stream_audio_response(service, messages),
+        media_type="text/event-stream",
+    )
+
+
+async def stream_dialog_response(
+    service: AudioChatService,
+    messages: list[dict[str, str]],
+) -> AsyncIterator[str]:
+    """Translate one automatic dialog turn into Avalo's SSE protocol."""
+    try:
+        async for chunk in service.stream_dialog_response(messages):
+            yield format_sse_event("chunk", {"text": chunk})
+    except Exception as exc:
+        print(
+            f"[audio-dialog] response stream failed: {type(exc).__name__}: {exc}",
+            file=sys.stderr,
+        )
+        traceback.print_exc(file=sys.stderr)
+        yield format_sse_event("error", {"message": str(exc)})
+        return
+
+    yield format_sse_event("done", {})
+
+
+@router.post("/dialog/turn")
+async def create_dialog_turn(
+    request: AudioResponseRequest,
+    service: AudioChatService = Depends(get_audio_chat_service),
+) -> StreamingResponse:
+    """Wait for one speech turn and stream Gemma's response."""
+    messages = [message.model_dump() for message in request.messages]
+    return StreamingResponse(
+        stream_dialog_response(service, messages),
         media_type="text/event-stream",
     )
