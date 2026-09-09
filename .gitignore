@@ -36,3 +36,4 @@ scripts/data/
 # TTS (text-to-speech)
 data/tts/generated
 data/tts/kokoro_victoria
+data/tts/chatterbox

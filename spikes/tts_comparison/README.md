@@ -20,4 +20,4 @@ Die Auswahl ist kein Qualitätsurteil. Natürlichkeit, Ausdruck und insbesondere
 
 `df_kerstin` wird ausschließlich aus dem von Flo lokal bereitgestellten Voicepack geladen. Der Laufbericht hält dessen SHA-256 fest. Weil keine externe Herkunft oder Lizenz vorliegt, wird beides bewusst als unbekannt dokumentiert.
 
-Chatterbox Multilingual V3 nutzt `data/chatterbox-frieda1.wav` als lokale Referenzstimme. Flo hat deren Verwendung, einschließlich des erotischen Testtexts, bestätigt. Das Modell wird pro Spike-Lauf genau einmal geladen; die drei Chatterbox-Renderzeiten enthalten daher keinen Modellstart.
+Chatterbox Multilingual V3 nutzt `data/tts/chatterbox/frieda1.wav` als lokale Referenzstimme. Flo hat deren Verwendung, einschließlich des erotischen Testtexts, bestätigt. Das Modell wird pro Spike-Lauf genau einmal geladen; die drei Chatterbox-Renderzeiten enthalten daher keinen Modellstart.
