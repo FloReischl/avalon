@@ -122,7 +122,8 @@ async function startAudioRecording(event: PointerEvent) {
 
   try {
     await startBackendAudioRecording();
-  } catch {
+  } catch (error) {
+    console.error("[audio] failed to start recording", error);
     recordingStartPending = false;
     recordingReleaseAction = undefined;
     removeRecordingListeners();
@@ -144,7 +145,8 @@ async function startAudioRecording(event: PointerEvent) {
     removeRecordingListeners();
     try {
       await abortBackendAudioRecording();
-    } catch {
+    } catch (error) {
+      console.error("[audio] failed to abort recording", error);
       errorMessage.value = "Audioaufnahme konnte nicht verworfen werden.";
     }
     return;
@@ -182,7 +184,8 @@ async function abortAudioRecording() {
   resetRecordingState();
   try {
     await abortBackendAudioRecording();
-  } catch {
+  } catch (error) {
+    console.error("[audio] failed to abort recording", error);
     errorMessage.value = "Audioaufnahme konnte nicht verworfen werden.";
   }
 }
@@ -277,7 +280,8 @@ async function exportChat(chatId: number) {
 
   try {
     await exportChatToMarkdown(chatId, avatar.name);
-  } catch {
+  } catch (error) {
+    console.error("[chat-export] failed to export chat", error);
     errorMessage.value = "Chat konnte nicht exportiert werden.";
   }
 }
@@ -311,7 +315,9 @@ onBeforeUnmount(() => {
   window.removeEventListener("keydown", handleWindowKeydown);
 
   if (isRecording.value) {
-    void abortBackendAudioRecording();
+    void abortBackendAudioRecording().catch((error) => {
+      console.error("[audio] failed to abort recording during cleanup", error);
+    });
   }
 
   if (isDialogActive.value) {
@@ -365,7 +371,9 @@ function replaceCurrentTts() {
   cleanupTtsAudio();
 
   if (ttsPlaybackId) {
-    void notifyTtsPlaybackEnded(ttsPlaybackId);
+    void notifyTtsPlaybackEnded(ttsPlaybackId).catch((error) => {
+      console.error("[tts] failed to notify playback end", error);
+    });
     ttsPlaybackId = undefined;
   }
 }
@@ -426,7 +434,9 @@ async function readMessageAloud(index: number) {
 
       cleanupTtsAudio();
       ttsPlaybackId = undefined;
-      void notifyTtsPlaybackEnded(tts.playbackId);
+      void notifyTtsPlaybackEnded(tts.playbackId).catch((error) => {
+        console.error("[tts] failed to notify playback end", error);
+      });
     };
 
     audio.onerror = () => {
@@ -435,10 +445,13 @@ async function readMessageAloud(index: number) {
         return;
       }
 
+      console.error("[tts] audio playback failed", audio.error);
       cleanupTtsAudio();
       ttsPlaybackId = undefined;
       errorMessage.value = "Vorlesen fehlgeschlagen.";
-      void notifyTtsPlaybackEnded(tts.playbackId);
+      void notifyTtsPlaybackEnded(tts.playbackId).catch((error) => {
+        console.error("[tts] failed to notify playback end", error);
+      });
     };
 
 
@@ -455,10 +468,13 @@ async function readMessageAloud(index: number) {
       return;
     }
 
+    console.error("[tts] read aloud failed", error);
     errorMessage.value = "Vorlesen fehlgeschlagen.";
 
     if (playbackId) {
-      void notifyTtsPlaybackEnded(playbackId);
+      void notifyTtsPlaybackEnded(playbackId).catch((notifyError) => {
+        console.error("[tts] failed to notify playback end", notifyError);
+      });
     }
   } finally {
     if (requestToken === ttsRequestToken) {

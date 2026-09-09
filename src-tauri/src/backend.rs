@@ -85,6 +85,7 @@ impl BackendProcess {
 
     pub fn stop(&self) {
         let Ok(mut stored_child) = self.child.lock() else {
+            eprintln!("[backend] failed to acquire backend process lock during shutdown");
             return;
         };
 
@@ -92,8 +93,13 @@ impl BackendProcess {
             return;
         };
 
-        let _ = child.kill();
-        let _ = child.wait();
+        if let Err(error) = child.kill() {
+            eprintln!("[backend] failed to kill backend process: {error}");
+        }
+
+        if let Err(error) = child.wait() {
+            eprintln!("[backend] failed to wait for backend process: {error}");
+        }
     }
 
     pub fn snapshot(&self) -> Result<BackendSnapshot, String> {
@@ -104,14 +110,24 @@ impl BackendProcess {
     }
 
     fn set_status(&self, status: &str) {
-        if let Ok(mut snapshot) = self.snapshot.lock() {
-            snapshot.status = status.to_string();
+        match self.snapshot.lock() {
+            Ok(mut snapshot) => {
+                snapshot.status = status.to_string();
+            }
+            Err(error) => {
+                eprintln!("[backend] failed to update backend status snapshot: {error}");
+            }
         }
     }
 
     fn add_log(&self, message: &str) {
-        if let Ok(mut snapshot) = self.snapshot.lock() {
-            snapshot.logs.push(message.to_string());
+        match self.snapshot.lock() {
+            Ok(mut snapshot) => {
+                snapshot.logs.push(message.to_string());
+            }
+            Err(error) => {
+                eprintln!("[backend] failed to update backend log snapshot: {error}");
+            }
         }
     }
 
@@ -158,6 +174,7 @@ where
                     );
                 }
                 Err(error) => {
+                    eprintln!("[backend:{stream}] failed to read backend output: {error}");
                     emit_log(
                         &app,
                         &process,
@@ -240,13 +257,17 @@ fn backend_is_healthy(address: &str) -> bool {
 fn emit_status(app: &AppHandle, process: &BackendProcess, status: &str) {
     process.set_status(status);
     println!("[backend] status={status}");
-    let _ = app.emit("backend-status", status);
+    if let Err(error) = app.emit("backend-status", status) {
+        eprintln!("[backend] failed to emit backend-status event: {error}");
+    }
 }
 
 fn emit_log(app: &AppHandle, process: &BackendProcess, message: String) {
     process.add_log(&message);
     println!("[backend] {message}");
-    let _ = app.emit("backend-log", message);
+    if let Err(error) = app.emit("backend-log", message) {
+        eprintln!("[backend] failed to emit backend-log event: {error}");
+    }
 }
 
 #[cfg(test)]

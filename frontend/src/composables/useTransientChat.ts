@@ -174,14 +174,14 @@ export function useTransientChat(
 
         return;
       } catch (error) {
-        console.error(error);
-
         if (attempt < attempts) {
           await new Promise((resolve) => {
             window.setTimeout(resolve, 500);
           });
           continue;
         }
+
+        console.error("[chat] failed to refresh chat list", error);
 
         if (showError) {
           currentState.value.errorMessage =
@@ -210,7 +210,7 @@ export function useTransientChat(
       detail = await chatManagement.getChat(chatId);
 
     } catch (error) {
-      console.error(error);
+      console.error("[chat] failed to load chat", error);
       currentState.value.errorMessage =
         "Chat konnte nicht geladen werden.";
       return;
@@ -266,7 +266,7 @@ export function useTransientChat(
       updateChatSummary(summary);
       return true;
     } catch (error) {
-      console.error(error);
+      console.error("[chat] failed to rename chat", error);
       currentState.value.errorMessage =
         "Chat konnte nicht umbenannt werden.";
       return false;
@@ -285,7 +285,7 @@ export function useTransientChat(
       updateChatSummary(summary);
       return true;
     } catch (error) {
-      console.error(error);
+      console.error("[chat] failed to update pin state", error);
       currentState.value.errorMessage =
         "Pin-Status konnte nicht geändert werden.";
       return false;
@@ -296,7 +296,7 @@ export function useTransientChat(
     try {
       await chatManagement.deleteChat(chatId);
     } catch (error) {
-      console.error(error);
+      console.error("[chat] failed to delete chat", error);
       currentState.value.errorMessage =
         "Chat konnte nicht gelöscht werden.";
       return false;
@@ -396,7 +396,7 @@ export function useTransientChat(
         },
         controller.signal,
       );
-    } catch {
+    } catch (error) {
       if (state.activeTurn !== turn) {
         return;
       }
@@ -404,6 +404,7 @@ export function useTransientChat(
       rollbackTurn(state, turn);
 
       if (!controller.signal.aborted) {
+        console.error("[chat] response generation failed", error);
         state.errorMessage =
           "Antwort konnte nicht erzeugt werden.";
       }
@@ -471,7 +472,7 @@ export function useTransientChat(
         },
         controller.signal,
       );
-    } catch {
+    } catch (error) {
       if (state.activeTurn !== turn) {
         return;
       }
@@ -479,6 +480,7 @@ export function useTransientChat(
       state.messages.splice(turn.assistantIndex, 1);
 
       if (!controller.signal.aborted) {
+        console.error("[audio] response generation failed", error);
         state.errorMessage =
           "Sprachantwort konnte nicht erzeugt werden.";
       }

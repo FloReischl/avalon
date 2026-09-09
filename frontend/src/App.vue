@@ -422,6 +422,10 @@ onMounted(async () => {
     backendStatus.value = snapshot.status;
     backendLogs.value = snapshot.logs;
   } catch (error) {
+    console.error(
+      "[backend-lifecycle] failed to initialize desktop lifecycle",
+      error,
+    );
     backendStatus.value = "failed";
     addLog(
       error instanceof Error

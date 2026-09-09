@@ -1,6 +1,7 @@
 """Text-chat streaming endpoint."""
 
 import json
+import logging
 from collections.abc import AsyncIterator
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -14,6 +15,8 @@ from app.persistence.database import (
 )
 from app.runtime.ollama import OllamaRuntime
 from app.services.chat import ChatNotFoundError, ChatService, ChatTurn
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -45,6 +48,7 @@ async def stream_chat_response(
         async for chunk in service.stream_response(turn):
             yield format_sse_event("chunk", {"text": chunk})
     except RuntimeError:
+        logger.exception("[chat] response stream failed")
         yield format_sse_event("error", {})
         return
 

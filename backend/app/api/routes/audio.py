@@ -1,8 +1,7 @@
 """Backend-local push-to-talk control and response streaming."""
 
 from collections.abc import AsyncIterator
-import sys
-import traceback
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from fastapi.responses import StreamingResponse
@@ -12,6 +11,8 @@ from app.api.schemas import AudioResponseRequest
 from app.audio.capture import CaptureError, PipeWireRecorder
 from app.runtime.ollama import OllamaRuntime
 from app.services.audio_chat import AudioChatService
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/audio", tags=["audio"])
 
@@ -65,12 +66,8 @@ async def stream_audio_response(
         async for chunk in service.stream_response(messages):
             yield format_sse_event("chunk", {"text": chunk})
     except Exception as exc:
-        print(
-            f"[audio] response stream failed: {type(exc).__name__}: {exc}",
-            file=sys.stderr,
-        )
-        traceback.print_exc(file=sys.stderr)
-        yield format_sse_event("error", {"message": str(exc)})
+        logger.exception("[audio] response stream failed")
+        yield format_sse_event("error", {})
         return
 
     yield format_sse_event("done", {})
@@ -98,11 +95,7 @@ async def stream_dialog_response(
         async for chunk in service.stream_dialog_response(messages):
             yield format_sse_event("chunk", {"text": chunk})
     except Exception as exc:
-        print(
-            f"[audio-dialog] response stream failed: {type(exc).__name__}: {exc}",
-            file=sys.stderr,
-        )
-        traceback.print_exc(file=sys.stderr)
+        logger.exception("[audio-dialog] response stream failed")
         yield format_sse_event("error", {"message": str(exc)})
         return
 
