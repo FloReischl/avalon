@@ -1043,7 +1043,7 @@ modules:
       - keep visible audio user contribution when audio response fails or is stopped
       - restore original text prompt exactly after rollback
       - ignore stale callbacks from superseded turns
-      - log frontend chat-list and chat-load transport failures to console.error
+      - log consumed frontend technical failures to console.error with operation context and original error; expected aborts and compensated retries stay quiet
     dependencies:
       - frontend/src/services/backend.ts
       - frontend/src/types/chat.ts
@@ -1189,6 +1189,8 @@ modules:
       - capture backend stdout and stderr
       - poll backend health readiness
       - buffer lifecycle status and diagnostic logs
+      - report otherwise swallowed backend-process, snapshot-lock, output-read, and Tauri-event failures to stderr
+      - keep compensated backend-health retry failures quiet
       - stop owned backend process
     status: implemented
 

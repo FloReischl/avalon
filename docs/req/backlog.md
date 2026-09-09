@@ -1,9 +1,8 @@
 todo
 
 - search/persona/instructions
-- ERROR LOGGING!
-  - Audio in funktioniert nicht: Sprachantwort konnte nicht erzeugt werden.
 - window icon
+- input-field maximized -> send -> input-field back to default size
 - audio in -> text
 - audio input -> bi-directional conversation
 - audio generation in batches (4?)
