@@ -23,6 +23,7 @@ class AudioStreamEvent:
         "transcript_done",
         "assistant_error",
         "transcript_error",
+        "processing",
     ]
 
     text: str = ""
@@ -91,6 +92,11 @@ class AudioChatService:
     ) -> AsyncIterator[AudioStreamEvent]:
         """Capture a dialog turn and stream response plus transcription."""
         captured = await self._recorder.capture_dialog_turn()
+
+        # The recorder has detected the end of the user's turn.  From this
+        # point on the desktop may present processing feedback before the
+        # first model or transcript output is available.
+        yield AudioStreamEvent(kind="processing")
 
         async for event in self._stream_persistent_captured_turn(
             captured,

@@ -12,6 +12,7 @@ export interface ChatStreamRequest {
 
 export interface ChatStreamHandlers {
   onChat?: (chatId: number) => void;
+  onProcessing?: () => void;
   onChunk: (text: string) => void;
   onTranscriptChunk?: (text: string) => void;
   onTranscriptError?: () => void;
@@ -339,6 +340,15 @@ async function consumeChatStream(
         }
 
         handlers.onChat?.(chatId);
+        continue;
+      }
+
+      if (event === "processing") {
+        if (data !== "{}") {
+          throw new Error("Invalid chat stream processing event");
+        }
+
+        handlers.onProcessing?.();
         continue;
       }
 

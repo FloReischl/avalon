@@ -39,6 +39,16 @@ class FakeAudioChatService:
         yield AudioStreamEvent(kind="transcript", text="Text")
         yield AudioStreamEvent(kind="assistant", text="Flo")
 
+    async def stream_dialog_response_with_transcription(
+        self,
+        messages: list[dict[str, str]],
+        chat_id: int | None = None,
+    ) -> AsyncIterator[AudioStreamEvent]:
+        self.received_messages = messages
+        self.received_chat_id = chat_id
+        yield AudioStreamEvent(kind="processing")
+        yield AudioStreamEvent(kind="assistant", text="Hallo")
+
 
 def request(method: str, path: str, service: FakeAudioChatService, **kwargs):
     async def send_request():
@@ -108,3 +118,21 @@ def test_audio_stop_keeps_stream_contract_on_capture_failure() -> None:
 
     assert response.status_code == 200
     assert response.text == "event: error\ndata: {}\n\n"
+
+
+def test_dialog_turn_announces_processing_before_assistant_output() -> None:
+    service = FakeAudioChatService()
+
+    response = request(
+        "POST",
+        "/api/v1/audio/dialog/turn",
+        service,
+        json={"messages": []},
+    )
+
+    assert response.status_code == 200
+    assert response.text == (
+        "event: processing\ndata: {}\n\n"
+        'event: chunk\ndata: {"text": "Hallo"}\n\n'
+        "event: done\ndata: {}\n\n"
+    )

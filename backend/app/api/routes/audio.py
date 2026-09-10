@@ -134,7 +134,9 @@ async def stream_dialog_response(
             messages,
             chat_id,
         ):
-            if event.kind == "chat":
+            if event.kind == "processing":
+                yield format_sse_event("processing", {})
+            elif event.kind == "chat":
                 yield format_sse_event("chat", {"id": event.text})
             elif event.kind == "assistant":
                 yield format_sse_event("chunk", {"text": event.text})

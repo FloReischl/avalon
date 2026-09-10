@@ -49,6 +49,67 @@ const chatManagement: ChatManagementClient = {
 
 
 describe("useTransientChat dialog turns", () => {
+  it("keeps backend pending through transcript and clears it on assistant output", async () => {
+    const transcriptSent = deferred<void>();
+    const release = deferred<void>();
+
+    const streamDialog: AudioStreamer = async (_messages, handlers) => {
+      handlers.onProcessing?.();
+      handlers.onTranscriptChunk?.("Hallo Flo");
+      transcriptSent.resolve(undefined);
+      await release.promise;
+      handlers.onChunk("Guten Tag");
+      handlers.onDone?.();
+    };
+
+    const chat = useTransientChat(
+      unusedChatStreamer,
+      unusedAudioStreamer,
+      chatManagement,
+      streamDialog,
+    );
+
+    const turn = chat.sendDialogAudio();
+    await transcriptSent.promise;
+    await nextTick();
+
+    expect(chat.backendPending.value).toBe(true);
+    expect(chat.isDialogProcessing.value).toBe(true);
+
+    release.resolve(undefined);
+    await turn;
+
+    expect(chat.backendPending.value).toBe(false);
+    expect(chat.isDialogProcessing.value).toBe(false);
+  });
+
+  it("clears backend pending when a listening dialog turn is aborted", async () => {
+    const started = deferred<void>();
+    const streamDialog: AudioStreamer = async (_messages, _handlers, signal) => {
+      started.resolve(undefined);
+      await new Promise<void>((_resolve, reject) => {
+        signal.addEventListener("abort", () => {
+          reject(new DOMException("Aborted", "AbortError"));
+        });
+      });
+    };
+    const chat = useTransientChat(
+      unusedChatStreamer,
+      unusedAudioStreamer,
+      chatManagement,
+      streamDialog,
+    );
+
+    const turn = chat.sendDialogAudio();
+    await started.promise;
+    expect(chat.backendPending.value).toBe(true);
+
+    chat.abortDialogTurn();
+    await turn;
+
+    expect(chat.backendPending.value).toBe(false);
+  });
+
   it("waits without reporting generation until the first response chunk", async () => {
     const started = deferred<void>();
     const releaseResponse = deferred<void>();

@@ -17,6 +17,8 @@ describe("streamDialogResponse", () => {
           "",
           'event: transcript_chunk\ndata: {"text":"Hallo Flo"}',
           "",
+          "event: processing\ndata: {}",
+          "",
           'event: chunk\ndata: {"text":"Hallo"}',
           "",
           'event: chunk\ndata: {"text":" Flo"}',
@@ -37,6 +39,7 @@ describe("streamDialogResponse", () => {
     const chunks: string[] = [];
     const transcriptChunks: string[] = [];
     const onChat = vi.fn();
+    const onProcessing = vi.fn();
     const onDone = vi.fn();
 
     await streamDialogResponse(
@@ -52,6 +55,7 @@ describe("streamDialogResponse", () => {
       ],
       {
         onChat,
+        onProcessing,
         onChunk(text) {
           chunks.push(text);
         },
@@ -95,6 +99,7 @@ describe("streamDialogResponse", () => {
     expect(chunks).toEqual(["Hallo", " Flo"]);
     expect(transcriptChunks).toEqual(["Hallo Flo"]);
     expect(onChat).toHaveBeenCalledWith(42);
+    expect(onProcessing).toHaveBeenCalledTimes(1);
     expect(onDone).toHaveBeenCalledTimes(1);
   });
 

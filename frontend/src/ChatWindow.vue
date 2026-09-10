@@ -24,6 +24,10 @@ import {
   synthesizeSpeech,
 } from "./services/backend";
 import { exportChatToMarkdown } from "./services/chatExport";
+import {
+  publishAvatarRuntimeState,
+  type AvatarVisualState,
+} from "./services/avatarState";
 
 
 const uiConfig = ref<UiConfig>();
@@ -34,6 +38,8 @@ const {
   input,
   isGenerating,
   isDialogResponding,
+  isDialogProcessing,
+  backendPending,
   errorMessage,
   chatSummaries,
   selectedChatId,
@@ -60,10 +66,42 @@ const remainingRecordingSeconds = ref(30);
 const isTtsSynthesizing = ref(false);
 const isDialogActive = ref(false);
 const isDialogTtsActive = ref(false);
+const isTtsPlaying = ref(false);
 const skipDialogTts = ref(false);
 
 const isDialogRespondingOrSpeaking = computed(
   () => isDialogResponding.value || isDialogTtsActive.value,
+);
+
+const isDialogSpeaking = computed(
+  () => isDialogActive.value && isTtsPlaying.value,
+);
+
+const avatarVisualState = computed<AvatarVisualState>(() => {
+  if (isRecording.value) return "listening";
+  if (isTtsPlaying.value) return "speaking";
+  // The audio does not speak until HTMLAudioElement.play() has resolved.
+  // Fetching and decoding the WAV remains backend work, thus "thinking".
+  if (isTtsSynthesizing.value) return "thinking";
+  if (
+    isDialogActive.value
+    && !isDialogProcessing.value
+    && !isDialogResponding.value
+  ) return "listening";
+  if (backendPending.value) return "thinking";
+  if (isDialogActive.value) return "listening";
+  return "standard";
+});
+
+watch(
+  [avatarVisualState, backendPending],
+  ([state, pending]) => {
+    void publishAvatarRuntimeState({ state, backendPending: pending })
+      .catch((error) => {
+        console.error("[avatar-state] failed to publish runtime state", error);
+      });
+  },
+  { immediate: true },
 );
 
 const pinnedChats = computed(
@@ -365,6 +403,8 @@ let ttsCompletionResolver: (() => void) | undefined;
 
 
 function cleanupTtsAudio() {
+  isTtsPlaying.value = false;
+
   if (ttsAudio) {
     ttsAudio.onended = null;
     ttsAudio.onerror = null;
@@ -474,6 +514,7 @@ async function readMessageAloud(index: number) {
 
 
     await audio.play();
+    isTtsPlaying.value = true;
     await playbackCompleted;
   } catch (error) {
     if (
@@ -546,7 +587,7 @@ function startDialog() {
 }
 
 function endDialog() {
-  if (!isDialogActive.value || isDialogRespondingOrSpeaking.value) {
+  if (!isDialogActive.value || isDialogSpeaking.value) {
     return;
   }
 
@@ -555,15 +596,13 @@ function endDialog() {
 }
 
 function stopDialogAudio() {
-  if (!isDialogActive.value || !isDialogRespondingOrSpeaking.value) {
+  if (!isDialogSpeaking.value) {
     return;
   }
 
   skipDialogTts.value = true;
 
-  if (isDialogTtsActive.value) {
-    replaceCurrentTts();
-  }
+  replaceCurrentTts();
 }
 
 function handleDialogButton() {
@@ -572,7 +611,7 @@ function handleDialogButton() {
     return;
   }
 
-  if (isDialogRespondingOrSpeaking.value) {
+  if (isDialogSpeaking.value) {
     stopDialogAudio();
     return;
   }
@@ -1239,23 +1278,23 @@ function handleInputKeydown(event: KeyboardEvent) {
             class="icon-button dialog-button"
             :class="{
               'dialog-button--active':
-                isDialogActive && !isDialogRespondingOrSpeaking,
+                isDialogActive && !isDialogSpeaking,
               'dialog-button--stop':
-                isDialogRespondingOrSpeaking,
+                isDialogSpeaking,
             }"
             type="button"
             data-testid="dialog-call"
             :aria-label="
               !isDialogActive
                 ? 'Dialog starten'
-                : isDialogRespondingOrSpeaking
+                : isDialogSpeaking
                   ? 'Sprachausgabe stoppen'
                   : 'Dialog beenden'
             "
             :title="
               !isDialogActive
                 ? 'Dialog starten'
-                : isDialogRespondingOrSpeaking
+                : isDialogSpeaking
                   ? 'Sprachausgabe stoppen'
                   : 'Dialog beenden'
             "
@@ -1263,7 +1302,7 @@ function handleInputKeydown(event: KeyboardEvent) {
             @click="handleDialogButton"
           >
             <svg
-              v-if="isDialogRespondingOrSpeaking"
+              v-if="isDialogSpeaking"
               viewBox="0 0 24 24"
               aria-hidden="true"
             >

@@ -369,7 +369,7 @@ describe("ChatWindow", () => {
   });
 
 
-  it("shows dialog stop when the LLM response starts", async () => {
+  it("keeps hangup available while the LLM response streams", async () => {
     let releaseResponse: (() => void) | undefined;
 
     streamDialogResponseMock.mockImplementation(
@@ -393,10 +393,10 @@ describe("ChatWindow", () => {
     const callButton = wrapper.get('[data-testid="dialog-call"]');
 
     expect(callButton.attributes("aria-label")).toBe(
-      "Sprachausgabe stoppen",
+      "Dialog beenden",
     );
     expect(callButton.attributes("title")).toBe(
-      "Sprachausgabe stoppen",
+      "Dialog beenden",
     );
     expect(wrapper.find('[data-testid="stop-chat"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="send-chat"]').exists()).toBe(false);
@@ -412,7 +412,7 @@ describe("ChatWindow", () => {
   });
 
 
-  it("skips dialog TTS when stop is pressed during LLM generation", async () => {
+  it("ends the dialog without stopping the LLM stream", async () => {
     let releaseResponse: (() => void) | undefined;
 
     streamDialogResponseMock
@@ -444,12 +444,12 @@ describe("ChatWindow", () => {
 
     expect(synthesizeSpeechMock).not.toHaveBeenCalled();
 
-    expect(streamDialogResponseMock).toHaveBeenCalledTimes(2);
+    expect(streamDialogResponseMock).toHaveBeenCalledTimes(1);
 
     await nextTick();
 
     expect(wrapper.get('[data-testid="dialog-call"]').attributes("aria-label"))
-      .toBe("Dialog beenden");
+      .toBe("Dialog starten");
   });
 
 

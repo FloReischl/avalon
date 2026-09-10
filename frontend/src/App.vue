@@ -4,6 +4,7 @@ import {
   onBeforeUnmount,
   onMounted,
   ref,
+  computed,
   useTemplateRef,
   watch,
 } from "vue";
@@ -25,6 +26,10 @@ import { exitAvalo } from "./services/appLifecycle";
 import { showChatWindow } from "./services/chatWindow";
 import { startAvatarWindowDrag } from "./services/windowDrag";
 import { setAvatarWindowTitle } from "./services/windowTitle";
+import {
+  listenToAvatarRuntimeState,
+  type AvatarRuntimeState,
+} from "./services/avatarState";
 
 type AudioState = "idle" | "recording";
 
@@ -44,7 +49,10 @@ const backendLogs = ref<string[]>([]);
 const audioState = ref<AudioState>("idle");
 const remainingRecordingSeconds = ref(MAX_AUDIO_SECONDS);
 const avatarScalePercent = ref(100);
+const avatarRuntimeState = ref<AvatarRuntimeState>({ state: "standard", backendPending: false });
+const animationFrame = ref(0);
 const avatarStage = useTemplateRef<HTMLDivElement>("avatarStage");
+const avatarRegion = useTemplateRef<HTMLDivElement>("avatarRegion");
 const avatarImage = useTemplateRef<HTMLImageElement>("avatarImage");
 const audioButton = useTemplateRef<HTMLButtonElement>("audioButton");
 const exitButton = useTemplateRef<HTMLButtonElement>("exitButton");
@@ -57,6 +65,60 @@ let avatarSyncRunning = false;
 let avatarSyncPending = false;
 let uiConfigLoading = false;
 let unlisten: UnlistenFn | undefined;
+let unlistenAvatarState: UnlistenFn | undefined;
+let animationTimer: number | undefined;
+
+const activeAnimation = computed(() => uiConfig.value?.avatar.animations.find(
+  (animation) => animation.key === avatarRuntimeState.value.state,
+));
+
+const avatarUrl = computed(() => activeAnimation.value?.spriteSetUrl
+  ?? uiConfig.value?.avatar.standard.url ?? "");
+
+const activeSprite = computed(() => {
+  const sprites = activeAnimation.value?.sprites;
+  return sprites?.[animationFrame.value % sprites.length];
+});
+
+const avatarRegionStyle = computed(() => {
+  const sprite = activeSprite.value;
+  if (!sprite) return { width: `${24 * avatarScalePercent.value / 100}rem` };
+  const scale = avatarScalePercent.value / 100;
+  return {
+    width: `${sprite.width * scale}px`,
+    height: `${sprite.height * scale}px`,
+    overflow: "hidden",
+  };
+});
+
+const avatarImageStyle = computed(() => {
+  const sprite = activeSprite.value;
+  if (!sprite) return {};
+  const scale = avatarScalePercent.value / 100;
+  return {
+    // Override the generic responsive avatar rule.  A sprite sheet must keep
+    // its intrinsic dimensions so the translated crop exposes one region.
+    width: "auto",
+    height: "auto",
+    maxWidth: "none",
+    transform: `scale(${scale}) translate(${-sprite.x}px, ${-sprite.y}px)`,
+    transformOrigin: "top left",
+  };
+});
+
+function resetAnimation() {
+  animationFrame.value = 0;
+  if (animationTimer !== undefined) window.clearInterval(animationTimer);
+  const frameCount = activeAnimation.value?.sprites.length ?? 0;
+  animationTimer = frameCount > 0
+    ? window.setInterval(() => { animationFrame.value = (animationFrame.value + 1) % frameCount; }, 1000)
+    : undefined;
+}
+
+watch(() => avatarRuntimeState.value.state, resetAnimation, { immediate: true });
+watch(animationFrame, () => {
+  if (avatarLoaded) requestAvatarSync();
+});
 
 function addLog(message: string) {
 
@@ -268,11 +330,14 @@ function startAudioRecording(event: PointerEvent) {
 
 async function applyAvatarInputShape() {
   const image = avatarImage.value;
-  if (!image) {
+  const region = avatarRegion.value;
+  if (!image || !region) {
     return;
   }
 
-  const bounds = image.getBoundingClientRect();
+  const bounds = activeSprite.value
+    ? region.getBoundingClientRect()
+    : image.getBoundingClientRect();
   if (bounds.width <= 0 || bounds.height <= 0) {
     return;
   }
@@ -294,7 +359,22 @@ async function applyAvatarInputShape() {
     return;
   }
 
-  context.drawImage(image, 0, 0, renderedWidth, renderedHeight);
+  const sprite = activeSprite.value;
+  if (sprite) {
+    context.drawImage(
+      image,
+      sprite.x,
+      sprite.y,
+      sprite.width,
+      sprite.height,
+      0,
+      0,
+      renderedWidth,
+      renderedHeight,
+    );
+  } else {
+    context.drawImage(image, 0, 0, renderedWidth, renderedHeight);
+  }
   const pixels = context.getImageData(
     0,
     0,
@@ -465,6 +545,14 @@ onMounted(async () => {
         : "Failed to initialize desktop lifecycle",
     );
   }
+
+  try {
+    unlistenAvatarState = await listenToAvatarRuntimeState((state) => {
+      avatarRuntimeState.value = state;
+    });
+  } catch (error) {
+    console.error("[avatar-state] failed to subscribe", error);
+  }
 });
 
 watch(
@@ -493,6 +581,8 @@ onBeforeUnmount(() => {
   window.removeEventListener("resize", handleAvatarWindowResize);
   resetAudioRecordingState();
   unlisten?.();
+  unlistenAvatarState?.();
+  if (animationTimer !== undefined) window.clearInterval(animationTimer);
 });
 
 </script>
@@ -525,10 +615,19 @@ onBeforeUnmount(() => {
       class="avatar-stage"
       data-testid="avatar-stage"
     >
+      <div
+        v-if="avatarRuntimeState.backendPending"
+        class="avatar-balloon"
+        data-testid="avatar-pending-balloon"
+      >
+        <span class="avatar-spinner" aria-hidden="true" />
+        <span>Denke nach …</span>
+      </div>
 
       <div
+        ref="avatarRegion"
         class="avatar-region"
-        :style="{ width: `${24 * avatarScalePercent / 100}rem` }"
+        :style="avatarRegionStyle"
         data-testid="avatar-region"
 
         @pointerdown="handleAvatarPointerDown"
@@ -540,8 +639,11 @@ onBeforeUnmount(() => {
         <img
           ref="avatarImage"
           class="avatar"
-          :src="uiConfig.avatar.standard.url"
+          :src="avatarUrl"
           :alt="uiConfig.name"
+          :style="avatarImageStyle"
+          :data-avatar-state="avatarRuntimeState.state"
+          :data-avatar-frame="animationFrame"
 
           data-testid="avatar"
           @load="initializeAvatar"
@@ -617,4 +719,3 @@ onBeforeUnmount(() => {
     </span>
   </main>
 </template>
-

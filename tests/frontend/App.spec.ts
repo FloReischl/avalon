@@ -11,6 +11,7 @@ const {
   setWindowInputRegionsMock,
   loadUiConfigMock,
   setAvatarWindowTitleMock,
+  listenToAvatarRuntimeStateMock,
 } = vi.hoisted(() => ({
 
 
@@ -24,10 +25,15 @@ const {
   setWindowInputRegionsMock: vi.fn(),
   loadUiConfigMock: vi.fn(),
   setAvatarWindowTitleMock: vi.fn(),
+  listenToAvatarRuntimeStateMock: vi.fn(),
 }));
 
 vi.mock("../../frontend/src/services/windowTitle", () => ({
   setAvatarWindowTitle: setAvatarWindowTitleMock,
+}));
+
+vi.mock("../../frontend/src/services/avatarState", () => ({
+  listenToAvatarRuntimeState: listenToAvatarRuntimeStateMock,
 }));
 
 vi.mock("../../frontend/src/services/backendLifecycle", () => ({
@@ -72,8 +78,10 @@ describe("App", () => {
     setWindowInputRegionsMock.mockReset();
     loadUiConfigMock.mockReset();
     setAvatarWindowTitleMock.mockReset();
+    listenToAvatarRuntimeStateMock.mockReset();
     exitAvaloMock.mockResolvedValue(undefined);
     setAvatarWindowTitleMock.mockResolvedValue(undefined);
+    listenToAvatarRuntimeStateMock.mockResolvedValue(() => {});
 
     listenToBackendLifecycleMock.mockResolvedValue(() => {});
 
@@ -173,6 +181,58 @@ describe("App", () => {
     );
     expect(setAvatarWindowTitleMock).toHaveBeenCalledWith("Frieda");
 
+  });
+
+  it("renders the received runtime state and independent pending balloon", async () => {
+    vi.useFakeTimers();
+    let onRuntimeState:
+      | ((state: { state: string; backendPending: boolean }) => void)
+      | undefined;
+    listenToAvatarRuntimeStateMock.mockImplementation(
+      async (handler) => {
+        onRuntimeState = handler;
+        return () => {};
+      },
+    );
+    loadUiConfigMock.mockResolvedValue({
+      name: "Frieda",
+      avatar: {
+        standard: { key: "standard", url: "standard.png" },
+        animations: [
+          {
+            key: "listening",
+            category: "state",
+            spriteSetUrl: "listening.png",
+            sprites: [
+              { x: 10, y: 0, width: 200, height: 500 },
+              { x: 220, y: 0, width: 200, height: 500 },
+            ],
+          },
+        ],
+      },
+    });
+    getBackendSnapshotMock.mockResolvedValue({ status: "ready", logs: [] });
+
+    const wrapper = mount(App);
+    await flushPromises();
+
+    onRuntimeState?.({ state: "listening", backendPending: true });
+    await flushPromises();
+
+    expect(wrapper.get('[data-testid="avatar-pending-balloon"]').text())
+      .toContain("Denke nach");
+    expect(wrapper.get('[data-testid="avatar"]').attributes("data-avatar-state"))
+      .toBe("listening");
+    expect(wrapper.get('[data-testid="avatar"]').attributes("src"))
+      .toBe("listening.png");
+    expect(wrapper.get('[data-testid="avatar"]').attributes("data-avatar-frame"))
+      .toBe("0");
+    expect(wrapper.get('[data-testid="avatar"]').element.style.width)
+      .toBe("auto");
+
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(wrapper.get('[data-testid="avatar"]').attributes("data-avatar-frame"))
+      .toBe("1");
   });
 
   it("shows a hard startup failure when UI config loading fails", async () => {

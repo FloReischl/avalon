@@ -69,6 +69,8 @@ interface ChatState {
   input: string;
   errorMessage?: string;
   activeTurn?: ActiveTurn;
+  backendPending: boolean;
+  dialogProcessing: boolean;
 }
 
 interface ActiveTurn {
@@ -91,6 +93,8 @@ function createChatState(
     input: "",
     errorMessage: undefined,
     activeTurn: undefined,
+    backendPending: false,
+    dialogProcessing: false,
   });
 }
 
@@ -139,6 +143,14 @@ export function useTransientChat(
     () =>
       currentState.value.activeTurn?.kind === "dialog"
       && currentState.value.activeTurn.responding === true,
+  );
+
+  const backendPending = computed(
+    () => currentState.value.backendPending,
+  );
+
+  const isDialogProcessing = computed(
+    () => currentState.value.dialogProcessing,
   );
 
   const selectedChatId = computed(
@@ -361,6 +373,7 @@ export function useTransientChat(
     };
 
     state.activeTurn = markRaw(turn);
+    state.backendPending = true;
     state.errorMessage = undefined;
     state.input = "";
 
@@ -407,6 +420,9 @@ export function useTransientChat(
               return;
             }
 
+            if (text.length > 0) {
+              state.backendPending = false;
+            }
             state.messages[turn.assistantIndex].content += text;
           },
           onDone() {
@@ -430,6 +446,7 @@ export function useTransientChat(
           "Antwort konnte nicht erzeugt werden.";
       }
     } finally {
+      state.backendPending = false;
       if (state.activeTurn === turn) {
         state.activeTurn = undefined;
       }
@@ -463,6 +480,7 @@ export function useTransientChat(
     };
 
     state.activeTurn = markRaw(turn);
+    state.backendPending = true;
     state.errorMessage = undefined;
 
     state.messages.push(
@@ -493,6 +511,9 @@ export function useTransientChat(
           },
           onChunk(text) {
             if (state.activeTurn === turn) {
+              if (text.length > 0) {
+                state.backendPending = false;
+              }
               state.messages[turn.assistantIndex].content += text;
             }
           },
@@ -535,6 +556,7 @@ export function useTransientChat(
           "Sprachantwort konnte nicht erzeugt werden.";
       }
     } finally {
+      state.backendPending = false;
       if (state.activeTurn === turn) {
         state.activeTurn = undefined;
       }
@@ -567,6 +589,8 @@ export function useTransientChat(
     };
 
     state.activeTurn = markRaw(turn);
+    state.backendPending = true;
+    state.dialogProcessing = false;
     state.errorMessage = undefined;
 
     let responseStarted = false;
@@ -600,6 +624,11 @@ export function useTransientChat(
           onChat(chatId) {
             acceptAudioChatId(state, chatId);
           },
+          onProcessing() {
+            if (state.activeTurn === turn) {
+              state.dialogProcessing = true;
+            }
+          },
           onChunk(text) {
             if (state.activeTurn !== turn) {
               return;
@@ -610,6 +639,10 @@ export function useTransientChat(
             if (!responseStarted) {
               responseStarted = true;
               turn.responding = true;
+            }
+
+            if (text.length > 0) {
+              state.backendPending = false;
             }
 
             state.messages[turn.assistantIndex].content += text;
@@ -669,6 +702,8 @@ export function useTransientChat(
 
       return undefined;
     } finally {
+      state.backendPending = false;
+      state.dialogProcessing = false;
       if (state.activeTurn === turn) {
         turn.responding = false;
         state.activeTurn = undefined;
@@ -689,6 +724,8 @@ export function useTransientChat(
     }
 
     turn.controller.abort();
+    state.backendPending = false;
+    state.dialogProcessing = false;
     state.activeTurn = undefined;
   }
 
@@ -701,6 +738,8 @@ export function useTransientChat(
     }
 
     turn.controller.abort();
+    state.backendPending = false;
+    state.dialogProcessing = false;
 
     if (turn.kind === "audio" || turn.kind === "dialog") {
       const userMessage = state.messages[turn.startIndex];
@@ -729,6 +768,8 @@ export function useTransientChat(
     input,
     isGenerating,
     isDialogResponding,
+    isDialogProcessing,
+    backendPending,
     errorMessage,
     chatSummaries,
     selectedChatId,
