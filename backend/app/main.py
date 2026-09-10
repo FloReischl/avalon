@@ -11,6 +11,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.router import api_router
 from app.config import settings
 from app.persistence.migrations import run_migrations
+from app.user_config import initialize_user_config
+
 
 
 @asynccontextmanager
@@ -19,8 +21,10 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
     del application
 
     try:
+        initialize_user_config()
         run_migrations()
     except Exception:
+
         traceback.print_exc(file=sys.stderr)
         raise
 

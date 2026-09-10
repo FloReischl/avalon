@@ -9,11 +9,11 @@ from pathlib import Path
 from typing import Any
 
 from app.config import settings
+from app.user_config import get_user_config
 
-
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 _SAMPLE_RATE_HZ = 24000
+
 
 
 class KokoroTextToSpeech:
@@ -28,21 +28,10 @@ class KokoroTextToSpeech:
         config_path: Path | None = None,
     ) -> None:
         self._requested_device = device or settings.tts_device
-        self._model_path = (
-            model_path
-            if model_path is not None
-            else PROJECT_ROOT / settings.tts_kokoro_model
-        )
-        self._voice_path = (
-            voice_path
-            if voice_path is not None
-            else PROJECT_ROOT / settings.tts_kokoro_voice
-        )
-        self._config_path = (
-            config_path
-            if config_path is not None
-            else PROJECT_ROOT / settings.tts_kokoro_config
-        )
+        self._model_path = model_path
+        self._voice_path = voice_path
+        self._config_path = config_path
+
 
         self._model: Any | None = None
         self._pipeline: Any | None = None
@@ -113,7 +102,18 @@ class KokoroTextToSpeech:
         return self._model, self._pipeline, self._voice
 
     def _load_runtime(self) -> tuple[Any, Any, Any, str]:
+        if (
+            self._model_path is None
+            or self._voice_path is None
+            or self._config_path is None
+        ):
+            kokoro_config = get_user_config().tts.kokoro
+            self._model_path = self._model_path or kokoro_config.model
+            self._voice_path = self._voice_path or kokoro_config.voice
+            self._config_path = self._config_path or kokoro_config.config
+
         for description, path in (
+
             ("model", self._model_path),
             ("voice", self._voice_path),
             ("config", self._config_path),

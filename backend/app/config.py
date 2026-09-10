@@ -22,10 +22,6 @@ class Settings:
     tts_chatterbox_reference_audio: str = "data/tts/chatterbox/frieda1.wav"
     tts_chatterbox_model_revision: str = "5bb1f6ee58e50c3b8d408bc82a6d3740c2db6e18"
 
-    tts_kokoro_model: str = "data/tts/kokoro_victoria/kikiri_german_victoria_ep10.pth"
-    tts_kokoro_voice: str = "data/tts/kokoro_victoria/victoria.pt"
-    tts_kokoro_config: str = "data/tts/kokoro_victoria/config.json"
-
     tts_idle_unload_seconds: float = 300.0
 
 
