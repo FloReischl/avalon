@@ -22,7 +22,7 @@ avatars:
       standard: standard.png
       animations: # further to consider: wondering, happy, sad, surprised
         - key: listening
-          category: listening
+          category: state
           sprite-set: listening.png
           sprites: # x, y, width, height
             - [66, 0, 200, 582]
@@ -31,7 +31,7 @@ avatars:
             - [1132, 0, 203, 582]
             - [1475, 0, 203, 582]
         - key: speaking
-          category: speaking
+          category: state
           sprite-set: speaking.png
           sprites: # x, y, width, height
             - [18, 12, 212, 578]
@@ -43,7 +43,7 @@ avatars:
             - [1365, 11, 197, 579]
             - [1588, 15, 200, 575]
         - key: thinking
-          category: thinking
+          category: state
           sprite-set: thinking.png
           sprites: # x, y, width, height
             - [77, 6, 213, 590]
@@ -75,7 +75,7 @@ avatars:
       standard: standard.png
       animations:
         - key: listening
-          category: listening
+          category: state
           sprite-set: listening.png
           sprites: # x, y, width, height
             - [54, 9, 207, 593]
@@ -84,7 +84,7 @@ avatars:
             - [903, 7, 256, 593]
             - [1199, 8, 226, 590]
         - key: speaking
-          category: speaking
+          category: state
           sprite-set: speaking.png
           sprites: # x, y, width, height
             - [0, 0, 319, 598]
@@ -93,7 +93,7 @@ avatars:
             - [928, 0, 208, 600]
             - [1223, 1, 255, 598]
         - key: thinking
-          category: thinking
+          category: state
           sprite-set: thinking.png
           sprites: # x, y, width, height
             - [46, 5, 212, 603]
