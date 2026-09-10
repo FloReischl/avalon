@@ -21,6 +21,7 @@ architecture:
       - normal chat desktop window
       - backend process lifecycle
       - native desktop input shaping
+      - native window icons and Linux desktop application identity
     windows:
       main:
         role: avatar companion window
@@ -46,6 +47,8 @@ architecture:
       - Chat-window runtime state is synchronized to the avatar webview through Tauri events.
       - Current desktop input shaping is implemented for X11 using native SHAPE input regions.
       - Avatar input regions are generated from the rendered PNG alpha channel.
+      - Main and chat windows receive the Avalo icon explicitly through Tauri.
+      - Cinnamon/X11 application identity is provided by an installed desktop entry matching StartupWMClass Avalo.
 
   frontend:
     technology:
@@ -1281,6 +1284,7 @@ modules:
     role: Tauri desktop application entry point
     responsibilities:
       - manage backend process lifecycle
+      - assign the embedded Avalo icon to main and chat windows
       - expose backend snapshot command
       - expose native input-region command
       - expose avatar-window resize command with finite positive dimension validation
@@ -1293,6 +1297,7 @@ modules:
     dependencies:
       - src-tauri/src/backend.rs
       - src-tauri/src/input_shape.rs
+      - src-tauri/icons/icon.png
 
 
   src-tauri/tauri.conf.json:
@@ -1310,6 +1315,31 @@ modules:
         resizable: true
         min_size: "700x500"
         initial_size: "1100x800"
+
+  data/blueprints/desktop/avalo.desktop:
+    role: Linux desktop-entry blueprint for Avalo
+    responsibilities:
+      - define Avalo desktop launcher metadata
+      - reference the repository-local application icon through AVALO_ROOT substitution
+      - launch the Tauri development application from the repository
+      - map Cinnamon/X11 windows through StartupWMClass Avalo
+    installed_by:
+      - deploy/install-desktop-entry.sh
+
+  deploy/install-desktop-entry.sh:
+    role: local Linux desktop-entry installer
+    responsibilities:
+      - resolve the repository root independent of checkout location
+      - substitute AVALO_ROOT in the desktop-entry blueprint
+      - install avalo.desktop into ~/.local/share/applications
+    dependencies:
+      - data/blueprints/desktop/avalo.desktop
+
+  src-tauri/icons/icon.png:
+    role: Avalo desktop and native window icon
+    consumers:
+      - src-tauri/src/main.rs
+      - data/blueprints/desktop/avalo.desktop
 
   src-tauri/src/backend.rs:
     role: Tauri-managed Python backend process lifecycle
@@ -1700,6 +1730,9 @@ change_navigation:
       - src-tauri/src/main.rs
       - src-tauri/src/backend.rs
       - src-tauri/tauri.conf.json
+      - src-tauri/icons/icon.png
+      - data/blueprints/desktop/avalo.desktop
+      - deploy/install-desktop-entry.sh
       - frontend/src/main.ts
       - frontend/src/App.vue
       - frontend/src/ChatWindow.vue
