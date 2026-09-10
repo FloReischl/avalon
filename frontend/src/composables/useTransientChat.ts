@@ -589,7 +589,9 @@ export function useTransientChat(
     };
 
     state.activeTurn = markRaw(turn);
-    state.backendPending = true;
+    // A dialog starts by listening.  Backend work begins only once the
+    // recorder reports that the spoken turn has completed.
+    state.backendPending = false;
     state.dialogProcessing = false;
     state.errorMessage = undefined;
 
@@ -627,6 +629,7 @@ export function useTransientChat(
           onProcessing() {
             if (state.activeTurn === turn) {
               state.dialogProcessing = true;
+              state.backendPending = true;
             }
           },
           onChunk(text) {

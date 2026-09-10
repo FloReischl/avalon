@@ -102,7 +102,7 @@ describe("useTransientChat dialog turns", () => {
 
     const turn = chat.sendDialogAudio();
     await started.promise;
-    expect(chat.backendPending.value).toBe(true);
+    expect(chat.backendPending.value).toBe(false);
 
     chat.abortDialogTurn();
     await turn;

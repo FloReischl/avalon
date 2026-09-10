@@ -77,6 +77,10 @@ const isDialogSpeaking = computed(
   () => isDialogActive.value && isTtsPlaying.value,
 );
 
+const avatarPending = computed(
+  () => backendPending.value || isTtsSynthesizing.value,
+);
+
 const avatarVisualState = computed<AvatarVisualState>(() => {
   if (isRecording.value) return "listening";
   if (isTtsPlaying.value) return "speaking";
@@ -94,7 +98,7 @@ const avatarVisualState = computed<AvatarVisualState>(() => {
 });
 
 watch(
-  [avatarVisualState, backendPending],
+  [avatarVisualState, avatarPending],
   ([state, pending]) => {
     void publishAvatarRuntimeState({ state, backendPending: pending })
       .catch((error) => {
