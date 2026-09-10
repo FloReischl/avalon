@@ -13,7 +13,47 @@ class HealthResponse(BaseModel):
     service: str
 
 
+class UiSpriteRegionResponse(BaseModel):
+    """One rectangular sprite region exposed to the frontend."""
+
+    x: int
+    y: int
+    width: int
+    height: int
+
+
+class UiStandardImageResponse(BaseModel):
+    """Static base image of the effective avatar."""
+
+    key: Literal["standard"] = "standard"
+    url: str
+
+
+class UiAnimationResponse(BaseModel):
+    """One configured animation of the effective avatar."""
+
+    key: str
+    category: str
+    spriteSetUrl: str
+    sprites: list[UiSpriteRegionResponse]
+
+
+class UiAvatarResponse(BaseModel):
+    """Frontend rendering configuration for the effective avatar."""
+
+    standard: UiStandardImageResponse
+    animations: list[UiAnimationResponse]
+
+
+class UiConfigResponse(BaseModel):
+    """Configuration intentionally exposed to the frontend."""
+
+    name: str
+    avatar: UiAvatarResponse
+
+
 class ChatRequest(BaseModel):
+
     """One new text-chat turn."""
 
     chat_id: int | None = Field(default=None, gt=0)
