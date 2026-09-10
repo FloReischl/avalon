@@ -96,6 +96,9 @@ architecture:
       - a transient New Chat is persisted only when its first message is sent
       - persisted chats can be listed and reopened with complete stored history
       - model context for text chat is limited to the most recent 100 persisted messages
+      - the effective standard avatar provides persona and instructions for assistant generation
+      - persona and instructions are prepended as one system message for text and audio assistant generation
+      - transcription and automatic title generation do not receive avatar persona or instructions
       - assistant text is persisted only after successful complete generation
       - aborted or failed partial assistant output is not persisted
       - chat titles start as timestamp-based New titles
@@ -467,6 +470,7 @@ modules:
       - backend/app/api/schemas.py
       - backend/app/services/chat.py:ChatService
       - backend/app/runtime/ollama.py:OllamaRuntime
+      - backend/app/user_config.py
       - chat persistence repository
     status: implemented
     stream_events:
@@ -496,12 +500,15 @@ modules:
             role: perform optional post-response work such as one-shot automatic title generation
     dependencies:
       - backend/app/runtime/base.py:ModelRuntime
+      - backend/app/user_config.py:AvatarConfig
       - chat persistence repository
     status: implemented
     behavior:
       - create a persistent chat atomically with its first user message
       - continue existing persistent chats by id
-      - pass only the most recent 100 messages to ModelRuntime
+      - pass only the most recent 100 persisted messages to ModelRuntime
+      - prepend the injected avatar persona and instructions as one system message for assistant generation
+      - keep automatic title generation independent of avatar persona and instructions
       - accumulate streamed assistant chunks and persist them only on successful completion
       - attempt automatic title generation only after exactly two complete user/assistant roundtrips
       - persist the automatic-title-attempt marker before model title generation
@@ -509,7 +516,7 @@ modules:
       - never overwrite a manually assigned title
       - remain independent of concrete runtime adapter
     future_scope:
-      - persona and long-term memory are not implemented yet
+      - long-term memory is not implemented yet
 
   backend/app/services/audio_chat.py:
     role: native-audio chat use-case boundary
@@ -519,12 +526,16 @@ modules:
     dependencies:
       - backend/app/audio/capture.py:PipeWireRecorder
       - backend/app/runtime/base.py:ModelRuntime
+      - backend/app/user_config.py:AvatarConfig
     behavior:
       - start and abort backend-local push-to-talk recording
       - stop push-to-talk capture and reuse one WAV for assistant generation and transcription
       - capture one automatic dialog speech turn and reuse one WAV for both model consumers
       - emit a processing event immediately after dialog capture completes and before model consumers start
       - stream assistant and transcript output independently for both audio interaction modes
+      - lazily resolve the active avatar for assistant generation through the injected avatar provider
+      - prepend avatar persona and instructions as one system message for audio assistant generation
+      - keep transcription independent of avatar persona and instructions
       - persist the audio user placeholder before model processing when persistence is configured
       - replace the persisted placeholder only after successful complete transcription
       - persist a successful complete assistant response independently of transcription completion
@@ -1039,6 +1050,7 @@ modules:
       - loads YAML once during backend bootstrap and keeps the validated configuration immutable at runtime
       - rejects unknown configuration fields
       - requires unique avatar keys and an effective standard avatar
+      - each avatar defines persona and instructions used as assistant system context
       - requires listening, speaking, and thinking animation keys per avatar
       - validates compact sprite regions
       - normalizes avatar base paths and prevents configured image assets from escaping them
@@ -1051,6 +1063,7 @@ modules:
       - UI configuration endpoint
       - configured avatar asset serving
       - Kokoro TTS configuration
+      - text and audio assistant system context
 
   backend/app/api/routes/ui.py:
     role: restricted frontend runtime configuration endpoint

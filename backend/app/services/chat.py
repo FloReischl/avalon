@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from app.persistence.chat_repository import ChatRepository
+from app.user_config import AvatarConfig
 from app.runtime.base import ModelRuntime
 
 
@@ -27,9 +28,11 @@ class ChatService:
         self,
         runtime: ModelRuntime,
         repository: ChatRepository,
+        avatar: AvatarConfig | None = None,
     ) -> None:
         self._runtime = runtime
         self._repository = repository
+        self._avatar = avatar
 
     def start_turn(
         self,
@@ -59,6 +62,17 @@ class ChatService:
             }
             for persisted in context
         ]
+        if self._avatar is not None:
+            messages.insert(
+                0,
+                {
+                    "role": "system",
+                    "content": (
+                        f"{self._avatar.persona}\n\n"
+                        f"{self._avatar.instructions}"
+                    ),
+                },
+            )
         return ChatTurn(chat_id=chat_id, messages=messages)
 
     async def stream_response(

@@ -1,7 +1,7 @@
 """Push-to-talk audio chat orchestration."""
 
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal
@@ -9,6 +9,7 @@ from typing import Literal
 from app.audio.capture import CapturedAudio, PipeWireRecorder
 from app.persistence.chat_repository import ChatRepository
 from app.runtime.base import ModelRuntime
+from app.user_config import AvatarConfig
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,10 +38,12 @@ class AudioChatService:
         recorder: PipeWireRecorder,
         runtime: ModelRuntime,
         repository: ChatRepository | None = None,
+        avatar_provider: Callable[[], AvatarConfig] | None = None,
     ) -> None:
         self._recorder = recorder
         self._runtime = runtime
         self._repository = repository
+        self._avatar_provider = avatar_provider
 
     async def start_recording(self) -> None:
         await self._recorder.start()
@@ -111,9 +114,22 @@ class AudioChatService:
         messages: list[dict[str, str]],
     ) -> AsyncIterator[str]:
         try:
+            assistant_messages = list(messages)
+            if self._avatar_provider is not None:
+                avatar = self._avatar_provider()
+                assistant_messages.insert(
+                    0,
+                    {
+                        "role": "system",
+                        "content": (
+                            f"{avatar.persona}\n\n"
+                            f"{avatar.instructions}"
+                        ),
+                    },
+                )
             async for chunk in self._runtime.generate_from_audio_stream(
                 captured.path,
-                messages,
+                assistant_messages,
             ):
                 yield chunk
         finally:
@@ -208,9 +224,22 @@ class AudioChatService:
 
         async def stream_assistant() -> None:
             try:
+                assistant_messages = list(messages)
+                if self._avatar_provider is not None:
+                    avatar = self._avatar_provider()
+                    assistant_messages.insert(
+                        0,
+                        {
+                            "role": "system",
+                            "content": (
+                                f"{avatar.persona}\n\n"
+                                f"{avatar.instructions}"
+                            ),
+                        },
+                    )
                 async for chunk in self._runtime.generate_from_audio_stream(
                     captured.path,
-                    messages,
+                    assistant_messages,
                 ):
                     await queue.put(("assistant", chunk))
             except Exception as exc:

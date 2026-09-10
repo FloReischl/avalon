@@ -14,6 +14,7 @@ from app.persistence.chat_repository import ChatRepository
 from app.persistence.database import create_database_engine, create_session_factory
 from app.runtime.ollama import OllamaRuntime
 from app.services.audio_chat import AudioChatService
+from app.user_config import get_user_config
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +26,7 @@ _audio_chat_service = AudioChatService(
     PipeWireRecorder(),
     OllamaRuntime(),
     _audio_repository,
+    lambda: get_user_config().standard_avatar,
 )
 
 

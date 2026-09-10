@@ -1,19 +1,20 @@
 todo
 
 - search
-- persona + instructions
+- llm warm-up
+  - wenn audio gestartet. modell schon laden
+  - wenn text eingabe im text-feld, modell schon laden
 - chat kontext
 - animations
-- relocate config
-- audio call for avatar
-- audio in -> text
 - audio generation in batches (4?)
-- nwfw mode (slow llm, hq audio)
+- nsfw mode (slow llm, hq audio)
 
 minor chabges
-- audio call -> greeting.wav
 - input-field maximized -> send -> input-field back to default size
+- remove emojis vor TTS
 
 
 minor change (only 1)
-- window icon
+- doppel-klick, **neues** ChatWindow
+- audio call for avatar
+- audio call -> greeting.wav

@@ -2,6 +2,7 @@
 
 from collections.abc import AsyncIterator
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -58,6 +59,31 @@ async def test_new_turn_persists_user_and_complete_assistant(service) -> None:
     assert [(message.role, message.content) for message in messages] == [
         ("user", "Hallo"),
         ("assistant", "Hallo Flo"),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_avatar_system_prompt_precedes_persisted_context(service) -> None:
+    _, repository, runtime = service
+    avatar = SimpleNamespace(
+        persona="Du bist Frieda.",
+        instructions="Antworte kurz.",
+    )
+    chat_service = ChatService(
+        runtime,
+        repository,
+        avatar,  # type: ignore[arg-type]
+    )
+
+    turn = chat_service.start_turn(None, "Hallo")
+    _ = [chunk async for chunk in chat_service.stream_response(turn)]
+
+    assert runtime.messages == [
+        {
+            "role": "system",
+            "content": "Du bist Frieda.\n\nAntworte kurz.",
+        },
+        {"role": "user", "content": "Hallo"},
     ]
 
 

@@ -1,6 +1,7 @@
 import asyncio
 from array import array
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -393,3 +394,43 @@ async def test_partial_failed_transcript_is_not_persisted(
         for event in events
     )
     assert not path.exists()
+
+@pytest.mark.asyncio
+async def test_audio_assistant_receives_avatar_system_prompt(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "audio.wav"
+    path.write_bytes(b"test")
+
+    captured = CapturedAudio(
+        path=path,
+        duration_seconds=1.0,
+        sample_rate_hz=16000,
+        channels=1,
+    )
+    recorder = FakeDialogRecorder(captured)
+    runtime = FakeRuntime()
+    avatar = SimpleNamespace(
+        persona="Du bist Frieda.",
+        instructions="Antworte kurz.",
+    )
+    service = AudioChatService(
+        recorder,
+        runtime,  # type: ignore[arg-type]
+        avatar_provider=lambda: avatar,  # type: ignore[arg-type]
+    )
+    messages = [{"role": "user", "content": "Vorher"}]
+
+    chunks = [
+        chunk
+        async for chunk in service.stream_dialog_response(messages)
+    ]
+
+    assert chunks == ["Hallo", " Flo"]
+    assert runtime.messages == [
+        {
+            "role": "system",
+            "content": "Du bist Frieda.\n\nAntworte kurz.",
+        },
+        {"role": "user", "content": "Vorher"},
+    ]

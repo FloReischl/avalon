@@ -15,6 +15,7 @@ from app.persistence.database import (
 )
 from app.runtime.ollama import OllamaRuntime
 from app.services.chat import ChatNotFoundError, ChatService, ChatTurn
+from app.user_config import get_user_config
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +28,11 @@ def get_chat_service():
     repository = ChatRepository(create_session_factory(engine))
 
     try:
-        yield ChatService(OllamaRuntime(), repository)
+        yield ChatService(
+            OllamaRuntime(),
+            repository,
+            get_user_config().standard_avatar,
+        )
     finally:
         engine.dispose()
 
