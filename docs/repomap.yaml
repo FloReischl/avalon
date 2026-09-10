@@ -43,6 +43,7 @@ architecture:
       - Closing the avatar window exits the application and stops the owned backend process.
       - Closing the chat window hides it instead of destroying its webview state.
       - Explicit chat-window geometry persistence is not implemented.
+      - Chat-window runtime state is synchronized to the avatar webview through Tauri events.
       - Current desktop input shaping is implemented for X11 using native SHAPE input regions.
       - Avatar input regions are generated from the rendered PNG alpha channel.
 
@@ -195,6 +196,7 @@ key_flows:
           - backend waits indefinitely for speech without creating empty turns
           - simple PCM amplitude detection starts the turn on speech
           - 3 seconds of consecutive silence or 30 seconds from speech start completes the turn
+          - after completed capture, a processing SSE event marks the transition from listening to backend processing
           - AudioChatService reuses the captured WAV for assistant generation and transcription
           - assistant generation receives prior conversation context plus native audio
           - transcription receives native audio only, without conversation context
@@ -518,6 +520,7 @@ modules:
       - start and abort backend-local push-to-talk recording
       - stop push-to-talk capture and reuse one WAV for assistant generation and transcription
       - capture one automatic dialog speech turn and reuse one WAV for both model consumers
+      - emit a processing event immediately after dialog capture completes and before model consumers start
       - stream assistant and transcript output independently for both audio interaction modes
       - persist the audio user placeholder before model processing when persistence is configured
       - replace the persisted placeholder only after successful complete transcription
@@ -830,6 +833,8 @@ modules:
     relevant_to:
       - backend startup diagnostics
       - avatar rendering
+      - runtime-driven avatar state and sprite animation
+      - backend-pending balloon feedback
       - avatar drag interaction
       - avatar scaling and native window resize
       - avatar push-to-talk UI
@@ -845,12 +850,17 @@ modules:
       - frontend/src/services/backendLifecycle.ts
       - frontend/src/services/inputShape.ts
       - frontend/src/services/chatWindow.ts
+      - frontend/src/services/avatarState.ts
       - frontend/src/services/windowDrag.ts
       - frontend/src/services/windowTitle.ts
     interaction:
       - waits for backend readiness before loading UI configuration
       - treats UI configuration load failure as startup failure
       - renders the configured standard avatar image and name
+      - switches between standard, listening, thinking, and speaking runtime visuals
+      - animates configured sprite sets at one second per sprite and resets animation on visual-state changes
+      - shows a pending balloon independently from the visible avatar state
+      - recalculates native input shape from the active sprite crop
       - sets the avatar-window title from configured name
       - avatar drag starts only after pointer movement crosses a small threshold
       - avatar double-click opens the chat window
@@ -926,7 +936,10 @@ modules:
       - aborts and discards push-to-talk recording at the duration limit
       - handles pointer release that occurs while backend recording start is still pending
       - provides a separate Call control between microphone and Send for continuous dialog mode
-      - Call control distinguishes inactive, listening/hang-up, and response/Stop states
+      - Call control is hang-up while the dialog is active except during actual TTS playback, where it becomes audio Stop
+      - publishes runtime avatar state and independent backend-pending state to the avatar webview
+      - avatar visual priority is recording/listening, actual audio playback/speaking, synthesis or backend pending/thinking, active dialog/listening, then standard
+      - TTS synthesis counts as backend-pending feedback; speaking starts only after actual audio playback starts
       - dialog mode automatically alternates backend speech turns and assistant read-aloud responses
       - ending dialog while listening aborts and discards the pending speech turn
       - response Stop affects only dialog TTS; model text generation continues
@@ -947,6 +960,7 @@ modules:
       - frontend/src/components/MarkdownMessage.vue
       - frontend/src/components/MarkdownComposer.vue
       - frontend/src/services/chatExport.ts
+      - frontend/src/services/avatarState.ts
     startup:
       - loads backend-owned UI configuration before initial chat history
       - aborts chat startup when UI configuration loading fails
@@ -1059,6 +1073,29 @@ modules:
     dependencies:
       - backend/app/user_config.py
 
+  frontend/src/services/avatarState.ts:
+    role: cross-webview runtime-state boundary for avatar feedback
+    symbols:
+      AvatarVisualState:
+        values:
+          - standard
+          - listening
+          - thinking
+          - speaking
+      AvatarRuntimeState:
+        fields:
+          state: AvatarVisualState
+          backendPending: bool
+    responsibilities:
+      - publish current avatar runtime state from the chat webview through a Tauri event
+      - subscribe to avatar runtime state in the companion avatar webview
+      - keep visual avatar state separate from backend-pending feedback
+    consumers:
+      - frontend/src/ChatWindow.vue
+      - frontend/src/App.vue
+    native_dependency:
+      - "@tauri-apps/api/event"
+
   frontend/src/services/backend.ts:
     role: frontend HTTP boundary for backend communication
     responsibilities:
@@ -1078,7 +1115,7 @@ modules:
       - send the current persistent chat id with audio turns when available
       - synthesize plain text through /api/v1/tts and return WAV response plus playback id
       - notify backend playback completion through /api/v1/tts/playback-ended
-      - parse Avalo SSE chat / chunk / transcript_chunk / transcript_error / done / error events
+      - parse Avalo SSE chat / processing / chunk / transcript_chunk / transcript_error / done / error events
       - expose done separately while continuing to read until HTTP stream EOF
       - expose AbortSignal cancellation to callers
       - reject malformed or incomplete streams
@@ -1133,6 +1170,9 @@ modules:
       - include successfully transcribed audio turns as semantic model context
       - restore the audio placeholder when transcription fails or an audio turn is aborted
       - start dialog turns without adding a visible user or assistant message while only listening
+      - keep dialog backend-pending false while listening and set it on the processing event after capture completes
+      - keep backend-pending through transcript output and clear it on the first non-empty assistant chunk, failure, abort, or turn cleanup
+      - expose dialog processing independently from assistant-response streaming
       - add the audio user turn when transcript or assistant output first arrives
       - expose dialog listening cancellation separately from model-response generation
       - keep dialog model generation running after response audio is stopped
@@ -1455,6 +1495,9 @@ tests:
       - backend startup lifecycle integration boundary
       - startup diagnostics rendering
       - avatar visibility during startup and ready state
+      - runtime avatar state subscription
+      - configured sprite-set rendering and one-second frame rotation
+      - independent backend-pending balloon rendering
       - avatar interaction behavior
       - chat opening on avatar double-click
       - avatar drag threshold behavior
@@ -1561,6 +1604,7 @@ change_navigation:
       - backend/app/api/routes/audio.py
       - backend/app/api/router.py
       - backend/app/api/schemas.py
+      - tests/backend/test_audio_chat_contract.py
       - frontend/src/ChatWindow.vue
       - frontend/src/composables/useTransientChat.ts
       - frontend/src/services/backend.ts
@@ -1575,6 +1619,30 @@ change_navigation:
     maybe_inspect:
       - backend/app/config.py
       - tests/integration/test_ollama_integration.py
+
+  change_avatar_runtime_feedback:
+    inspect:
+      - backend/app/services/audio_chat.py
+      - backend/app/api/routes/audio.py
+      - frontend/src/services/backend.ts
+      - frontend/src/composables/useTransientChat.ts
+      - frontend/src/ChatWindow.vue
+      - frontend/src/services/avatarState.ts
+      - frontend/src/App.vue
+      - frontend/src/styles.css
+      - frontend/src/uiConfig.ts
+      - tests/backend/test_audio_chat_contract.py
+      - tests/frontend/backend.dialog.spec.ts
+      - tests/frontend/useTransientChat.dialog.spec.ts
+      - tests/frontend/ChatWindow.spec.ts
+      - tests/frontend/App.spec.ts
+    relevant_to:
+      - listening to processing transition
+      - backend-pending feedback
+      - cross-webview avatar state synchronization
+      - listening, thinking, and speaking avatar visuals
+      - sprite animation
+      - dialog audio Stop semantics
 
   implement_tts:
     inspect:
