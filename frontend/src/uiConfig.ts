@@ -1,3 +1,5 @@
+import { BACKEND_BASE_URL } from "./services/backend";
+
 export type UiSpriteRegion = {
   x: number;
   y: number;
@@ -28,7 +30,7 @@ let uiConfigPromise: Promise<UiConfig> | undefined;
 
 async function requestUiConfig(): Promise<UiConfig> {
   const response = await fetch(
-    "http://127.0.0.1:8095/api/v1/ui/config",
+    `${BACKEND_BASE_URL}/api/v1/ui/config`,
   );
 
   if (!response.ok) {
@@ -56,10 +58,3 @@ export async function loadUiConfig(): Promise<UiConfig> {
   }
 }
 
-export function getUiConfig(): UiConfig {
-  if (!uiConfig) {
-    throw new Error("UI configuration has not been loaded.");
-  }
-
-  return uiConfig;
-}

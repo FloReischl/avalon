@@ -316,13 +316,15 @@ onMounted(async () => {
 
   try {
     uiConfig.value = await loadUiConfig();
-    await refreshChats(true, 20);
   } catch (error) {
     console.error("[startup] failed to load UI config", error);
     errorMessage.value = `UI-Konfiguration konnte nicht geladen werden: ${
       error instanceof Error ? error.message : String(error)
     }`;
+    return;
   }
+
+  await refreshChats(true, 20);
 });
 
 
