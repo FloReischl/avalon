@@ -9,11 +9,13 @@ import {
 } from "vue";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 
-import { getActiveAvatar } from "./avatar";
 import {
+
   getBackendSnapshot,
   listenToBackendLifecycle,
 } from "./services/backendLifecycle";
+import { loadUiConfig, type UiConfig } from "./uiConfig";
+
 import {
   resizeAvatarWindow,
   setWindowInputRegions,
@@ -22,11 +24,14 @@ import {
 import { exitAvalo } from "./services/appLifecycle";
 import { showChatWindow } from "./services/chatWindow";
 import { startAvatarWindowDrag } from "./services/windowDrag";
+import { setAvatarWindowTitle } from "./services/windowTitle";
 
 type AudioState = "idle" | "recording";
 
-const avatar = getActiveAvatar();
+
+const uiConfig = ref<UiConfig>();
 const MAX_AUDIO_SECONDS = 30;
+
 const AVATAR_DRAG_THRESHOLD_PX = 5;
 const AVATAR_MIN_PERCENT = 50;
 const AVATAR_MAX_PERCENT = 150;
@@ -50,9 +55,11 @@ let audioPointerHeld = false;
 let avatarLoaded = false;
 let avatarSyncRunning = false;
 let avatarSyncPending = false;
+let uiConfigLoading = false;
 let unlisten: UnlistenFn | undefined;
 
 function addLog(message: string) {
+
   backendLogs.value.push(message);
 }
 
@@ -172,7 +179,32 @@ function initializeAvatar() {
   requestAvatarSync();
 }
 
+async function initializeUiConfig() {
+  if (uiConfig.value || uiConfigLoading) {
+    return;
+  }
+
+  uiConfigLoading = true;
+
+  try {
+    uiConfig.value = await loadUiConfig();
+    await setAvatarWindowTitle(uiConfig.value.name);
+
+  } catch (error) {
+    console.error("[ui-config] failed to load UI config", error);
+    backendStatus.value = "failed";
+    addLog(
+      error instanceof Error
+        ? `Failed to load UI config: ${error.message}`
+        : "Failed to load UI config",
+    );
+  } finally {
+    uiConfigLoading = false;
+  }
+}
+
 function clearRecordingTimer() {
+
   if (recordingTimer !== undefined) {
     window.clearInterval(recordingTimer);
     recordingTimer = undefined;
@@ -435,13 +467,25 @@ onMounted(async () => {
   }
 });
 
-watch(backendStatus, (status) => {
-  if (status !== "ready" || !avatarLoaded) {
-    return;
-  }
+watch(
+  backendStatus,
+  (status) => {
+    if (status !== "ready") {
+      return;
+    }
 
-  requestAvatarSync();
-});
+    if (!uiConfig.value) {
+      void initializeUiConfig();
+      return;
+    }
+
+    if (avatarLoaded) {
+      requestAvatarSync();
+    }
+  },
+  { immediate: true },
+);
+
 
 onBeforeUnmount(() => {
   audioPointerHeld = false;
@@ -476,10 +520,12 @@ onBeforeUnmount(() => {
     </section>
 
     <div
+      v-if="uiConfig"
       ref="avatarStage"
       class="avatar-stage"
       data-testid="avatar-stage"
     >
+
       <div
         class="avatar-region"
         :style="{ width: `${24 * avatarScalePercent / 100}rem` }"
@@ -494,8 +540,9 @@ onBeforeUnmount(() => {
         <img
           ref="avatarImage"
           class="avatar"
-          :src="avatar.imageUrl"
-          :alt="avatar.name"
+          :src="uiConfig.avatar.standard.url"
+          :alt="uiConfig.name"
+
           data-testid="avatar"
           @load="initializeAvatar"
         />

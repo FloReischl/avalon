@@ -14,9 +14,9 @@ import MarkdownMessage from "./components/MarkdownMessage.vue";
 
 import watermarkUrl from "./assets/watermark.png";
 
-import { getActiveAvatar } from "./avatar";
-
 import { useTransientChat } from "./composables/useTransientChat";
+import { loadUiConfig, type UiConfig } from "./uiConfig";
+
 import {
   abortAudioRecording as abortBackendAudioRecording,
   notifyTtsPlaybackEnded,
@@ -26,9 +26,10 @@ import {
 import { exportChatToMarkdown } from "./services/chatExport";
 
 
-const avatar = getActiveAvatar();
+const uiConfig = ref<UiConfig>();
 
 const {
+
   messages,
   input,
   isGenerating,
@@ -279,8 +280,13 @@ async function exportChat(chatId: number) {
   closeChatMenu();
 
   try {
-    await exportChatToMarkdown(chatId, avatar.name);
+    if (!uiConfig.value) {
+      throw new Error("UI configuration has not been loaded.");
+    }
+
+    await exportChatToMarkdown(chatId, uiConfig.value.name);
   } catch (error) {
+
     console.error("[chat-export] failed to export chat", error);
     errorMessage.value = "Chat konnte nicht exportiert werden.";
   }
@@ -304,11 +310,21 @@ function handleWindowKeydown(event: KeyboardEvent) {
   closeChatMenu();
 }
 
-onMounted(() => {
+onMounted(async () => {
   document.addEventListener("pointerdown", closeChatMenu);
   window.addEventListener("keydown", handleWindowKeydown);
-  void refreshChats(true, 20);
+
+  try {
+    uiConfig.value = await loadUiConfig();
+    await refreshChats(true, 20);
+  } catch (error) {
+    console.error("[startup] failed to load UI config", error);
+    errorMessage.value = `UI-Konfiguration konnte nicht geladen werden: ${
+      error instanceof Error ? error.message : String(error)
+    }`;
+  }
 });
+
 
 onBeforeUnmount(() => {
   document.removeEventListener("pointerdown", closeChatMenu);
@@ -1048,7 +1064,7 @@ function handleInputKeydown(event: KeyboardEvent) {
             :data-testid="`message-${message.role}`"
           >
             <div class="message-role">
-              {{ message.role === "user" ? "Du" : avatar.name }}
+              {{ message.role === "user" ? "Du" : uiConfig?.name ?? "" }}
             </div>
             <MarkdownMessage
               :ref="(instance) => setMessageRenderer(index, instance)"

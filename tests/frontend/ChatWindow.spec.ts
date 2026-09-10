@@ -13,7 +13,9 @@ const {
   streamDialogResponseMock,
   synthesizeSpeechMock,
   exportChatToMarkdownMock,
+  loadUiConfigMock,
 } = vi.hoisted(() => ({
+
   abortAudioRecordingMock: vi.fn(),
   getChatMock: vi.fn(),
   getChatsMock: vi.fn(),
@@ -24,7 +26,9 @@ const {
   streamDialogResponseMock: vi.fn(),
   synthesizeSpeechMock: vi.fn(),
   exportChatToMarkdownMock: vi.fn(),
+  loadUiConfigMock: vi.fn(),
 }));
+
 
 
 vi.mock("../../frontend/src/services/backend", async (importOriginal) => {
@@ -51,7 +55,12 @@ vi.mock("../../frontend/src/services/chatExport", () => ({
   exportChatToMarkdown: exportChatToMarkdownMock,
 }));
 
+vi.mock("../../frontend/src/uiConfig", () => ({
+  loadUiConfig: loadUiConfigMock,
+}));
+
 vi.mock("../../frontend/src/components/MarkdownComposer.vue", async () => {
+
   const { defineComponent, h } = await import("vue");
 
   return {
@@ -116,6 +125,120 @@ describe("ChatWindow", () => {
     exportChatToMarkdownMock.mockReset();
     exportChatToMarkdownMock.mockResolvedValue(undefined);
 
+    loadUiConfigMock.mockReset();
+    loadUiConfigMock.mockResolvedValue({
+      name: "Frieda",
+      avatar: {
+        standard: {
+          key: "standard",
+          url: "http://127.0.0.1:8095/api/v1/assets/avatar/images/standard",
+        },
+        animations: [],
+      },
+    });
+  });
+
+
+  it("loads UI config before loading chat history", async () => {
+    let resolveUiConfig:
+      | ((config: {
+          name: string;
+          avatar: {
+            standard: {
+              key: "standard";
+              url: string;
+            };
+            animations: never[];
+          };
+        }) => void)
+      | undefined;
+
+    loadUiConfigMock.mockImplementation(
+      () => new Promise((resolve) => {
+        resolveUiConfig = resolve;
+      }),
+    );
+
+    mount(ChatWindow);
+    await flushPromises();
+
+    expect(loadUiConfigMock).toHaveBeenCalledTimes(1);
+    expect(getChatsMock).not.toHaveBeenCalled();
+
+    resolveUiConfig?.({
+      name: "Frieda",
+      avatar: {
+        standard: {
+          key: "standard",
+          url: "http://127.0.0.1:8095/api/v1/assets/avatar/images/standard",
+        },
+        animations: [],
+      },
+    });
+    await flushPromises();
+
+    expect(getChatsMock).toHaveBeenCalled();
+  });
+
+  it("shows a hard startup error when UI config loading fails", async () => {
+    loadUiConfigMock.mockRejectedValue(
+      new Error("UI config request failed with HTTP 500"),
+    );
+
+    const wrapper = mount(ChatWindow);
+    await flushPromises();
+
+    expect(getChatsMock).not.toHaveBeenCalled();
+    expect(wrapper.get('[data-testid="chat-error"]').text()).toContain(
+      "UI-Konfiguration konnte nicht geladen werden: UI config request failed with HTTP 500",
+    );
+  });
+
+  it("uses the configured avatar name for assistant messages", async () => {
+    loadUiConfigMock.mockResolvedValue({
+      name: "Konfig-Frieda",
+      avatar: {
+        standard: {
+          key: "standard",
+          url: "http://127.0.0.1:8095/api/v1/assets/avatar/images/standard",
+        },
+        animations: [],
+      },
+    });
+
+    getChatMock.mockResolvedValue({
+      id: 42,
+      title: "Chat",
+      pinned: false,
+      created_at: "2026-09-07T10:00:00",
+      messages: [
+        {
+          id: 1,
+          role: "assistant",
+          content: "Hallo",
+          created_at: "2026-09-07T10:00:01",
+        },
+      ],
+    });
+
+    getChatsMock.mockResolvedValue([
+      {
+        id: 42,
+        title: "Chat",
+        pinned: false,
+        created_at: "2026-09-07T10:00:00",
+      },
+    ]);
+
+    const wrapper = mount(ChatWindow);
+    await flushPromises();
+
+    await wrapper.get('[data-testid="chat-42"]').trigger("click");
+    await flushPromises();
+
+    expect(
+      wrapper.get('[data-testid="message-assistant"] .message-role').text(),
+    ).toBe("Konfig-Frieda");
   });
 
   it("renders the chat sidebar with its default width", () => {

@@ -9,7 +9,12 @@ const {
   startDraggingMock,
   resizeAvatarWindowMock,
   setWindowInputRegionsMock,
+  loadUiConfigMock,
+  setAvatarWindowTitleMock,
 } = vi.hoisted(() => ({
+
+
+
   exitAvaloMock: vi.fn(),
   getBackendSnapshotMock: vi.fn(),
   listenToBackendLifecycleMock: vi.fn(),
@@ -17,9 +22,17 @@ const {
   startDraggingMock: vi.fn(),
   resizeAvatarWindowMock: vi.fn(),
   setWindowInputRegionsMock: vi.fn(),
+  loadUiConfigMock: vi.fn(),
+  setAvatarWindowTitleMock: vi.fn(),
+}));
+
+vi.mock("../../frontend/src/services/windowTitle", () => ({
+  setAvatarWindowTitle: setAvatarWindowTitleMock,
 }));
 
 vi.mock("../../frontend/src/services/backendLifecycle", () => ({
+
+
   getBackendSnapshot: getBackendSnapshotMock,
   listenToBackendLifecycle: listenToBackendLifecycleMock,
 }));
@@ -41,7 +54,12 @@ vi.mock("../../frontend/src/services/inputShape", () => ({
   setWindowInputRegions: setWindowInputRegionsMock,
 }));
 
+vi.mock("../../frontend/src/uiConfig", () => ({
+  loadUiConfig: loadUiConfigMock,
+}));
+
 import App from "../../frontend/src/App.vue";
+
 
 describe("App", () => {
   beforeEach(() => {
@@ -52,13 +70,29 @@ describe("App", () => {
     startDraggingMock.mockReset();
     resizeAvatarWindowMock.mockReset();
     setWindowInputRegionsMock.mockReset();
+    loadUiConfigMock.mockReset();
+    setAvatarWindowTitleMock.mockReset();
     exitAvaloMock.mockResolvedValue(undefined);
+    setAvatarWindowTitleMock.mockResolvedValue(undefined);
+
     listenToBackendLifecycleMock.mockResolvedValue(() => {});
+
     showChatWindowMock.mockResolvedValue(undefined);
     startDraggingMock.mockResolvedValue(undefined);
     resizeAvatarWindowMock.mockResolvedValue(undefined);
     setWindowInputRegionsMock.mockResolvedValue(undefined);
+    loadUiConfigMock.mockResolvedValue({
+      name: "Frieda",
+      avatar: {
+        standard: {
+          key: "standard",
+          url: "http://127.0.0.1:8095/api/v1/assets/avatar/images/standard",
+        },
+        animations: [],
+      },
+    });
   });
+
 
   afterEach(() => {
     vi.useRealTimers();
@@ -106,7 +140,7 @@ describe("App", () => {
     expect(wrapper.find('[data-testid="active-panel"]').exists()).toBe(false);
   });
 
-  it("keeps Avatar visible while the backend is starting", async () => {
+  it("waits for backend readiness before loading UI config", async () => {
     getBackendSnapshotMock.mockResolvedValue({
       status: "waiting-for-health",
       logs: ["Waiting for backend health endpoint"],
@@ -115,10 +149,51 @@ describe("App", () => {
     const wrapper = mount(App);
     await flushPromises();
 
+    expect(loadUiConfigMock).not.toHaveBeenCalled();
+    expect(wrapper.find('[data-testid="avatar"]').exists()).toBe(false);
+    expect(wrapper.get('[data-testid="startup-panel"]').exists()).toBe(true);
+  });
+
+
+  it("loads UI config when the backend is ready", async () => {
+    getBackendSnapshotMock.mockResolvedValue({
+      status: "ready",
+      logs: ["Backend ready"],
+    });
+
+    const wrapper = mount(App);
+    await flushPromises();
+
+    expect(loadUiConfigMock).toHaveBeenCalledTimes(1);
+    expect(wrapper.get('[data-testid="avatar"]').attributes("src")).toBe(
+      "http://127.0.0.1:8095/api/v1/assets/avatar/images/standard",
+    );
     expect(wrapper.get('[data-testid="avatar"]').attributes("alt")).toBe(
       "Frieda",
     );
-    expect(wrapper.get('[data-testid="startup-panel"]').exists()).toBe(true);
+    expect(setAvatarWindowTitleMock).toHaveBeenCalledWith("Frieda");
+
+  });
+
+  it("shows a hard startup failure when UI config loading fails", async () => {
+    getBackendSnapshotMock.mockResolvedValue({
+      status: "ready",
+      logs: ["Backend ready"],
+    });
+    loadUiConfigMock.mockRejectedValue(
+      new Error("UI config request failed with HTTP 500"),
+    );
+
+    const wrapper = mount(App);
+    await flushPromises();
+
+    expect(wrapper.get('[data-testid="backend-status"]').text()).toBe(
+      "failed",
+    );
+    expect(wrapper.get('[data-testid="startup-log"]').text()).toContain(
+      "Failed to load UI config: UI config request failed with HTTP 500",
+    );
+    expect(wrapper.find('[data-testid="avatar"]').exists()).toBe(false);
   });
 
   it("opens the chat window when Avatar is double-clicked", async () => {
@@ -199,18 +274,9 @@ describe("App", () => {
   });
 
   it("waits for the WebView resize event before rebuilding the Avatar input shape", async () => {
-    let emitStatus: ((status: string) => void) | undefined;
-
-    listenToBackendLifecycleMock.mockImplementation(
-      async (handlers: { onStatus: (status: string) => void }) => {
-        emitStatus = handlers.onStatus;
-        return () => {};
-      },
-    );
-
     getBackendSnapshotMock.mockResolvedValue({
-      status: "waiting-for-health",
-      logs: ["Waiting for backend health endpoint"],
+      status: "ready",
+      logs: ["Backend ready"],
     });
 
     const getContextSpy = vi
@@ -242,29 +308,6 @@ describe("App", () => {
 
       const avatar = wrapper.get('[data-testid="avatar"]');
       avatar.element.getBoundingClientRect = vi.fn(() => ({
-        x: 0,
-        y: 0,
-        top: 0,
-        right: 2,
-        bottom: 2,
-        left: 0,
-        width: 2,
-        height: 2,
-        toJSON: () => ({}),
-      }));
-
-      await avatar.trigger("load");
-      await flushPromises();
-
-      expect(setWindowInputRegionsMock).toHaveBeenCalledTimes(1);
-
-      emitStatus?.("ready");
-      await flushPromises();
-
-      expect(resizeAvatarWindowMock).toHaveBeenCalledTimes(1);
-      expect(setWindowInputRegionsMock).toHaveBeenCalledTimes(1);
-
-      avatar.element.getBoundingClientRect = vi.fn(() => ({
         x: 10,
         y: 20,
         top: 20,
@@ -276,10 +319,16 @@ describe("App", () => {
         toJSON: () => ({}),
       }));
 
+      await avatar.trigger("load");
+      await flushPromises();
+
+      expect(resizeAvatarWindowMock).toHaveBeenCalledTimes(1);
+      expect(setWindowInputRegionsMock).not.toHaveBeenCalled();
+
       window.dispatchEvent(new Event("resize"));
       await flushPromises();
 
-      expect(setWindowInputRegionsMock).toHaveBeenCalledTimes(2);
+      expect(setWindowInputRegionsMock).toHaveBeenCalledTimes(1);
 
       const latestRectangles =
         setWindowInputRegionsMock.mock.calls.at(-1)?.[0];
