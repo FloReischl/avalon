@@ -711,6 +711,11 @@ function toggleComposerExpanded() {
   isComposerExpanded.value = !isComposerExpanded.value;
 }
 
+function sendComposerInput() {
+  void send();
+  isComposerExpanded.value = false;
+}
+
 
 function handleInputKeydown(event: KeyboardEvent) {
   if (
@@ -722,20 +727,19 @@ function handleInputKeydown(event: KeyboardEvent) {
 
   if (event.ctrlKey) {
     event.preventDefault();
-    void send();
+    sendComposerInput();
     return;
   }
 
   if (
-    isComposerExpanded.value
-    || event.shiftKey
+    event.shiftKey
     || input.value.includes("\n")
   ) {
     return;
   }
 
   event.preventDefault();
-  void send();
+  sendComposerInput();
 }
 
 
@@ -1349,7 +1353,7 @@ function handleInputKeydown(event: KeyboardEvent) {
             aria-label="Nachricht senden"
             title="Nachricht senden"
             :disabled="input.length === 0 || isDialogActive"
-            @click="send"
+            @click="sendComposerInput"
           >
             <svg
               viewBox="0 0 24 24"

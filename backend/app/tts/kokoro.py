@@ -8,12 +8,32 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any
 
+import regex
+
 from app.config import settings
 from app.user_config import get_user_config
 
 
 _SAMPLE_RATE_HZ = 24000
 
+_EMOJI_PATTERN = regex.compile(
+    r"(?:"
+    r"\p{Regional_Indicator}{1,2}"
+    r"|[0-9#*]\uFE0F?\u20E3"
+    r"|\p{Extended_Pictographic}"
+    r"(?:\uFE0F|\p{Emoji_Modifier})?"
+    r"(?:\u200D\p{Extended_Pictographic}"
+    r"(?:\uFE0F|\p{Emoji_Modifier})?)+"
+    r"|\p{Extended_Pictographic}\uFE0F"
+    r"(?:\p{Emoji_Modifier})?"
+    r"|\p{Emoji_Presentation}"
+    r"(?:\p{Emoji_Modifier})?"
+    r")"
+)
+
+
+def _remove_emojis(text: str) -> str:
+    return _EMOJI_PATTERN.sub("", text)
 
 
 class KokoroTextToSpeech:
@@ -40,6 +60,8 @@ class KokoroTextToSpeech:
 
     async def synthesize(self, text: str) -> bytes:
         """Generate one complete WAV response without creating a temporary file."""
+        text = _remove_emojis(text)
+
         if not text.strip():
             raise ValueError("TTS text must not be empty.")
 

@@ -23,6 +23,24 @@ class FakePipeline:
         yield None, None, [0.1, -0.1, 0.05]
 
 
+class CapturingPipeline:
+    def __init__(self) -> None:
+        self.texts: list[str] = []
+
+    def __call__(
+        self,
+        text: str,
+        *,
+        voice: Any,
+        speed: int,
+    ):
+        self.texts.append(text)
+        assert voice == "victoria"
+        assert speed == 1
+
+        yield None, None, [0.1, -0.1, 0.05]
+
+
 @pytest.mark.asyncio
 async def test_kokoro_loads_lazily_and_returns_wav(
     monkeypatch: pytest.MonkeyPatch,
@@ -54,6 +72,43 @@ async def test_kokoro_loads_lazily_and_returns_wav(
     assert first.startswith(b"RIFF")
     assert second.startswith(b"RIFF")
     assert load_count == 1
+
+
+@pytest.mark.asyncio
+async def test_kokoro_removes_emojis_before_synthesis(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    engine = KokoroTextToSpeech(
+        device="cpu",
+        model_path=Path("unused-model.pth"),
+        voice_path=Path("unused-voice.pt"),
+        config_path=Path("unused-config.json"),
+    )
+    pipeline = CapturingPipeline()
+
+    monkeypatch.setattr(
+        engine,
+        "_load_runtime",
+        lambda: (object(), pipeline, "victoria", "cpu"),
+    )
+
+    audio = await engine.synthesize(
+        "Hallo👋🏽 Flo#️⃣🇩🇪👩‍💻!"
+    )
+
+    assert audio.startswith(b"RIFF")
+    assert pipeline.texts == ["Hallo Flo!"]
+
+
+@pytest.mark.asyncio
+async def test_kokoro_rejects_emoji_only_text() -> None:
+    engine = KokoroTextToSpeech()
+
+    with pytest.raises(
+        ValueError,
+        match="TTS text must not be empty",
+    ):
+        await engine.synthesize("👋🏽")
 
 
 @pytest.mark.asyncio

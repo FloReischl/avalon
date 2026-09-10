@@ -11,7 +11,6 @@ todo
 
 minor chabges
 - input-field maximized -> send -> input-field back to default size
-- remove emojis vor TTS
 
 
 minor change (only 1)

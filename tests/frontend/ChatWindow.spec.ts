@@ -696,6 +696,42 @@ describe("ChatWindow", () => {
     expect(wrapper.get('[data-testid="chat-input"]').element).toBe(inputElement);
   });
 
+  it("sends a single-line message with Enter from the expanded composer and collapses it", async () => {
+    streamChatMessageMock.mockResolvedValue(undefined);
+
+    const wrapper = mount(ChatWindow);
+    const input = wrapper.get('[data-testid="chat-input"]');
+
+    await wrapper.get('[data-testid="toggle-composer"]').trigger("click");
+    await input.setValue("Hallo");
+    await input.trigger("keydown", { key: "Enter" });
+    await flushPromises();
+
+    expect(streamChatMessageMock).toHaveBeenCalledTimes(1);
+    expect(streamChatMessageMock.mock.calls[0][0]).toEqual({
+      message: "Hallo",
+    });
+    expect(wrapper.get(".composer").classes()).not.toContain(
+      "composer--expanded",
+    );
+  });
+
+  it("collapses the expanded composer when sending with the send button", async () => {
+    streamChatMessageMock.mockResolvedValue(undefined);
+
+    const wrapper = mount(ChatWindow);
+
+    await wrapper.get('[data-testid="toggle-composer"]').trigger("click");
+    await wrapper.get('[data-testid="chat-input"]').setValue("Hallo");
+    await wrapper.get('[data-testid="send-chat"]').trigger("click");
+    await flushPromises();
+
+    expect(streamChatMessageMock).toHaveBeenCalledTimes(1);
+    expect(wrapper.get(".composer").classes()).not.toContain(
+      "composer--expanded",
+    );
+  });
+
   it("resizes the sidebar and constrains its width", async () => {
     const originalInnerWidth = window.innerWidth;
     Object.defineProperty(window, "innerWidth", {
