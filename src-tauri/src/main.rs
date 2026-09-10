@@ -71,6 +71,18 @@ fn main() {
             exit_app
         ])
         .setup(move |app| {
+            let icon = tauri::include_image!("./icons/icon.png");
+
+            for label in ["main", "chat"] {
+                let window = app
+                    .get_webview_window(label)
+                    .ok_or_else(|| std::io::Error::other(format!("window '{label}' not found")))?;
+
+                window
+                    .set_icon(icon.clone())
+                    .map_err(std::io::Error::other)?;
+            }
+
             backend
                 .start(app.handle().clone())
                 .map_err(std::io::Error::other)?;
