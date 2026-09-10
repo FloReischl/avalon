@@ -1073,6 +1073,7 @@ modules:
       - exposes effective standard avatar only
       - exposes configured animations including custom categories
       - returns finished absolute backend asset URLs
+      - adds one process-start cache token to all avatar asset URLs so images reload after backend restart while remaining cacheable within the process lifetime
       - does not expose persona, instructions, filesystem paths, or TTS configuration
     dependencies:
       - backend/app/user_config.py

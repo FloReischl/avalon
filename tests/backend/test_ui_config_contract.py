@@ -2,6 +2,7 @@
 
 import asyncio
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 
 from httpx import ASGITransport, AsyncClient
 
@@ -38,6 +39,24 @@ def initialize_blueprint_config() -> None:
     initialize_user_config(BLUEPRINT_CONFIG)
 
 
+def assert_avatar_asset_url(
+    url: str,
+    expected_path: str,
+) -> str:
+    parsed = urlsplit(url)
+
+    assert parsed.scheme == "http"
+    assert parsed.netloc == "test"
+    assert parsed.path == expected_path
+
+    query = parse_qs(parsed.query)
+    assert set(query) == {"v"}
+    assert len(query["v"]) == 1
+    assert query["v"][0]
+
+    return query["v"][0]
+
+
 def test_ui_config_exposes_only_frontend_runtime_data() -> None:
     initialize_blueprint_config()
 
@@ -47,10 +66,12 @@ def test_ui_config_exposes_only_frontend_runtime_data() -> None:
     payload = response.json()
 
     assert payload["name"] == "Frieda"
-    assert payload["avatar"]["standard"] == {
-        "key": "standard",
-        "url": "http://test/api/v1/assets/avatar/images/standard",
-    }
+    assert payload["avatar"]["standard"]["key"] == "standard"
+
+    cache_token = assert_avatar_asset_url(
+        payload["avatar"]["standard"]["url"],
+        "/api/v1/assets/avatar/images/standard",
+    )
 
     assert payload["avatar"]["animations"]
 
@@ -61,10 +82,10 @@ def test_ui_config_exposes_only_frontend_runtime_data() -> None:
             "spriteSetUrl",
             "sprites",
         }
-        assert animation["spriteSetUrl"] == (
-            "http://test/api/v1/assets/avatar/images/"
-            f"{animation['key']}"
-        )
+        assert assert_avatar_asset_url(
+            animation["spriteSetUrl"],
+            f"/api/v1/assets/avatar/images/{animation['key']}",
+        ) == cache_token
         for sprite in animation["sprites"]:
             assert set(sprite) == {
                 "x",
@@ -79,6 +100,27 @@ def test_ui_config_exposes_only_frontend_runtime_data() -> None:
     assert "base_path" not in serialized
     assert "kokoro" not in serialized
     assert "chatterbox" not in serialized
+
+
+def test_ui_config_keeps_avatar_cache_token_stable() -> None:
+    initialize_blueprint_config()
+
+    first_response = request("/api/v1/ui/config")
+    second_response = request("/api/v1/ui/config")
+
+    assert first_response.status_code == 200
+    assert second_response.status_code == 200
+
+    first_token = assert_avatar_asset_url(
+        first_response.json()["avatar"]["standard"]["url"],
+        "/api/v1/assets/avatar/images/standard",
+    )
+    second_token = assert_avatar_asset_url(
+        second_response.json()["avatar"]["standard"]["url"],
+        "/api/v1/assets/avatar/images/standard",
+    )
+
+    assert second_token == first_token
 
 
 def test_ui_config_exposes_custom_animations() -> None:
