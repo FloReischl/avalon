@@ -120,13 +120,16 @@ key_flows:
     entry: backend/app/main.py:create_app
     uses:
       - backend/app/config.py:settings
+      - backend/app/user_config.py:initialize_user_config
       - backend/app/api/router.py:api_router
       - Alembic migration runner
     behavior:
       - creates FastAPI application
+      - loads and validates editable per-user configuration before database migration startup
+      - user configuration errors fail backend startup
       - runs database migrations to current Alembic head during application lifespan startup
       - backend startup fails when database initialization or migration fails
-      - database startup failures write their full traceback to server stderr
+      - startup failures write their full traceback to server stderr
       - uncaught request exceptions write their full traceback to server stderr
       - configures frontend CORS origin
       - allows browser frontend GET, POST, PATCH, and DELETE requests
@@ -279,7 +282,7 @@ key_flows:
 modules:
 
   backend/app/config.py:
-    role: central backend configuration
+    role: central technical backend configuration
     symbols:
       Settings:
         kind: dataclass
@@ -295,11 +298,7 @@ modules:
           ollama_model: str
           tts_engine: str
           tts_device: str
-          tts_chatterbox_reference_audio: str
           tts_chatterbox_model_revision: str
-          tts_kokoro_model: str
-          tts_kokoro_voice: str
-          tts_kokoro_config: str
           tts_idle_unload_seconds: float
       settings:
         kind: singleton
@@ -309,6 +308,7 @@ modules:
       - health endpoint
       - Ollama runtime
       - audio constraints
+      - technical TTS engine selection
 
   backend/app/main.py:
     role: FastAPI application entry point
@@ -322,10 +322,12 @@ modules:
     dependencies:
       - backend/app/api/router.py
       - backend/app/config.py
+      - backend/app/user_config.py
       - database migration runner
     behavior:
+      - initialize and validate per-user configuration before migrations
       - run Alembic migrations during lifespan startup
-      - fail backend startup when database initialization fails
+      - fail backend startup when configuration or database initialization fails
       - preserve raw technical exception diagnostics on stderr
     relevant_to:
       - backend startup
@@ -342,11 +344,15 @@ modules:
         kind: APIRouter
     routes:
       - health router at root
+      - UI config router under /api/v1
+      - configured avatar asset router under /api/v1
       - chat router under /api/v1
       - audio recording router under /api/v1
       - TTS router under /api/v1
     dependencies:
       - backend/app/api/routes/health.py
+      - backend/app/api/routes/ui.py
+      - backend/app/api/routes/assets.py
       - backend/app/api/routes/chat.py
       - backend/app/api/routes/audio.py
       - backend/app/api/routes/tts.py
@@ -398,11 +404,30 @@ modules:
       TtsPlaybackEndedRequest:
         fields:
           playback_id: non_empty_str
+      UiConfigResponse:
+        fields:
+          name: str
+          avatar: UiAvatarResponse
+        semantics:
+          - exposes only frontend-approved runtime configuration
+          - exposes effective standard avatar only
+          - avatar image locations are backend URLs rather than filesystem paths
+      UiAvatarResponse:
+        fields:
+          standard: UiStandardImageResponse
+          animations: list[UiAnimationResponse]
+      UiAnimationResponse:
+        fields:
+          key: str
+          category: str
+          spriteSetUrl: str
+          sprites: list[UiSpriteRegionResponse]
     relevant_to:
       - health API
       - text chat API
       - audio response API
       - TTS synthesis and playback lifecycle API
+      - frontend UI configuration contract
       - frontend/backend conversation contract
 
   backend/app/api/routes/health.py:
@@ -787,18 +812,13 @@ modules:
   frontend/src/main.ts:
     role: Vue application bootstrap and Tauri window-root selector
     behavior:
-      - initialize active avatar configuration before mounting Vue
       - mounts ChatWindow.vue for Tauri window label chat
       - mounts App.vue otherwise
-      - sets avatar-window title from active avatar name
       - sets chat-window title to "Chat Window"
       - preserves browser development without requiring a Tauri runtime
       - logs bootstrap failure and leaves the app unmounted
-    dependencies:
-      - frontend/src/avatar.ts
     relevant_to:
       - frontend startup
-      - avatar configuration
       - desktop window composition
       - App.vue
       - ChatWindow.vue
@@ -820,14 +840,18 @@ modules:
       - native input-shape generation
       - frontend tests
     dependencies:
-      - frontend/src/avatar.ts
+      - frontend/src/uiConfig.ts
       - frontend/src/services/appLifecycle.ts
       - frontend/src/services/backendLifecycle.ts
       - frontend/src/services/inputShape.ts
       - frontend/src/services/chatWindow.ts
       - frontend/src/services/windowDrag.ts
+      - frontend/src/services/windowTitle.ts
     interaction:
-      - renders active avatar image and name from avatar configuration
+      - waits for backend readiness before loading UI configuration
+      - treats UI configuration load failure as startup failure
+      - renders the configured standard avatar image and name
+      - sets the avatar-window title from configured name
       - avatar drag starts only after pointer movement crosses a small threshold
       - avatar double-click opens the chat window
       - double-click remains functional after moving the avatar
@@ -918,11 +942,15 @@ modules:
       - streaming interaction
       - frontend chat tests
     dependencies:
-      - frontend/src/avatar.ts
+      - frontend/src/uiConfig.ts
       - frontend/src/composables/useTransientChat.ts
       - frontend/src/components/MarkdownMessage.vue
       - frontend/src/components/MarkdownComposer.vue
       - frontend/src/services/chatExport.ts
+    startup:
+      - loads backend-owned UI configuration before initial chat history
+      - aborts chat startup when UI configuration loading fails
+      - uses configured avatar name for assistant labels and Markdown export
 
 
   frontend/src/services/chatExport.ts:
@@ -948,33 +976,22 @@ modules:
       - chat management menu
 
 
-  frontend/src/avatar.ts:
-    role: frontend active-avatar configuration loader
+  frontend/src/uiConfig.ts:
+    role: cached frontend client for backend-owned UI configuration
     responsibilities:
-      - define current source-selected avatar id
-      - load registered avatar.yaml and standard.png assets through explicit static Vite imports
-      - parse avatar.yaml with YAML parser
-      - require non-empty avatar name
-      - fail when the requested registered avatar is missing
-      - expose initialized active avatar to frontend components
-    current_scope:
-      - only avatar name is consumed
-      - persona and instructions remain unused
-      - current active avatar is selected in source code
-      - currently available avatars are declared in an explicit source registry
-      - adding another avatar requires adding its asset imports and registry entry
-
+      - load GET /api/v1/ui/config from the local backend
+      - share an in-flight request within one frontend webview
+      - cache successfully loaded UI configuration within one frontend webview
+      - expose configured assistant name, standard avatar URL, animations, and sprite regions
+      - retry on a later call after a failed request
     dependencies:
-      - yaml
-      - frontend/src/assets/avatars/frieda1/avatar.yaml
-      - frontend/src/assets/avatars/frieda1/standard.png
+      - frontend/src/services/backend.ts:BACKEND_BASE_URL
     relevant_to:
       - frontend startup
       - avatar identity
       - avatar rendering
-      - window title
-      - assistant role label
-
+      - assistant role labels
+      - chat export
   frontend/src/services/appLifecycle.ts:
     role: frontend Tauri boundary for application lifecycle
     responsibilities:
@@ -997,6 +1014,50 @@ modules:
       - start native drag of the current avatar window
     consumers:
       - frontend/src/App.vue
+
+  backend/app/user_config.py:
+    role: editable per-user runtime configuration loader and validator
+    configuration_path: ~/.avalo/config.yaml
+    behavior:
+      - loads YAML once during backend bootstrap and keeps the validated configuration immutable at runtime
+      - rejects unknown configuration fields
+      - requires unique avatar keys and an effective standard avatar
+      - requires listening, speaking, and thinking animation keys per avatar
+      - validates compact sprite regions
+      - normalizes avatar base paths and prevents configured image assets from escaping them
+      - validates all declared avatar image files during startup
+      - resolves relative runtime artifact paths against project root
+      - validates active Kokoro model, voice, and config artifacts during startup
+      - does not require inactive Chatterbox reference audio to exist
+    relevant_to:
+      - backend startup
+      - UI configuration endpoint
+      - configured avatar asset serving
+      - Kokoro TTS configuration
+
+  backend/app/api/routes/ui.py:
+    role: restricted frontend runtime configuration endpoint
+    endpoint: "GET /api/v1/ui/config"
+    behavior:
+      - exposes global configured name
+      - exposes effective standard avatar only
+      - exposes configured animations including custom categories
+      - returns finished absolute backend asset URLs
+      - does not expose persona, instructions, filesystem paths, or TTS configuration
+    dependencies:
+      - backend/app/user_config.py
+      - backend/app/api/schemas.py
+
+  backend/app/api/routes/assets.py:
+    role: configured effective-avatar image asset endpoint
+    endpoint: "GET /api/v1/assets/avatar/images/{key}"
+    behavior:
+      - serves standard image for key standard
+      - resolves animation keys only from validated effective-avatar configuration
+      - returns HTTP 404 for unknown keys
+      - accepts no client-provided filesystem paths
+    dependencies:
+      - backend/app/user_config.py
 
   frontend/src/services/backend.ts:
     role: frontend HTTP boundary for backend communication
@@ -1170,23 +1231,12 @@ modules:
       - src-tauri/src/main.rs
 
 
-  frontend/src/assets/avatars/frieda1/avatar.yaml:
-    role: current avatar identity and future persona configuration
-    current_usage:
-      - name
-    currently_unused:
-      - persona
-      - instructions
-    relevant_to:
-      - avatar identity
-      - frontend startup
-
-  frontend/src/assets/avatars/frieda1/standard.png:
-    role: current default avatar image
-    relevant_to:
-      - companion rendering
-      - alpha-derived X11 input shape
-
+  frontend/src/services/windowTitle.ts:
+    role: Tauri frontend boundary for avatar-window title updates
+    responsibilities:
+      - set the native avatar-window title from backend-provided UI configuration
+    consumers:
+      - frontend/src/App.vue
   src-tauri/src/main.rs:
     role: Tauri desktop application entry point
     responsibilities:
