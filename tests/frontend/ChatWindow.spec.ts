@@ -1,6 +1,24 @@
 import { nextTick } from "vue";
-import { flushPromises, mount } from "@vue/test-utils";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  enableAutoUnmount,
+  flushPromises,
+  mount,
+} from "@vue/test-utils";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
+
+enableAutoUnmount(afterEach);
+
+Object.defineProperty(URL, "revokeObjectURL", {
+  configurable: true,
+  value: vi.fn(),
+});
 
 const {
   abortAudioRecordingMock,
@@ -14,6 +32,8 @@ const {
   synthesizeSpeechMock,
   startAudioCallMock,
   getAudioCallStatusMock,
+  listenToAudioCallChangedMock,
+  publishAudioCallChangedMock,
   exportChatToMarkdownMock,
   loadUiConfigMock,
 } = vi.hoisted(() => ({
@@ -29,6 +49,8 @@ const {
   synthesizeSpeechMock: vi.fn(),
   startAudioCallMock: vi.fn(),
   getAudioCallStatusMock: vi.fn(),
+  listenToAudioCallChangedMock: vi.fn(),
+  publishAudioCallChangedMock: vi.fn(),
   exportChatToMarkdownMock: vi.fn(),
   loadUiConfigMock: vi.fn(),
 }));
@@ -56,6 +78,11 @@ vi.mock("../../frontend/src/services/backend", async (importOriginal) => {
 
   };
 });
+
+vi.mock("../../frontend/src/services/audioCallEvents", () => ({
+  listenToAudioCallChanged: listenToAudioCallChangedMock,
+  publishAudioCallChanged: publishAudioCallChangedMock,
+}));
 
 vi.mock("../../frontend/src/services/chatExport", () => ({
   exportChatToMarkdown: exportChatToMarkdownMock,
@@ -144,6 +171,11 @@ describe("ChatWindow", () => {
       turn_active: false,
       pending_speech: null,
     });
+
+    listenToAudioCallChangedMock.mockReset();
+    listenToAudioCallChangedMock.mockResolvedValue(() => {});
+    publishAudioCallChangedMock.mockReset();
+    publishAudioCallChangedMock.mockResolvedValue(undefined);
 
     exportChatToMarkdownMock.mockReset();
     exportChatToMarkdownMock.mockResolvedValue(undefined);
@@ -339,7 +371,9 @@ describe("ChatWindow", () => {
     await wrapper.get('[data-testid="chat-42"]').trigger("click");
     await flushPromises();
     await wrapper.get('[data-testid="dialog-call"]').trigger("click");
+    await flushPromises();
     expect(startAudioCallMock).toHaveBeenCalledWith(42);
+    expect(publishAudioCallChangedMock).toHaveBeenCalledTimes(1);
     expect(streamDialogResponseMock).not.toHaveBeenCalled();
   });
 
@@ -375,8 +409,14 @@ describe("ChatWindow", () => {
     );
   });
 
-  it("refreshes visible messages while an avatar call is bound to the selected chat", async () => {
+  it("refreshes visible messages on audio call events without idle polling", async () => {
     vi.useFakeTimers();
+
+    let onAudioCallChanged: (() => void) | undefined;
+    listenToAudioCallChangedMock.mockImplementation(async (handler) => {
+      onAudioCallChanged = handler;
+      return () => {};
+    });
 
     getChatsMock.mockResolvedValue([
       {
@@ -424,27 +464,27 @@ describe("ChatWindow", () => {
     });
 
     const wrapper = mount(ChatWindow);
+    await flushPromises();
+    await wrapper.get('[data-testid="chat-42"]').trigger("click");
+    await flushPromises();
 
-    try {
-      await flushPromises();
-      await wrapper.get('[data-testid="chat-42"]').trigger("click");
-      await flushPromises();
+    const callsAfterMount = getAudioCallStatusMock.mock.calls.length;
 
-      expect(wrapper.findAll(".message")).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(2000);
+    await flushPromises();
 
-      await vi.advanceTimersByTimeAsync(500);
-      await flushPromises();
+    expect(getAudioCallStatusMock).toHaveBeenCalledTimes(callsAfterMount);
+    expect(wrapper.findAll(".message")).toHaveLength(0);
 
-      expect(wrapper.get('[data-testid="message-user"]').text()).toContain(
-        "Audiofrage",
-      );
-      expect(
-        wrapper.get('[data-testid="message-assistant"]').text(),
-      ).toContain("Audioantwort");
-    } finally {
-      wrapper.unmount();
-      vi.useRealTimers();
-    }
+    onAudioCallChanged?.();
+    await flushPromises();
+
+    expect(wrapper.get('[data-testid="message-user"]').text()).toContain(
+      "Audiofrage",
+    );
+    expect(
+      wrapper.get('[data-testid="message-assistant"]').text(),
+    ).toContain("Audioantwort");
   });
 
   it("preserves audio recording outside avatar call ownership", () => {

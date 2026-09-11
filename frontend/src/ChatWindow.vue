@@ -26,10 +26,16 @@ import {
   getAudioCallStatus,
 } from "./services/backend";
 import { exportChatToMarkdown } from "./services/chatExport";
+import { formatMessageTime } from "./services/messageTime";
+import { requestRuntimeWarmUp } from "./services/runtimeWarmup";
 import {
   publishAvatarRuntimeState,
   type AvatarVisualState,
 } from "./services/avatarState";
+import {
+  listenToAudioCallChanged,
+  publishAudioCallChanged,
+} from "./services/audioCallEvents";
 
 
 const uiConfig = ref<UiConfig>();
@@ -61,6 +67,11 @@ const {
   stop,
 } = useTransientChat();
 
+watch(input, (value) => {
+  if (value.length > 0) {
+    requestRuntimeWarmUp();
+  }
+});
 
 const messagesElement = ref<HTMLElement>();
 const isComposerExpanded = ref(false);
@@ -72,23 +83,26 @@ const isDialogTtsActive = ref(false);
 const isTtsPlaying = ref(false);
 const skipDialogTts = ref(false);
 const callTurnActive = ref(false);
-let callStatusTimer: number | undefined;
+const boundCallActive = ref(false);
+let unlistenAudioCall: (() => void) | undefined;
 
 const isBoundCallTurnActive = computed(() => callTurnActive.value);
 
 async function refreshCallStatus() {
   try {
     const status = await getAudioCallStatus();
+    const wasBoundCall = boundCallActive.value;
     const isBoundCall = status.active
       && status.chat_id === selectedChatId.value;
 
+    boundCallActive.value = isBoundCall;
     callTurnActive.value = isBoundCall && status.turn_active;
 
-    if (isBoundCall) {
+    if (isBoundCall || wasBoundCall) {
       await refreshSelectedChat();
     }
   } catch (error) {
-    console.error("[audio-call] failed to poll status", error);
+    console.error("[audio-call] failed to sync status", error);
   }
 }
 
@@ -397,7 +411,14 @@ onMounted(async () => {
 
   await refreshChats(true, 20);
   await refreshCallStatus();
-  callStatusTimer = window.setInterval(() => { void refreshCallStatus(); }, 500);
+
+  try {
+    unlistenAudioCall = await listenToAudioCallChanged(() => {
+      void refreshCallStatus();
+    });
+  } catch (error) {
+    console.error("[audio-call] failed to subscribe to call changes", error);
+  }
 });
 
 
@@ -419,7 +440,7 @@ onBeforeUnmount(() => {
 
   replaceCurrentTts();
   resetRecordingState();
-  if (callStatusTimer !== undefined) window.clearInterval(callStatusTimer);
+  unlistenAudioCall?.();
 });
 
 
@@ -644,10 +665,18 @@ function stopDialogAudio() {
 
 function handleDialogButton() {
   if (selectedChatId.value === undefined) return;
-  void startAudioCall(selectedChatId.value).catch((error) => {
-    console.error("[audio-call] failed to delegate call to avatar", error);
-    errorMessage.value = "Dialog konnte nicht gestartet werden.";
-  });
+  requestRuntimeWarmUp();
+  void startAudioCall(selectedChatId.value)
+    .then(async (status) => {
+      boundCallActive.value = status.active
+        && status.chat_id === selectedChatId.value;
+      callTurnActive.value = boundCallActive.value && status.turn_active;
+      await publishAudioCallChanged();
+    })
+    .catch((error) => {
+      console.error("[audio-call] failed to delegate call to avatar", error);
+      errorMessage.value = "Dialog konnte nicht gestartet werden.";
+    });
 }
 
 const DEFAULT_SIDEBAR_WIDTH_PX = 280;
@@ -739,7 +768,15 @@ function toggleComposerExpanded() {
 }
 
 function sendComposerInput() {
-  void send();
+  void send()
+    .then(async () => {
+      if (boundCallActive.value) {
+        await publishAudioCallChanged();
+      }
+    })
+    .catch((error) => {
+      console.error("[audio-call] failed to publish chat response", error);
+    });
   isComposerExpanded.value = false;
 }
 
@@ -1154,6 +1191,14 @@ function handleInputKeydown(event: KeyboardEvent) {
             class="message-actions"
             :data-testid="`message-actions-${message.role}`"
           >
+            <span
+              v-if="message.role === 'user'"
+              class="message-time"
+              data-testid="message-time"
+            >
+              {{ formatMessageTime(message) }}
+            </span>
+
             <button
               class="message-action-button icon-button"
               type="button"
@@ -1228,6 +1273,14 @@ function handleInputKeydown(event: KeyboardEvent) {
                 <path d="m13 7 4 4" />
               </svg>
             </button>
+
+            <span
+              v-if="message.role === 'assistant'"
+              class="message-time"
+              data-testid="message-time"
+            >
+              {{ formatMessageTime(message) }}
+            </span>
             </div>
           </article>
         </section>
@@ -1779,6 +1832,13 @@ function handleInputKeydown(event: KeyboardEvent) {
   padding: 0.35rem;
   border-color: transparent;
   background: transparent;
+}
+
+.message-time {
+  margin: 0 0.2rem;
+  color: #777777;
+  font-size: 0.75rem;
+  white-space: nowrap;
 }
 
 .message-user .message-actions {

@@ -255,9 +255,10 @@ export function useTransientChat(
     state.messages.splice(
       0,
       state.messages.length,
-      ...detail.messages.map(({ role, content }) => ({
+      ...detail.messages.map(({ role, content, created_at }) => ({
         role,
         content,
+        created_at,
       })),
     );
   }
@@ -291,9 +292,10 @@ export function useTransientChat(
 
     const state = createChatState(
       detail.id,
-      detail.messages.map(({ role, content }) => ({
+      detail.messages.map(({ role, content, created_at }) => ({
         role,
         content,
+        created_at,
       })),
     );
 

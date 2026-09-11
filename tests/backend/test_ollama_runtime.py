@@ -60,6 +60,24 @@ async def test_health_returns_false_when_ollama_is_unreachable(
 
 
 @pytest.mark.asyncio
+async def test_warm_up_uses_stateless_text_generation(
+    httpx_mock: HTTPXMock,
+) -> None:
+    httpx_mock.add_response(
+        method="POST",
+        url=f"http://{settings.ollama_host}/api/generate",
+        match_json={
+            "model": settings.ollama_model,
+            "prompt": "Hallo",
+            "stream": False,
+        },
+        json={"response": "Hallo"},
+    )
+
+    await OllamaRuntime().warm_up()
+
+
+@pytest.mark.asyncio
 async def test_generate_text_returns_response(
     httpx_mock: HTTPXMock,
 ) -> None:

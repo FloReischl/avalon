@@ -51,6 +51,7 @@ pub fn set_window_input_regions(
         .map(to_x11_rectangle)
         .collect::<Result<Vec<_>, _>>()?;
 
+
     let (connection, _) = x11rb::connect(None)
         .map_err(|error| format!("Failed to connect to X11 server: {error}"))?;
 

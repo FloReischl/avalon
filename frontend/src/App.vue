@@ -30,6 +30,10 @@ import {
   listenToAvatarRuntimeState,
   type AvatarRuntimeState,
 } from "./services/avatarState";
+import {
+  listenToAudioCallChanged,
+  publishAudioCallChanged,
+} from "./services/audioCallEvents";
 import { useTransientChat } from "./composables/useTransientChat";
 import {
   completeAudioCallTurn,
@@ -40,6 +44,7 @@ import {
   startAudioCall,
   synthesizeSpeech,
 } from "./services/backend";
+import { requestRuntimeWarmUp } from "./services/runtimeWarmup";
 
 const uiConfig = ref<UiConfig>();
 
@@ -68,12 +73,12 @@ let avatarSyncPending = false;
 let uiConfigLoading = false;
 let unlisten: UnlistenFn | undefined;
 let unlistenAvatarState: UnlistenFn | undefined;
+let unlistenAudioCall: UnlistenFn | undefined;
 let animationTimer: number | undefined;
 let dialogTtsAudio: HTMLAudioElement | undefined;
 let dialogTtsUrl: string | undefined;
 let dialogTtsPlaybackId: string | undefined;
 let dialogTtsCompletion: (() => void) | undefined;
-let callStatusTimer: number | undefined;
 
 const {
   messages: dialogMessages,
@@ -165,6 +170,10 @@ async function syncAvatarWindowSize(): Promise<boolean> {
   const height = Math.ceil(
     bounds.height + AVATAR_WINDOW_PADDING_PX * 2,
   );
+
+  if (window.innerWidth === width && window.innerHeight === height) {
+    return false;
+  }
 
   try {
     await resizeAvatarWindow(width, height);
@@ -347,6 +356,7 @@ async function runAvatarDialogLoop() {
     await speakDialogResponse(result.assistantIndex);
     try {
       await completeAudioCallTurn();
+      await publishAudioCallChanged();
     } catch (error) {
       console.error("[avatar-call] failed to complete call turn", error);
     }
@@ -356,10 +366,16 @@ async function runAvatarDialogLoop() {
 async function startAvatarDialog(alreadyStarted = false, chatId?: number) {
   if (isDialogActive.value) return;
   try {
-    if (!alreadyStarted) await startAudioCall();
+    if (!alreadyStarted) {
+      requestRuntimeWarmUp();
+      await startAudioCall();
+    }
     if (chatId !== undefined) await selectChat(chatId);
     isDialogActive.value = true;
     dialogError.value = undefined;
+    if (!alreadyStarted) {
+      await publishAudioCallChanged();
+    }
     void runAvatarDialogLoop();
   } catch (error) {
     console.error("[avatar-call] failed to start", error);
@@ -385,10 +401,11 @@ async function syncExternalAvatarCall() {
         dialogMessages.value.push({ role: "assistant", content: text });
         await speakDialogResponse(dialogMessages.value.length - 1);
         await completeAudioCallTurn();
+        await publishAudioCallChanged();
       }
     }
   } catch (error) {
-    console.error("[avatar-call] failed to poll status", error);
+    console.error("[avatar-call] failed to sync status", error);
   }
 }
 
@@ -399,6 +416,7 @@ async function endAvatarDialog() {
   stopDialogTts();
   try {
     await endAudioCall();
+    await publishAudioCallChanged();
   } catch (error) {
     console.error("[avatar-call] failed to end", error);
   }
@@ -616,7 +634,15 @@ async function handleExit() {
 onMounted(async () => {
   window.addEventListener("keydown", handleAvatarScaleKeydown);
   window.addEventListener("resize", handleAvatarWindowResize);
-  callStatusTimer = window.setInterval(() => { void syncExternalAvatarCall(); }, 500);
+  window.addEventListener("focus", syncExternalAvatarCall);
+
+  try {
+    unlistenAudioCall = await listenToAudioCallChanged(() => {
+      void syncExternalAvatarCall();
+    });
+  } catch (error) {
+    console.error("[avatar-call] failed to subscribe to call changes", error);
+  }
 
   try {
     unlisten = await listenToBackendLifecycle({
@@ -629,6 +655,9 @@ onMounted(async () => {
     const snapshot = await getBackendSnapshot();
     backendStatus.value = snapshot.status;
     backendLogs.value = snapshot.logs;
+    if (snapshot.status === "ready") {
+      await syncExternalAvatarCall();
+    }
   } catch (error) {
     console.error(
       "[backend-lifecycle] failed to initialize desktop lifecycle",
@@ -674,10 +703,11 @@ watch(
 onBeforeUnmount(() => {
   window.removeEventListener("keydown", handleAvatarScaleKeydown);
   window.removeEventListener("resize", handleAvatarWindowResize);
+  window.removeEventListener("focus", syncExternalAvatarCall);
   if (isDialogActive.value) void endAvatarDialog();
-  if (callStatusTimer !== undefined) window.clearInterval(callStatusTimer);
   unlisten?.();
   unlistenAvatarState?.();
+  unlistenAudioCall?.();
   if (animationTimer !== undefined) window.clearInterval(animationTimer);
 });
 
@@ -740,7 +770,7 @@ onBeforeUnmount(() => {
           :style="avatarImageStyle"
           :data-avatar-state="avatarRuntimeState.state"
           :data-avatar-frame="animationFrame"
-
+          crossorigin="anonymous"
           data-testid="avatar"
           @load="initializeAvatar"
         />

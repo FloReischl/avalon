@@ -13,6 +13,7 @@ class Settings:
     frontend_dev_origin: str = "http://127.0.0.1:5173"
     default_language: str = "de"
     audio_max_seconds: int = 30
+    audio_wait_exceed_seconds: float = 1.0
     ollama_host: str = "127.0.0.1:11434"
     # ollama_model: str = "gemma4:e4b-it-q4_K_M"
     ollama_model: str = "gemma4:e4b-it-q4_K_M-ctx32k"

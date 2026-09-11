@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from app.audio.capture import CaptureError, PipeWireRecorder
+from app.config import settings
 
 
 class FakeCaptureProcess:
@@ -48,6 +49,12 @@ def fake_pw_record(monkeypatch: pytest.MonkeyPatch):
         create_subprocess_exec,
     )
     return processes, commands
+
+
+def test_recorder_uses_configured_dialog_wait() -> None:
+    recorder = PipeWireRecorder()
+
+    assert recorder._dialog_silence_seconds == settings.audio_wait_exceed_seconds
 
 
 @pytest.mark.asyncio

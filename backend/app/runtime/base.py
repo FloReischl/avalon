@@ -12,6 +12,10 @@ class ModelRuntime(Protocol):
         """Return whether the runtime is ready for requests."""
         ...
 
+    async def warm_up(self) -> None:
+        """Make the configured model resident without chat context."""
+        ...
+
     async def generate_text(self, message: str) -> str:
         """Generate a complete response from text input."""
         ...

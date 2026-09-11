@@ -27,6 +27,10 @@ class OllamaRuntime(ModelRuntime):
         except (httpx.RequestError, httpx.HTTPStatusError):
             return False
 
+    async def warm_up(self) -> None:
+        """Make the configured model resident without chat context."""
+        await self.generate_text("Hallo")
+
     async def generate_text(self, message: str) -> str:
         """Generate a complete response from text input."""
         try:

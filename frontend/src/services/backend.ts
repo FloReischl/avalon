@@ -71,6 +71,17 @@ export async function getBackendHealth(): Promise<BackendHealth> {
   return response.json() as Promise<BackendHealth>;
 }
 
+export async function warmUpRuntime(): Promise<void> {
+  const response = await fetch(
+    `${BACKEND_BASE_URL}/api/v1/runtime/warm-up`,
+    { method: "POST" },
+  );
+
+  if (!response.ok) {
+    throw new Error(`Runtime warm-up failed with ${response.status}`);
+  }
+}
+
 export async function getChats(): Promise<ChatSummary[]> {
   const response = await fetch(`${BACKEND_BASE_URL}/api/v1/chats`);
   if (!response.ok) {

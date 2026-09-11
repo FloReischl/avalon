@@ -124,7 +124,7 @@ class PipeWireRecorder:
         *,
         max_duration_seconds: float = settings.audio_max_seconds,
         output_directory: Path | None = None,
-        dialog_silence_seconds: float = 3.0,
+        dialog_silence_seconds: float = settings.audio_wait_exceed_seconds,
         dialog_speech_threshold: float = 0.015,
         dialog_sample_rate_hz: int = 16000,
     ) -> None:

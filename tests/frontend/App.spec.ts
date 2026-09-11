@@ -12,6 +12,9 @@ const {
   loadUiConfigMock,
   setAvatarWindowTitleMock,
   listenToAvatarRuntimeStateMock,
+  getAudioCallStatusMock,
+  listenToAudioCallChangedMock,
+  publishAudioCallChangedMock,
 } = vi.hoisted(() => ({
 
 
@@ -26,6 +29,9 @@ const {
   loadUiConfigMock: vi.fn(),
   setAvatarWindowTitleMock: vi.fn(),
   listenToAvatarRuntimeStateMock: vi.fn(),
+  getAudioCallStatusMock: vi.fn(),
+  listenToAudioCallChangedMock: vi.fn(),
+  publishAudioCallChangedMock: vi.fn(),
 }));
 
 vi.mock("../../frontend/src/services/windowTitle", () => ({
@@ -35,6 +41,22 @@ vi.mock("../../frontend/src/services/windowTitle", () => ({
 vi.mock("../../frontend/src/services/avatarState", () => ({
   listenToAvatarRuntimeState: listenToAvatarRuntimeStateMock,
 }));
+
+vi.mock("../../frontend/src/services/audioCallEvents", () => ({
+  listenToAudioCallChanged: listenToAudioCallChangedMock,
+  publishAudioCallChanged: publishAudioCallChangedMock,
+}));
+
+vi.mock("../../frontend/src/services/backend", async (importOriginal) => {
+  const original = await importOriginal<
+    typeof import("../../frontend/src/services/backend")
+  >();
+
+  return {
+    ...original,
+    getAudioCallStatus: getAudioCallStatusMock,
+  };
+});
 
 vi.mock("../../frontend/src/services/backendLifecycle", () => ({
 
@@ -79,9 +101,20 @@ describe("App", () => {
     loadUiConfigMock.mockReset();
     setAvatarWindowTitleMock.mockReset();
     listenToAvatarRuntimeStateMock.mockReset();
+    getAudioCallStatusMock.mockReset();
+    listenToAudioCallChangedMock.mockReset();
+    publishAudioCallChangedMock.mockReset();
     exitAvaloMock.mockResolvedValue(undefined);
     setAvatarWindowTitleMock.mockResolvedValue(undefined);
     listenToAvatarRuntimeStateMock.mockResolvedValue(() => {});
+    getAudioCallStatusMock.mockResolvedValue({
+      active: false,
+      chat_id: null,
+      turn_active: false,
+      pending_speech: null,
+    });
+    listenToAudioCallChangedMock.mockResolvedValue(() => {});
+    publishAudioCallChangedMock.mockResolvedValue(undefined);
 
     listenToBackendLifecycleMock.mockResolvedValue(() => {});
 
@@ -235,6 +268,35 @@ describe("App", () => {
       .toBe("1");
   });
 
+  it("syncs audio call state on events without idle polling", async () => {
+    vi.useFakeTimers();
+
+    let onAudioCallChanged: (() => void) | undefined;
+    listenToAudioCallChangedMock.mockImplementation(async (handler) => {
+      onAudioCallChanged = handler;
+      return () => {};
+    });
+    getBackendSnapshotMock.mockResolvedValue({
+      status: "ready",
+      logs: ["Backend ready"],
+    });
+
+    mount(App);
+    await flushPromises();
+
+    expect(getAudioCallStatusMock).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(2000);
+    await flushPromises();
+
+    expect(getAudioCallStatusMock).toHaveBeenCalledTimes(1);
+
+    onAudioCallChanged?.();
+    await flushPromises();
+
+    expect(getAudioCallStatusMock).toHaveBeenCalledTimes(2);
+  });
+
   it("shows a hard startup failure when UI config loading fails", async () => {
     getBackendSnapshotMock.mockResolvedValue({
       status: "ready",
@@ -331,6 +393,94 @@ describe("App", () => {
     await avatarRegion.trigger("dblclick");
 
     expect(showChatWindowMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("rebuilds the Avatar input shape immediately when the WebView already has the target size", async () => {
+    getBackendSnapshotMock.mockResolvedValue({
+      status: "ready",
+      logs: ["Backend ready"],
+    });
+
+    const getContextSpy = vi
+      .spyOn(HTMLCanvasElement.prototype, "getContext")
+      .mockReturnValue({
+        drawImage: vi.fn(),
+        getImageData: vi.fn(() => ({
+          data: new Uint8ClampedArray(16).fill(255),
+        })),
+      } as unknown as CanvasRenderingContext2D);
+
+    const originalInnerWidth = window.innerWidth;
+    const originalInnerHeight = window.innerHeight;
+
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      value: 320,
+    });
+    Object.defineProperty(window, "innerHeight", {
+      configurable: true,
+      value: 116,
+    });
+
+    const wrapper = mount(App);
+
+    try {
+      await flushPromises();
+
+      wrapper.get('[data-testid="avatar-stage"]').element.getBoundingClientRect =
+        vi.fn(() => ({
+          x: 0,
+          y: 0,
+          top: 0,
+          right: 10,
+          bottom: 20,
+          left: 0,
+          width: 10,
+          height: 20,
+          toJSON: () => ({}),
+        }));
+
+      const avatar = wrapper.get('[data-testid="avatar"]');
+      avatar.element.getBoundingClientRect = vi.fn(() => ({
+        x: 10,
+        y: 20,
+        top: 20,
+        right: 12,
+        bottom: 22,
+        left: 10,
+        width: 2,
+        height: 2,
+        toJSON: () => ({}),
+      }));
+
+      await avatar.trigger("load");
+      await flushPromises();
+
+      expect(resizeAvatarWindowMock).not.toHaveBeenCalled();
+      expect(setWindowInputRegionsMock).toHaveBeenCalledTimes(1);
+
+      const latestRectangles =
+        setWindowInputRegionsMock.mock.calls.at(-1)?.[0];
+
+      expect(latestRectangles?.[0]).toMatchObject({
+        x: 10,
+        y: 20,
+        width: 2,
+        height: 2,
+      });
+    } finally {
+      wrapper.unmount();
+      getContextSpy.mockRestore();
+
+      Object.defineProperty(window, "innerWidth", {
+        configurable: true,
+        value: originalInnerWidth,
+      });
+      Object.defineProperty(window, "innerHeight", {
+        configurable: true,
+        value: originalInnerHeight,
+      });
+    }
   });
 
   it("waits for the WebView resize event before rebuilding the Avatar input shape", async () => {
