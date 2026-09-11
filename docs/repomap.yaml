@@ -245,7 +245,7 @@ key_flows:
         - audio route failures are logged with technical exception details and traceback to backend stderr
       constraints:
         max_duration_seconds: 30
-        dialog_silence_seconds: 3
+        dialog_silence_seconds: settings.audio_wait_exceed_seconds
         dialog_speech_threshold: 0.015
         target_sample_rate_hz: 16000
         target_channels: 1
@@ -308,6 +308,7 @@ modules:
           frontend_dev_origin: str
           default_language: str
           audio_max_seconds: int
+          audio_wait_exceed_seconds: float
           ollama_host: str
           ollama_model: str
           tts_engine: str
@@ -360,6 +361,7 @@ modules:
       - health router at root
       - UI config router under /api/v1
       - configured avatar asset router under /api/v1
+      - runtime router under /api/v1
       - chat router under /api/v1
       - audio recording router under /api/v1
       - TTS router under /api/v1
@@ -367,6 +369,7 @@ modules:
       - backend/app/api/routes/health.py
       - backend/app/api/routes/ui.py
       - backend/app/api/routes/assets.py
+      - backend/app/api/routes/runtime.py
       - backend/app/api/routes/chat.py
       - backend/app/api/routes/audio.py
       - backend/app/api/routes/tts.py
@@ -453,6 +456,16 @@ modules:
     dependencies:
       - backend/app/api/schemas.py:HealthResponse
       - backend/app/config.py:settings
+    status: implemented
+
+  backend/app/api/routes/runtime.py:
+    role: local model runtime control boundary
+    endpoint: "POST /api/v1/runtime/warm-up"
+    behavior:
+      - trigger a stateless best-effort model warm-up
+      - discard generated response content
+    dependencies:
+      - backend/app/runtime/ollama.py:OllamaRuntime
     status: implemented
 
   backend/app/api/routes/chat.py:
@@ -578,6 +591,9 @@ modules:
           health:
             signature: "() -> bool"
             async: true
+          warm_up:
+            signature: "() -> None"
+            async: true
           generate_text:
             signature: "(message: str) -> str"
             async: true
@@ -606,6 +622,9 @@ modules:
             result:
               success: true
               request_or_http_error: false
+          warm_up:
+            async: true
+            behavior: delegate to minimal complete text generation and discard the response
           generate_text:
             async: true
             endpoint: "POST /api/generate"
@@ -892,6 +911,8 @@ modules:
       - frontend/src/services/inputShape.ts
       - frontend/src/services/chatWindow.ts
       - frontend/src/services/avatarState.ts
+      - frontend/src/services/audioCallEvents.ts
+      - frontend/src/services/runtimeWarmup.ts
       - frontend/src/services/windowDrag.ts
       - frontend/src/services/windowTitle.ts
     interaction:
@@ -902,6 +923,8 @@ modules:
       - animates configured sprite sets at one second per sprite and resets animation on visual-state changes
       - shows a pending balloon independently from the visible avatar state
       - recalculates native input shape from the active sprite crop
+      - loads backend-served avatar images with anonymous CORS so canvas alpha inspection remains readable
+      - applies input shape immediately when the native window already has the required size
       - sets the avatar-window title from configured name
       - avatar drag starts only after pointer movement crosses a small threshold
       - avatar double-click opens the chat window
@@ -913,7 +936,9 @@ modules:
       - native window resize completion is followed by browser resize before recalculating X11 input shape
       - avoids applying an input shape from stale pre-resize DOM geometry
       - Call control starts and ends the single global avatar audio call
-      - adopts a call started through the chat window by polling backend call state
+      - adopts calls started through the chat window through cross-webview audio-call change events
+      - backend audio-call status remains the source of truth and is read on events or recovery synchronization
+      - no periodic idle audio-call status polling is used
       - owns the automatic listen, process, TTS, and next-turn dialog loop
       - consumes assistant speech queued by text turns in the call-bound chat
       - keeps backend call turn state active until response playback completes
@@ -964,6 +989,8 @@ modules:
       - expanded composer enables the Markdown formatting toolbar
       - preserves composer state across expand/collapse
       - renders role-specific message actions
+      - renders stable local creation times beside user and assistant message actions
+      - persisted messages use backend created_at; transient messages receive a stable first-render local timestamp
       - message Copy writes Markdown source as text/plain and rendered content as text/html when supported
       - message Copy falls back to plain Markdown clipboard text
       - Read aloud synthesizes completed assistant messages and plays the returned WAV
@@ -983,8 +1010,9 @@ modules:
       - keeps text editing available during an active audio call
       - blocks text Send only while a turn is active in the selected call-bound chat
       - allows normal text turns between audio turns in the same call-bound chat
-      - refreshes global audio-call state periodically from the backend
-      - refreshes the selected persisted chat while it is bound to an active call so audio turns appear without chat reselection
+      - publishes audio-call change events after delegated call start and relevant bound-chat text responses
+      - reacts to audio-call change events by reloading backend call status and the selected persisted chat when needed
+      - does not periodically poll global audio-call state while idle
       - skips persisted-message refresh while the selected chat owns a local active text turn
       - refreshes chat history and call state when the chat window receives focus
       - renders audio user turns as "🎤 Sprachnachricht" until transcription replaces the persisted placeholder
@@ -1003,6 +1031,9 @@ modules:
       - frontend/src/components/MarkdownComposer.vue
       - frontend/src/services/chatExport.ts
       - frontend/src/services/avatarState.ts
+      - frontend/src/services/audioCallEvents.ts
+      - frontend/src/services/runtimeWarmup.ts
+      - frontend/src/services/messageTime.ts
     startup:
       - loads backend-owned UI configuration before initial chat history
       - aborts chat startup when UI configuration loading fails
@@ -1118,6 +1149,18 @@ modules:
     dependencies:
       - backend/app/user_config.py
 
+  frontend/src/services/audioCallEvents.ts:
+    role: cross-webview invalidation event boundary for global audio-call state
+    responsibilities:
+      - publish a lightweight audio-call-changed Tauri event
+      - subscribe to audio-call change notifications from sibling webviews
+      - carry no replicated call state; consumers reload authoritative backend state after notification
+    consumers:
+      - frontend/src/ChatWindow.vue
+      - frontend/src/App.vue
+    native_dependency:
+      - "@tauri-apps/api/event"
+
   frontend/src/services/avatarState.ts:
     role: cross-webview runtime-state boundary for avatar feedback
     symbols:
@@ -1141,10 +1184,21 @@ modules:
     native_dependency:
       - "@tauri-apps/api/event"
 
+  frontend/src/services/runtimeWarmup.ts:
+    role: throttled non-blocking frontend runtime warm-up trigger
+    behavior:
+      - request backend runtime warm-up without blocking user interaction
+      - throttle requests for 60 seconds within one frontend webview
+      - update throttle state before awaiting the request
+      - log warm-up failures without surfacing them as user-facing chat failures
+    dependencies:
+      - frontend/src/services/backend.ts
+
   frontend/src/services/backend.ts:
     role: frontend HTTP boundary for backend communication
     responsibilities:
       - health calls
+      - trigger model warm-up through POST /api/v1/runtime/warm-up
       - list persisted chats through GET /api/v1/chats
       - load persisted chat detail through GET /api/v1/chats/{id}
       - rename persisted chats through PATCH /api/v1/chats/{id}
@@ -1174,6 +1228,16 @@ modules:
       - changing frontend/backend transport
       - changing public chat stream protocol
 
+  frontend/src/services/messageTime.ts:
+    role: stable local message creation-time presentation
+    behavior:
+      - format messages created today as HH:mm
+      - format older messages as YYYY-MM-DD HH:mm
+      - use persisted created_at timestamps when available
+      - cache one local timestamp per transient ChatMessage object
+    consumers:
+      - frontend/src/ChatWindow.vue
+
   frontend/src/types/chat.ts:
     role: frontend chat message presentation types
     symbols:
@@ -1182,6 +1246,7 @@ modules:
           role: user_or_assistant
           content: str
           kind: optional_text_or_audio
+          created_at: optional_str
     relevant_to:
       - frontend conversation state
       - frontend persisted-history rendering
@@ -1464,6 +1529,7 @@ tests:
   tests/backend/test_ollama_runtime.py:
     covers:
       - Ollama health behavior
+      - runtime warm-up delegation
       - complete text generation happy/error paths
       - streaming text generation happy/error paths
       - empty streaming chunks skipped
@@ -1486,6 +1552,7 @@ tests:
       - SIGINT exit-code handling
       - explicit abort cleanup
       - duration-limit abort and discard
+      - configurable post-speech dialog wait
       - concurrent recording rejection
       - stop without active recording
       - missing pw-record failure cleanup
@@ -1566,6 +1633,8 @@ tests:
     covers:
       - backend startup lifecycle integration boundary
       - startup diagnostics rendering
+      - audio-call event synchronization without idle polling
+      - same-size avatar-window input-shape application
       - avatar visibility during startup and ready state
       - runtime avatar state subscription
       - configured sprite-set rendering and one-second frame rotation
@@ -1702,6 +1771,8 @@ change_navigation:
       - frontend/src/composables/useTransientChat.ts
       - frontend/src/ChatWindow.vue
       - frontend/src/services/avatarState.ts
+      - frontend/src/services/audioCallEvents.ts
+      - frontend/src/services/runtimeWarmup.ts
       - frontend/src/App.vue
       - frontend/src/styles.css
       - frontend/src/uiConfig.ts
@@ -1800,6 +1871,7 @@ change_navigation:
       - Preserve alpha-derived avatar hit regions unless requirements change.
       - Interactive controls must be included in the native input-region union.
       - After native avatar resize, recalculate input regions from post-resize browser geometry rather than stale pre-resize bounds.
+      - Backend-served avatar images used for canvas alpha inspection must remain CORS-readable.
 
 
 architectural_constraints:
@@ -1872,15 +1944,18 @@ known_state:
     - chat-window close hides rather than destroys the window
     - avatar close exits the application and stops the owned backend
     - avatar window always-on-top
-    - pixel-accurate avatar alpha hit detection
+    - pixel-accurate avatar alpha hit detection from CORS-readable backend-served avatar images
     - native X11 click-through using SHAPE input regions
+    - configurable post-speech dialog wait
+    - throttled non-blocking local model warm-up
+    - stable local creation-time display for persisted and transient chat messages
     - session-local avatar scaling through Ctrl+Plus / Ctrl+Minus with native window resizing
     - post-resize X11 input-shape resynchronization from updated browser geometry
     - transient frontend text chat with streamed assistant responses
     - one process-global avatar audio call with backend-owned call, chat-binding, turn, and pending-speech state
     - avatar-owned continuous audio dialog lifecycle with chat-window call delegation
-    - live chat-window synchronization of persisted audio-call turns
-    - chat-list refresh when the chat window regains focus
+    - event-driven cross-webview synchronization of persisted audio-call turns without idle status polling
+    - chat-list and audio-call recovery refresh when the chat window regains focus
     - chat watermark behind the scrollable conversation area
     - editable composer draft while assistant generation continues
     - Milkdown WYSIWYG Markdown composer with canonical Markdown source
