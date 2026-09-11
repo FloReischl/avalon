@@ -197,7 +197,11 @@ key_flows:
           - transcription receives native audio only, without conversation context
           - assistant response and transcript stream independently through Avalo SSE
         dialog:
-          - chat-window Call action activates continuous dialog mode
+          - avatar-window Call action owns continuous dialog mode
+          - chat-window Call action delegates call start with the currently selected chat id
+          - a call started directly from the avatar begins without a bound chat
+          - the first submitted speech turn creates and binds a persistent chat when no chat id was supplied
+          - the bound chat remains fixed for the lifetime of the call
           - POST /api/v1/audio/dialog/turn with prior conversation context
           - backend waits indefinitely for speech without creating empty turns
           - simple PCM amplitude detection starts the turn on speech
@@ -207,9 +211,11 @@ key_flows:
           - assistant generation receives prior conversation context plus native audio
           - transcription receives native audio only, without conversation context
           - assistant response and transcript stream independently through Avalo SSE
-          - completed assistant text is read aloud unless TTS was explicitly skipped or stopped
+          - backend call state marks the complete recording, model-processing, and response-playback phase as one active turn
+          - completed assistant text is read aloud through the avatar call
+          - text responses generated in the bound chat during an active call are queued for avatar TTS
           - after response completion the next dialog listener starts automatically
-          - dialog remains active until explicitly ended
+          - dialog remains active until explicitly ended from the avatar
       capture_location: python_backend
       capture_adapter: backend/app/audio/capture.py:PipeWireRecorder
       application_service: backend/app/services/audio_chat.py:AudioChatService
@@ -544,6 +550,25 @@ modules:
       - clean temporary captured audio only after both consumers complete or are cancelled
     status: implemented
 
+  backend/app/services/audio_call.py:
+    role: process-local global avatar audio-call state
+    responsibilities:
+      - enforce a single active audio call
+      - track the chat id bound to the active call
+      - allow an avatar-started call to bind its chat after the first speech turn creates it
+      - track whether the current call turn is active
+      - hold one pending assistant response for avatar TTS
+      - clear call association and pending state when the call ends
+    state:
+      - active
+      - chat_id
+      - turn_active
+      - pending_speech
+    consumers:
+      - backend/app/api/routes/audio.py
+      - backend text-chat response flow
+    status: implemented
+
   backend/app/runtime/base.py:
     role: model runtime abstraction
     symbols:
@@ -851,8 +876,10 @@ modules:
       - backend-pending balloon feedback
       - avatar drag interaction
       - avatar scaling and native window resize
-      - avatar push-to-talk UI
-      - audio recording countdown
+      - global avatar audio-call control
+      - continuous audio dialog lifecycle
+      - backend audio-call state synchronization
+      - assistant TTS playback during active calls
       - application exit
       - chat-window opening
       - alpha-based avatar hit detection
@@ -885,11 +912,13 @@ modules:
       - avatar resize requests are serialized through a single-flight synchronization loop
       - native window resize completion is followed by browser resize before recalculating X11 input shape
       - avoids applying an input shape from stale pre-resize DOM geometry
-      - audio button enters recording UI state while pointer is held
-      - recording UI resets on pointer release or cancellation
-      - recording UI aborts after 30 seconds
+      - Call control starts and ends the single global avatar audio call
+      - adopts a call started through the chat window by polling backend call state
+      - owns the automatic listen, process, TTS, and next-turn dialog loop
+      - consumes assistant speech queued by text turns in the call-bound chat
+      - keeps backend call turn state active until response playback completes
       - exit button terminates the Avalo application
-      - audio and exit buttons are included in native X11 input regions
+      - Call and exit controls are included in native X11 input regions
       - current frontend audio interaction does not capture microphone data
 
 
@@ -949,18 +978,17 @@ modules:
       - shows 30-second push-to-talk recording countdown
       - aborts and discards push-to-talk recording at the duration limit
       - handles pointer release that occurs while backend recording start is still pending
-      - provides a separate Call control between microphone and Send for continuous dialog mode
-      - Call control is hang-up while the dialog is active except during actual TTS playback, where it becomes audio Stop
-      - publishes runtime avatar state and independent backend-pending state to the avatar webview
-      - avatar visual priority is recording/listening, actual audio playback/speaking, synthesis or backend pending/thinking, active dialog/listening, then standard
-      - TTS synthesis counts as backend-pending feedback; speaking starts only after actual audio playback starts
-      - dialog mode automatically alternates backend speech turns and assistant read-aloud responses
-      - ending dialog while listening aborts and discards the pending speech turn
-      - response Stop affects only dialog TTS; model text generation continues
-      - stopping before TTS begins skips read-aloud for the current response
-      - PTT and normal Send are unavailable while dialog mode is active
-      - renders audio user turns as "🎤 Sprachnachricht"
-      - streams audio-triggered assistant responses into the normal conversation
+      - retains a Call control that delegates call start to the avatar with the currently selected chat id
+      - Call control is disabled while the global audio call is active; call termination belongs to the avatar window
+      - keeps text editing available during an active audio call
+      - blocks text Send only while a turn is active in the selected call-bound chat
+      - allows normal text turns between audio turns in the same call-bound chat
+      - refreshes global audio-call state periodically from the backend
+      - refreshes the selected persisted chat while it is bound to an active call so audio turns appear without chat reselection
+      - skips persisted-message refresh while the selected chat owns a local active text turn
+      - refreshes chat history and call state when the chat window receives focus
+      - renders audio user turns as "🎤 Sprachnachricht" until transcription replaces the persisted placeholder
+      - displays persisted audio-triggered assistant responses in the normal conversation
     relevant_to:
       - transient text and audio chat UI
       - conversation sidebar
@@ -1643,6 +1671,8 @@ change_navigation:
     inspect:
       - backend/app/audio/capture.py
       - backend/app/services/audio_chat.py
+      - backend/app/services/audio_call.py
+      - backend/app/state.py
       - backend/app/runtime/base.py
       - backend/app/runtime/ollama.py
       - backend/app/api/routes/audio.py
@@ -1847,6 +1877,10 @@ known_state:
     - session-local avatar scaling through Ctrl+Plus / Ctrl+Minus with native window resizing
     - post-resize X11 input-shape resynchronization from updated browser geometry
     - transient frontend text chat with streamed assistant responses
+    - one process-global avatar audio call with backend-owned call, chat-binding, turn, and pending-speech state
+    - avatar-owned continuous audio dialog lifecycle with chat-window call delegation
+    - live chat-window synchronization of persisted audio-call turns
+    - chat-list refresh when the chat window regains focus
     - chat watermark behind the scrollable conversation area
     - editable composer draft while assistant generation continues
     - Milkdown WYSIWYG Markdown composer with canonical Markdown source
@@ -1879,7 +1913,7 @@ known_state:
     - Chatterbox TTS adapter
 
   not_present:
-    - persistent conversation storage
+
     - memory
     - production packaging
 
