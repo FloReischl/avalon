@@ -8,10 +8,6 @@ todo
 - animations
 - audio generation in batches (4?)
 - nsfw mode (slow llm, hq audio)
-- llm selection (standard, uncensored, nsfw)
-  - standard
-  - uncensored
-  - nsfw: hf.co/mradermacher/NeuralDaredevil-8B-abliterated-GGUF:Q4_K_M
 
 minor changes
 - input-send with ENTER, if no '\n' contained
