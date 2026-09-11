@@ -6,8 +6,10 @@ from urllib.parse import parse_qs, urlsplit
 
 from httpx import ASGITransport, AsyncClient
 
+import app.state as state_module
 import app.user_config as user_config_module
 from app.main import create_app
+from app.state import initialize_avalo_state
 from app.user_config import initialize_user_config
 
 
@@ -36,7 +38,9 @@ def request(path: str):
 
 def initialize_blueprint_config() -> None:
     user_config_module._user_config = None
-    initialize_user_config(BLUEPRINT_CONFIG)
+    state_module._avalo_state = None
+    config = initialize_user_config(BLUEPRINT_CONFIG)
+    initialize_avalo_state(config)
 
 
 def assert_avatar_asset_url(
@@ -121,6 +125,44 @@ def test_ui_config_keeps_avatar_cache_token_stable() -> None:
     )
 
     assert second_token == first_token
+
+
+def test_ui_config_uses_current_avatar() -> None:
+    initialize_blueprint_config()
+    standard = state_module.get_avalo_state().current_avatar
+    reversed_images = standard.images.model_copy(
+        update={
+            "animations": list(reversed(standard.images.animations)),
+        },
+        deep=True,
+    )
+    second = standard.model_copy(
+        update={
+            "key": "second",
+            "images": reversed_images,
+        },
+        deep=True,
+    )
+    config = user_config_module.get_user_config().model_copy(
+        update={
+            "avatars": [
+                standard,
+                second,
+            ]
+        },
+        deep=True,
+    )
+
+    state_module._avalo_state = None
+    state = initialize_avalo_state(config)
+    assert state.set_current_avatar("second") is True
+
+    response = request("/api/v1/ui/config")
+
+    assert response.status_code == 200
+    assert response.json()["avatar"]["animations"][0]["key"] == (
+        reversed_images.animations[0].key
+    )
 
 
 def test_ui_config_exposes_custom_animations() -> None:

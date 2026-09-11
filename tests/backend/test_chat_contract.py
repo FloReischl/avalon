@@ -85,6 +85,40 @@ def test_chat_streams_chat_id_chunks_and_done_event() -> None:
     )
 
 
+def test_chat_streams_command_response_as_regular_chunk() -> None:
+    class CommandChatService(FakeChatService):
+        def start_turn(
+            self,
+            chat_id: int | None,
+            message: str,
+        ) -> ChatTurn:
+            del message
+            return ChatTurn(
+                chat_id=chat_id or 42,
+                messages=[],
+                command_response="ok",
+            )
+
+        async def stream_response(
+            self,
+            turn: ChatTurn,
+        ) -> AsyncIterator[str]:
+            assert turn.command_response is not None
+            yield turn.command_response
+
+    response = post_chat(
+        {"message": "/command test"},
+        CommandChatService(),
+    )
+
+    assert response.status_code == 200
+    assert response.text == (
+        'event: chat\ndata: {"id": "42"}\n\n'
+        'event: chunk\ndata: {"text": "ok"}\n\n'
+        "event: done\ndata: {}\n\n"
+    )
+
+
 def test_chat_continues_existing_chat() -> None:
     response = post_chat(
         {"chat_id": 7, "message": "Weiter"},
@@ -115,7 +149,7 @@ def test_chat_streams_error_event_without_done() -> None:
 
 
 def test_chat_rejects_empty_message() -> None:
-    response = post_chat({"message": ""})
+    response = post_chat({"message": ""}, FakeChatService())
 
     assert response.status_code == 422
 

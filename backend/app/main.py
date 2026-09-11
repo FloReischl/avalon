@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.router import api_router
 from app.config import settings
 from app.persistence.migrations import run_migrations
+from app.state import initialize_avalo_state
 from app.user_config import initialize_user_config
 
 
@@ -21,7 +22,8 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
     del application
 
     try:
-        initialize_user_config()
+        user_config = initialize_user_config()
+        initialize_avalo_state(user_config)
         run_migrations()
     except Exception:
 

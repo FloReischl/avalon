@@ -4,6 +4,7 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import datetime
 
+from app.commands import CommandRegistry, parse_command
 from app.persistence.chat_repository import ChatRepository
 from app.user_config import AvatarConfig
 from app.runtime.base import ModelRuntime
@@ -15,10 +16,11 @@ class ChatNotFoundError(Exception):
 
 @dataclass(frozen=True, slots=True)
 class ChatTurn:
-    """Prepared persistent chat turn ready for model generation."""
+    """Prepared persistent chat turn ready for response generation."""
 
     chat_id: int
     messages: list[dict[str, str]]
+    command_response: str | None = None
 
 
 class ChatService:
@@ -29,10 +31,12 @@ class ChatService:
         runtime: ModelRuntime,
         repository: ChatRepository,
         avatar: AvatarConfig | None = None,
+        command_registry: CommandRegistry | None = None,
     ) -> None:
         self._runtime = runtime
         self._repository = repository
         self._avatar = avatar
+        self._command_registry = command_registry or CommandRegistry()
 
     def start_turn(
         self,
@@ -53,6 +57,16 @@ class ChatService:
                 raise ChatNotFoundError(f"Chat {chat_id} does not exist.")
 
             self._repository.add_message(chat_id, "user", message)
+
+        command_request = parse_command(message)
+        if command_request is not None:
+            return ChatTurn(
+                chat_id=chat_id,
+                messages=[],
+                command_response=self._command_registry.execute(
+                    command_request
+                ),
+            )
 
         context = self._repository.get_context_messages(chat_id, limit=100)
         messages = [
@@ -80,6 +94,15 @@ class ChatService:
         turn: ChatTurn,
     ) -> AsyncIterator[str]:
         """Stream a response and persist it only after successful completion."""
+        if turn.command_response is not None:
+            yield turn.command_response
+            self._repository.add_message(
+                turn.chat_id,
+                "assistant",
+                turn.command_response,
+            )
+            return
+
         response_chunks: list[str] = []
 
         async for chunk in self._runtime.generate_text_stream(turn.messages):
@@ -96,6 +119,9 @@ class ChatService:
 
     async def finalize_turn(self, turn: ChatTurn) -> None:
         """Run optional post-response work after the client receives done."""
+        if turn.command_response is not None:
+            return
+
         try:
             await self._try_auto_title(turn.chat_id)
         except Exception:

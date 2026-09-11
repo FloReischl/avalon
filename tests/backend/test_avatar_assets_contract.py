@@ -5,8 +5,10 @@ from pathlib import Path
 
 from httpx import ASGITransport, AsyncClient
 
+import app.state as state_module
 import app.user_config as user_config_module
 from app.main import create_app
+from app.state import initialize_avalo_state
 from app.user_config import initialize_user_config
 
 
@@ -35,7 +37,9 @@ def request(path: str):
 
 def initialize_blueprint_config() -> None:
     user_config_module._user_config = None
-    initialize_user_config(BLUEPRINT_CONFIG)
+    state_module._avalo_state = None
+    config = initialize_user_config(BLUEPRINT_CONFIG)
+    initialize_avalo_state(config)
 
 
 def test_standard_avatar_image_is_served() -> None:
@@ -63,6 +67,45 @@ def test_configured_animation_image_is_served() -> None:
 
     assert response.status_code == 200
     assert response.content
+
+
+def test_avatar_assets_use_current_avatar() -> None:
+    initialize_blueprint_config()
+    standard = state_module.get_avalo_state().current_avatar
+    alternate_asset = standard.images.animations[0].sprite_set
+    alternate_images = standard.images.model_copy(
+        update={"standard": alternate_asset},
+        deep=True,
+    )
+    second = standard.model_copy(
+        update={
+            "key": "second",
+            "images": alternate_images,
+        },
+        deep=True,
+    )
+    config = user_config_module.get_user_config().model_copy(
+        update={
+            "avatars": [
+                standard,
+                second,
+            ]
+        },
+        deep=True,
+    )
+
+    state_module._avalo_state = None
+    state = initialize_avalo_state(config)
+    assert state.set_current_avatar("second") is True
+
+    expected = (
+        alternate_images.base_path / alternate_asset
+    ).resolve().read_bytes()
+
+    response = request("/api/v1/assets/avatar/images/standard")
+
+    assert response.status_code == 200
+    assert response.content == expected
 
 
 def test_unknown_avatar_image_returns_not_found() -> None:

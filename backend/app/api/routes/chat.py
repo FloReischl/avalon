@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 
 from app.api.schemas import ChatRequest
+from app.commands.factory import build_command_registry
 from app.persistence.chat_repository import ChatRepository
 from app.persistence.database import (
     create_database_engine,
@@ -15,7 +16,7 @@ from app.persistence.database import (
 )
 from app.runtime.ollama import OllamaRuntime
 from app.services.chat import ChatNotFoundError, ChatService, ChatTurn
-from app.user_config import get_user_config
+from app.state import get_avalo_state
 
 logger = logging.getLogger(__name__)
 
@@ -28,10 +29,13 @@ def get_chat_service():
     repository = ChatRepository(create_session_factory(engine))
 
     try:
+        state = get_avalo_state()
+
         yield ChatService(
             OllamaRuntime(),
             repository,
-            get_user_config().standard_avatar,
+            state.current_avatar,
+            build_command_registry(state),
         )
     finally:
         engine.dispose()
@@ -68,7 +72,8 @@ async def create_chat_response(
 ) -> StreamingResponse:
     """Persist and stream one text-chat turn as Avalo SSE events."""
     try:
-        turn = service.start_turn(request.chat_id, request.message)
+        message = request.message.strip()
+        turn = service.start_turn(request.chat_id, message)
     except ChatNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 

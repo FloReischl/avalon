@@ -11,7 +11,7 @@ from app.api.schemas import (
     UiSpriteRegionResponse,
     UiStandardImageResponse,
 )
-from app.user_config import get_user_config
+from app.state import get_avalo_state
 
 
 router = APIRouter(prefix="/ui", tags=["ui"])
@@ -23,26 +23,31 @@ def _absolute_url(request: Request, path: str) -> str:
     return str(request.base_url).rstrip("/") + path
 
 
-def _avatar_asset_url(request: Request, path: str) -> str:
+def _avatar_asset_url(
+    request: Request,
+    path: str,
+    avatar_key: str,
+) -> str:
     return (
         f"{_absolute_url(request, path)}"
-        f"?v={_AVATAR_ASSET_CACHE_TOKEN}"
+        f"?v={_AVATAR_ASSET_CACHE_TOKEN}-{avatar_key}"
     )
 
 
 @router.get("/config", response_model=UiConfigResponse)
 async def ui_config(request: Request) -> UiConfigResponse:
     """Return only configuration intentionally exposed to the frontend."""
-    config = get_user_config()
-    avatar = config.standard_avatar
+    state = get_avalo_state()
+    avatar = state.current_avatar
 
     return UiConfigResponse(
-        name=config.name,
+        name=state.user_config.name,
         avatar=UiAvatarResponse(
             standard=UiStandardImageResponse(
                 url=_avatar_asset_url(
                     request,
                     "/api/v1/assets/avatar/images/standard",
+                    avatar.key,
                 ),
             ),
             animations=[
@@ -52,6 +57,7 @@ async def ui_config(request: Request) -> UiConfigResponse:
                     spriteSetUrl=_avatar_asset_url(
                         request,
                         f"/api/v1/assets/avatar/images/{animation.key}",
+                        avatar.key,
                     ),
                     sprites=[
                         UiSpriteRegionResponse(
