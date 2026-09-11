@@ -7,13 +7,13 @@ Avalo verfolgt zwei gleichwertige Ziele:
 1. Entwicklung einer nutzbaren Anwendung.
 2. Praktischer Kompetenzaufbau in AI Augmented Engineering.
 
-Nach Projekterfahrung mit GHC und Codex wird Avalo genutzt, um Aider als Command-Line-Agent mit einem lokal betriebenen Coding-LLM zu erproben. Als Implementierungsmodell dient zunächst `qwen2.5-coder:14b-instruct` über Ollama.
+Avalo wird genutzt, um einen AI-unterstützten Engineering-Prozess praktisch zu erproben und weiterzuentwickeln. Requirements Engineering, Architektur, Testkonzept, Implementierung und Review werden dabei bewusst getrennt und je nach Arbeitspaket mit dem dafür geeigneten Werkzeug unterstützt.
 
 ## 2. Verantwortung und Rollen
 
 Flo und Codex tragen die fachliche und technische Verantwortung für Anforderungen und Architektur gemeinsam. Codex liefert keine unfehlbaren Vorgaben, sondern begründete Empfehlungen, Alternativen, Risiken und erkennbare Unsicherheiten. Flo entscheidet final.
 
-Aider mit Qwen ist der ausführende Implementierungsagent. Das Modell trifft keine eigenständigen Produkt- oder Grundsatzentscheidungen. Fehlende oder widersprüchliche Vorgaben werden vor der Umsetzung geklärt.
+Codex und Flo legen vor der Umsetzung Ziel, relevante Architekturentscheidungen, Fehlerverhalten, Akzeptanzkriterien und Testbedarf fest. Fehlende oder widersprüchliche Vorgaben werden vor der Umsetzung geklärt.
 
 ## 3. Ablauf
 
@@ -46,22 +46,15 @@ Vor der Implementierung werden prüfbare Akzeptanzkriterien und sinnvolle Tests 
 
 Die Tests sollen Risiken abdecken und nicht lediglich Implementierungsdetails spiegeln.
 
-### 3.4 Arbeitspakete für Aider
+### 3.4 Arbeitspakete und Implementierung
 
-Nach Abschluss von Requirements Engineering, Architektur und Testkonzept zerlegt Codex die Umsetzung in kleine, für `qwen2.5-coder:14b-instruct` beherrschbare Pakete. Ein Paket soll möglichst genau ein klar prüfbares Ergebnis erzeugen.
+Nach Abschluss von Requirements Engineering, Architektur und Testkonzept zerlegt Codex die Umsetzung in kleine, klar prüfbare Arbeitspakete. Ein Paket soll möglichst genau ein kohärentes Ergebnis erzeugen.
 
-Jeder kopierfertige Aider-Prompt enthält:
+Für kleine und deterministische Änderungen kann Codex auf Basis der aktuellen relevanten Quelldateien einen Prompt2Code-Patch erzeugen. Flo wendet den Patch an und führt die vereinbarte Verifikation aus.
 
-1. notwendigen Projektkontext;
-2. konkretes Ziel;
-3. erlaubten und ausgeschlossenen Umfang;
-4. relevante Dateien oder zuerst zu untersuchende Bereiche;
-5. erforderliche Unit- oder Integrationstests;
-6. auszuführende Verifikation;
-7. eindeutige Fertig-Kriterien;
-8. die Aufforderung, bei widersprüchlichen oder fehlenden Grundlagen nicht zu raten.
+Benötigt ein Arbeitspaket breite Repository-Exploration, umfangreiche oder stark verteilte Änderungen, interaktives Debugging oder größere Implementierungsautonomie, kann es gezielt an einen repository-aware Coding-Agenten übergeben werden.
 
-Aider erhält eigene, paketbezogene Anweisungen. Die Codex-Regeln aus `AGENTS.md` werden nicht ungeprüft als Aider-Prompt wiederverwendet.
+Der Implementierungsweg ändert nichts an der Entscheidungsgrenze: Produkt- und relevante Architekturentscheidungen werden vor der Umsetzung geklärt. Bei fehlenden oder widersprüchlichen Grundlagen wird nicht geraten.
 
 ### 3.5 Review und Freigabe
 
@@ -80,9 +73,7 @@ Erst danach folgt das nächste Paket. Commits oder externe Änderungen erfolgen 
 - Betriebssystem: Linux
 - GPU: NVIDIA GeForce RTX 4060 Laptop GPU mit 8 GB VRAM
 - Arbeitsspeicher: 32 GB RAM
-- lokales Modell: `qwen2.5-coder:14b-instruct`
-- Modellserver: Ollama
-- Implementierungsagent: Aider 0.86.2
-- vorgesehene Kontextgröße: 16.384 Tokens
+- deterministischer Patch-Transport für geeignete Änderungen: Prompt2Code
+- repository-aware Coding-Agenten werden bei Bedarf gezielt eingesetzt
 
 Diese Werte beschreiben den aktuellen Ausgangspunkt und können nach gemessenen Erfahrungen angepasst werden.

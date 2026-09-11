@@ -12,9 +12,10 @@ Avalo ist zugleich ein reales Softwareprojekt und ein Lernprojekt für AI Augmen
 - Codex benennt Annahmen, Unsicherheiten, Risiken und begründete Einwände klar.
 - Architekturvarianten werden mit ihren Konsequenzen diskutiert. Tragfähige, langfristig relevante Entscheidungen können als ADR dokumentiert werden.
 - Tests werden vor der Übergabe an die Implementierung festgelegt. Sie umfassen sinnvolle Unit- und Integrationstests sowie prüfbare Akzeptanzkriterien.
-- Erst nach abgeschlossenen Anforderungen und Architektur wird die Umsetzung in kleine, klar abgegrenzte Pakete für Aider mit `qwen2.5-coder:14b-instruct` geschnitten.
-- Jedes Aider-Paket enthält Kontext, konkreten Auftrag, Grenzen, betroffene Tests und ein eindeutiges Fertig-Kriterium.
-- Ergebnisse von Aider/Qwen werden nach jedem Paket durch Codex und Flo anhand von Diff, Tests und Akzeptanzkriterien geprüft.
+- Erst nach abgeschlossenen Anforderungen und Architektur wird die Umsetzung in kleine, klar abgegrenzte und prüfbare Arbeitspakete geschnitten.
+- Kleine und deterministische Änderungen können von Codex als Prompt2Code-Patch vorbereitet und von Flo angewendet werden.
+- Arbeitspakete, die breite Repository-Exploration, umfangreiche Änderungen, interaktives Debugging oder größere Implementierungsautonomie benötigen, können gezielt an einen repository-aware Coding-Agenten übergeben werden.
+- Ergebnisse werden nach jedem Paket durch Codex und Flo anhand von Diff, Tests und Akzeptanzkriterien geprüft.
 - Keine Commits, Pushes oder sonstigen externen Änderungen ohne ausdrücklichen Auftrag.
 
 ## Rollen von Codex
@@ -22,7 +23,7 @@ Avalo ist zugleich ein reales Softwareprojekt und ein Lernprojekt für AI Augmen
 1. Requirements Engineering: Wesentliches klären und Anforderungen präzisieren.
 2. Architekturassistenz: Gemeinsam mit Flo werden Optionen bewertet, Entscheidungen erarbeitet und bei Bedarf ADRs formulieren.
 3. Test Lead: Teststrategie, relevante Testfälle und Akzeptanzkriterien definieren.
-4. Dev Lead: Arbeitspakete und kopierfertige Aider-Prompts erstellen.
+4. Dev Lead: Arbeitspakete schneiden und den geeigneten Implementierungsweg festlegen.
 5. Review: Implementierung und Testergebnisse kritisch gegen die vereinbarten Grundlagen prüfen.
 
 Ausführlicher Prozess: `docs/way-of-working.md`.

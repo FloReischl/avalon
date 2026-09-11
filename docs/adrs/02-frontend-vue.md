@@ -5,7 +5,7 @@
 
 ## Kontext
 
-Das Frontend soll klein, wartbar und für die Umsetzung mit Aider und `qwen2.5-coder:14b-instruct` gut beherrschbar sein.
+Das Frontend soll klein, wartbar und für AI-unterstützte Entwicklung gut beherrschbar sein.
 
 ## Entscheidung
 
