@@ -72,7 +72,7 @@ async def test_command_turn_persists_request_and_response_without_runtime(
     class EchoCommand:
         key = "echo"
 
-        def execute(self, payload: str) -> str:
+        async def execute(self, payload: str) -> str:
             return f"echo: {payload}"
 
     registry = CommandRegistry()

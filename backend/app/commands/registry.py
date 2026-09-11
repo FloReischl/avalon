@@ -19,7 +19,7 @@ class CommandRegistry:
 
         self._commands[key] = command
 
-    def execute(self, request: CommandRequest) -> str:
+    async def execute(self, request: CommandRequest) -> str:
         if not request.key:
             return "missing command identifier"
 
@@ -28,7 +28,7 @@ class CommandRegistry:
             return f"unknown command: {request.key}"
 
         try:
-            return command.execute(request.payload)
+            return await command.execute(request.payload)
         except Exception as exc:
             logger.exception("Command '%s' failed", request.key)
             return f"command failed!\n\nmessage: {exc}"

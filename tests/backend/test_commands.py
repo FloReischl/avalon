@@ -12,7 +12,7 @@ class StubCommand:
         self.response = response
         self.payloads: list[str] = []
 
-    def execute(self, payload: str) -> str:
+    async def execute(self, payload: str) -> str:
         self.payloads.append(payload)
         return self.response
 
@@ -60,23 +60,30 @@ def test_parse_command_without_identifier():
     assert parse_command("/command   ") == CommandRequest(key="", payload="")
 
 
-def test_registry_executes_registered_command():
+@pytest.mark.asyncio
+async def test_registry_executes_registered_command():
     command = StubCommand(response="done")
     registry = CommandRegistry()
     registry.register(command)
 
-    response = registry.execute(CommandRequest(key="test", payload="hello"))
+    response = await registry.execute(
+        CommandRequest(key="test", payload="hello")
+    )
 
     assert response == "done"
     assert command.payloads == ["hello"]
 
 
-def test_registry_lookup_is_case_insensitive():
+@pytest.mark.asyncio
+async def test_registry_lookup_is_case_insensitive():
     command = StubCommand()
     registry = CommandRegistry()
     registry.register(command)
 
-    assert registry.execute(CommandRequest(key="TEST", payload="")) == "ok"
+    assert (
+        await registry.execute(CommandRequest(key="TEST", payload=""))
+        == "ok"
+    )
 
 
 def test_registry_rejects_duplicate_keys_case_insensitively():
@@ -90,36 +97,43 @@ def test_registry_rejects_duplicate_keys_case_insensitively():
         registry.register(DuplicateCommand())
 
 
-def test_registry_reports_unknown_command():
+@pytest.mark.asyncio
+async def test_registry_reports_unknown_command():
     registry = CommandRegistry()
 
     assert (
-        registry.execute(CommandRequest(key="foobar", payload="test"))
+        await registry.execute(
+            CommandRequest(key="foobar", payload="test")
+        )
         == "unknown command: foobar"
     )
 
 
-def test_registry_reports_missing_identifier():
+@pytest.mark.asyncio
+async def test_registry_reports_missing_identifier():
     registry = CommandRegistry()
 
     assert (
-        registry.execute(CommandRequest(key="", payload=""))
+        await registry.execute(CommandRequest(key="", payload=""))
         == "missing command identifier"
     )
 
 
-def test_registry_logs_command_failure_and_returns_error_message(caplog):
+@pytest.mark.asyncio
+async def test_registry_logs_command_failure_and_returns_error_message(caplog):
     class FailingCommand:
         key = "fail"
 
-        def execute(self, payload: str) -> str:
+        async def execute(self, payload: str) -> str:
             raise RuntimeError("kaputt")
 
     registry = CommandRegistry()
     registry.register(FailingCommand())
 
     with caplog.at_level(logging.ERROR):
-        response = registry.execute(CommandRequest(key="fail", payload=""))
+        response = await registry.execute(
+            CommandRequest(key="fail", payload="")
+        )
 
     assert response == "command failed!\n\nmessage: kaputt"
     assert "Command 'fail' failed" in caplog.text

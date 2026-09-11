@@ -1,11 +1,24 @@
-import pytest
-from app.runtime.ollama import OllamaRuntime
 from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+
+from app.config import settings
+from app.runtime.ollama import OllamaRuntime
 
 @pytest.mark.integration
 @pytest.mark.asyncio
 async def test_ollama_runtime_integration():
-    runtime = OllamaRuntime()
+    standard = next(
+        llm for llm in settings.llm_models if llm.key == "standard"
+    )
+    state = SimpleNamespace(
+        current_llm=standard,
+        llm_switch_active=False,
+        begin_llm_inference=lambda: None,
+        end_llm_inference=lambda: None,
+    )
+    runtime = OllamaRuntime(lambda: state)
 
     # Check health
     assert await runtime.health(), "Ollama is not reachable or the model is not available."

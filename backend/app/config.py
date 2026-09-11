@@ -4,6 +4,14 @@ from dataclasses import dataclass
 
 
 @dataclass(frozen=True, slots=True)
+class LlmConfig:
+    """One selectable Ollama model."""
+
+    key: str
+    model: str
+
+
+@dataclass(frozen=True, slots=True)
 class Settings:
     """Static settings for the initial local development setup."""
 
@@ -15,8 +23,20 @@ class Settings:
     audio_max_seconds: int = 30
     audio_wait_exceed_seconds: float = 1.0
     ollama_host: str = "127.0.0.1:11434"
-    # ollama_model: str = "gemma4:e4b-it-q4_K_M"
-    ollama_model: str = "gemma4:e4b-it-q4_K_M-ctx32k"
+    llm_models: tuple[LlmConfig, ...] = (
+        LlmConfig(
+            key="standard",
+            model="gemma4:e4b-it-q4_K_M-ctx32k",
+        ),
+        LlmConfig(
+            key="uncensored",
+            model="hf.co/mradermacher/NeuralDaredevil-8B-abliterated-GGUF:Q4_K_M",
+        ),
+        LlmConfig(
+            key="nsfw",
+            model="hf.co/mradermacher/L3-8B-Stheno-v3.2-GGUF:Q4_K_M",
+        ),
+    )
     tts_engine: str = "kokoro"
     tts_device: str = "auto"
 
@@ -25,7 +45,20 @@ class Settings:
 
     tts_idle_unload_seconds: float = 300.0
 
-
+    @property
+    def ollama_model(self) -> str:
+        """Return the standard model until runtime selection moves to AvaloState."""
+        return next(
+            llm.model
+            for llm in self.llm_models
+            if llm.key == "standard"
+        )
 
 
 settings = Settings()
+
+_llm_keys = [llm.key for llm in settings.llm_models]
+if len(_llm_keys) != len(set(_llm_keys)):
+    raise ValueError("LLM keys must be unique.")
+if "standard" not in _llm_keys:
+    raise ValueError("Required LLM 'standard' is missing.")

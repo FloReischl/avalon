@@ -1,5 +1,6 @@
 """FastAPI application entry point."""
 
+import logging
 import sys
 import traceback
 from contextlib import asynccontextmanager
@@ -11,9 +12,40 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.router import api_router
 from app.config import settings
 from app.persistence.migrations import run_migrations
+from app.runtime.ollama import OllamaRuntime
 from app.state import initialize_avalo_state
 from app.user_config import initialize_user_config
 
+
+logger = logging.getLogger(__name__)
+
+
+async def validate_configured_llms(runtime: OllamaRuntime) -> None:
+    """Validate configured Ollama models required by this process."""
+    standard = next(
+        llm for llm in settings.llm_models if llm.key == "standard"
+    )
+
+    if not await runtime.model_exists(standard.model):
+        logger.error(
+            "[startup] required LLM '%s' is unavailable: %s",
+            standard.key,
+            standard.model,
+        )
+        raise RuntimeError(
+            f"Required LLM '{standard.key}' is unavailable: {standard.model}"
+        )
+
+    for llm in settings.llm_models:
+        if llm.key == "standard":
+            continue
+
+        if not await runtime.model_exists(llm.model):
+            logger.warning(
+                "[startup] optional LLM '%s' is unavailable: %s",
+                llm.key,
+                llm.model,
+            )
 
 
 @asynccontextmanager
@@ -24,6 +56,7 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
     try:
         user_config = initialize_user_config()
         initialize_avalo_state(user_config)
+        await validate_configured_llms(OllamaRuntime())
         run_migrations()
     except Exception:
 

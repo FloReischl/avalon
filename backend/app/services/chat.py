@@ -4,7 +4,7 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import datetime
 
-from app.commands import CommandRegistry, parse_command
+from app.commands import CommandRegistry, CommandRequest, parse_command
 from app.persistence.chat_repository import ChatRepository
 from app.user_config import AvatarConfig
 from app.runtime.base import ModelRuntime
@@ -21,6 +21,7 @@ class ChatTurn:
     chat_id: int
     messages: list[dict[str, str]]
     command_response: str | None = None
+    command_request: CommandRequest | None = None
 
 
 class ChatService:
@@ -63,9 +64,7 @@ class ChatService:
             return ChatTurn(
                 chat_id=chat_id,
                 messages=[],
-                command_response=self._command_registry.execute(
-                    command_request
-                ),
+                command_request=command_request,
             )
 
         context = self._repository.get_context_messages(chat_id, limit=100)
@@ -103,6 +102,18 @@ class ChatService:
             )
             return
 
+        if turn.command_request is not None:
+            command_response = await self._command_registry.execute(
+                turn.command_request
+            )
+            yield command_response
+            self._repository.add_message(
+                turn.chat_id,
+                "assistant",
+                command_response,
+            )
+            return
+
         response_chunks: list[str] = []
 
         async for chunk in self._runtime.generate_text_stream(turn.messages):
@@ -119,7 +130,10 @@ class ChatService:
 
     async def finalize_turn(self, turn: ChatTurn) -> None:
         """Run optional post-response work after the client receives done."""
-        if turn.command_response is not None:
+        if (
+            turn.command_response is not None
+            or turn.command_request is not None
+        ):
             return
 
         try:

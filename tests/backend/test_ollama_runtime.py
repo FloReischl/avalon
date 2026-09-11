@@ -11,6 +11,35 @@ from pytest_httpx import HTTPXMock
 from app.config import settings
 from app.runtime.ollama import OllamaRuntime
 
+
+class FakeRuntimeState:
+    def __init__(self) -> None:
+        self.current_llm = next(
+            llm for llm in settings.llm_models if llm.key == "standard"
+        )
+        self.begin_calls = 0
+        self.end_calls = 0
+        self.llm_switch_active = False
+
+    def begin_llm_inference(self) -> None:
+        self.begin_calls += 1
+
+    def end_llm_inference(self) -> None:
+        self.end_calls += 1
+
+
+@pytest.fixture(autouse=True)
+def runtime_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> FakeRuntimeState:
+    state = FakeRuntimeState()
+    monkeypatch.setattr(
+        "app.runtime.ollama.get_avalo_state",
+        lambda: state,
+    )
+    return state
+
+
 @pytest.mark.asyncio
 async def test_health_returns_true_when_model_is_available(
     httpx_mock: HTTPXMock,
@@ -60,6 +89,58 @@ async def test_health_returns_false_when_ollama_is_unreachable(
 
 
 @pytest.mark.asyncio
+async def test_model_exists_checks_explicit_model(
+    httpx_mock: HTTPXMock,
+) -> None:
+    model = "example:model"
+    httpx_mock.add_response(
+        method="POST",
+        match_json={"model": model},
+        url=f"http://{settings.ollama_host}/api/show",
+        json={"details": {"format": "gguf"}},
+    )
+
+    assert await OllamaRuntime().model_exists(model) is True
+
+
+@pytest.mark.asyncio
+async def test_unload_model_uses_zero_keep_alive(
+    httpx_mock: HTTPXMock,
+) -> None:
+    model = "example:model"
+    httpx_mock.add_response(
+        method="POST",
+        url=f"http://{settings.ollama_host}/api/generate",
+        match_json={
+            "model": model,
+            "keep_alive": 0,
+        },
+        json={"done": True},
+    )
+
+    await OllamaRuntime().unload_model(model)
+
+
+@pytest.mark.asyncio
+async def test_warm_up_model_uses_explicit_model(
+    httpx_mock: HTTPXMock,
+) -> None:
+    model = "example:model"
+    httpx_mock.add_response(
+        method="POST",
+        url=f"http://{settings.ollama_host}/api/generate",
+        match_json={
+            "model": model,
+            "prompt": "Hallo",
+            "stream": False,
+        },
+        json={"response": "Hallo"},
+    )
+
+    await OllamaRuntime().warm_up_model(model)
+
+
+@pytest.mark.asyncio
 async def test_warm_up_uses_stateless_text_generation(
     httpx_mock: HTTPXMock,
 ) -> None:
@@ -78,8 +159,22 @@ async def test_warm_up_uses_stateless_text_generation(
 
 
 @pytest.mark.asyncio
+async def test_generate_text_rejects_inference_during_llm_switch(
+    runtime_state: FakeRuntimeState,
+) -> None:
+    runtime_state.llm_switch_active = True
+
+    with pytest.raises(RuntimeError, match="LLM switch is in progress"):
+        await OllamaRuntime().generate_text("Hallo")
+
+    assert runtime_state.begin_calls == 0
+    assert runtime_state.end_calls == 0
+
+
+@pytest.mark.asyncio
 async def test_generate_text_returns_response(
     httpx_mock: HTTPXMock,
+    runtime_state: FakeRuntimeState,
 ) -> None:
     httpx_mock.add_response(
         method="POST",
@@ -97,6 +192,8 @@ async def test_generate_text_returns_response(
     result = await runtime.generate_text("Hallo")
 
     assert result == "Hallo Flo"
+    assert runtime_state.begin_calls == 1
+    assert runtime_state.end_calls == 1
 
 
 @pytest.mark.asyncio
@@ -236,6 +333,7 @@ async def test_generate_text_stream_raises_runtime_error_when_ollama_is_unreacha
 @pytest.mark.asyncio
 async def test_generate_text_stream_closes_http_stream_when_cancelled(
     monkeypatch: pytest.MonkeyPatch,
+    runtime_state: FakeRuntimeState,
 ) -> None:
     response_exited = False
     client_exited = False
@@ -292,6 +390,8 @@ async def test_generate_text_stream_closes_http_stream_when_cancelled(
 
     assert response_exited is True
     assert client_exited is True
+    assert runtime_state.begin_calls == 1
+    assert runtime_state.end_calls == 1
 
 
 @pytest.mark.asyncio

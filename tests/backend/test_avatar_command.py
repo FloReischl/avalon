@@ -1,5 +1,7 @@
 from types import SimpleNamespace
 
+import pytest
+
 from app.commands.avatar import AvatarCommand
 from app.commands.factory import build_command_registry
 from app.commands.parser import CommandRequest
@@ -22,42 +24,46 @@ class FakeState:
         return True
 
 
-def test_avatar_command_switches_current_avatar() -> None:
+@pytest.mark.asyncio
+async def test_avatar_command_switches_current_avatar() -> None:
     state = FakeState()
     command = AvatarCommand(state)  # type: ignore[arg-type]
 
-    response = command.execute("second")
+    response = await command.execute("second")
 
     assert response == "ok"
     assert state.current_avatar.key == "second"
 
 
-def test_avatar_command_rejects_invalid_avatar_without_state_change() -> None:
+@pytest.mark.asyncio
+async def test_avatar_command_rejects_invalid_avatar_without_state_change() -> None:
     state = FakeState()
     command = AvatarCommand(state)  # type: ignore[arg-type]
     selected = state.current_avatar
 
-    response = command.execute("missing")
+    response = await command.execute("missing")
 
     assert response == "invalid avatar key"
     assert state.current_avatar is selected
 
 
-def test_avatar_command_payload_is_case_sensitive() -> None:
+@pytest.mark.asyncio
+async def test_avatar_command_payload_is_case_sensitive() -> None:
     state = FakeState()
     command = AvatarCommand(state)  # type: ignore[arg-type]
 
-    response = command.execute("SECOND")
+    response = await command.execute("SECOND")
 
     assert response == "invalid avatar key"
     assert state.current_avatar.key == "standard"
 
 
-def test_command_registry_factory_registers_avatar_command() -> None:
+@pytest.mark.asyncio
+async def test_command_registry_factory_registers_avatar_command() -> None:
     state = FakeState()
     registry = build_command_registry(state)  # type: ignore[arg-type]
 
-    response = registry.execute(
+    response = await registry.execute(
         CommandRequest(
             key="avatar",
             payload="second",

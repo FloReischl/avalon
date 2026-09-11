@@ -298,6 +298,12 @@ modules:
   backend/app/config.py:
     role: central technical backend configuration
     symbols:
+      LlmConfig:
+        kind: dataclass
+        frozen: true
+        fields:
+          key: str
+          model: str
       Settings:
         kind: dataclass
         frozen: true
@@ -310,7 +316,7 @@ modules:
           audio_max_seconds: int
           audio_wait_exceed_seconds: float
           ollama_host: str
-          ollama_model: str
+          llm_models: "tuple[LlmConfig, ...]"
           tts_engine: str
           tts_device: str
           tts_chatterbox_model_revision: str
@@ -322,8 +328,43 @@ modules:
       - backend startup
       - health endpoint
       - Ollama runtime
+      - selectable process-local LLM configuration
       - audio constraints
       - technical TTS engine selection
+
+  backend/app/state.py:
+    role: process-local mutable Avalo runtime state
+    state:
+      - current avatar
+      - current LLM
+      - active LLM inference count
+      - LLM switch guard
+    llm_behavior:
+      - starts with the configured standard LLM
+      - LLM selection is transient and is not persisted
+      - tracks concurrent LLM inference operations
+      - rejects starting a model switch while inference is active
+      - exposes a switch guard used to block inference during model replacement
+    status: implemented
+
+  backend/app/commands:
+    role: process-local slash-command infrastructure
+    syntax: "/command <key> <payload>"
+    execution: async
+    commands:
+      avatar:
+        behavior: select the current avatar
+      llm:
+        behavior: select the current process-local LLM
+        semantics:
+          - reject switching while LLM inference is active
+          - reject unknown or unavailable configured models
+          - selecting the already-active model is a successful no-op
+          - unload the previous model before warming the target
+          - publish the new current LLM only after successful target warm-up
+          - recover the previous model when target warm-up fails
+          - terminate when the previous model cannot be recovered
+    status: implemented
 
   backend/app/main.py:
     role: FastAPI application entry point
@@ -341,8 +382,11 @@ modules:
       - database migration runner
     behavior:
       - initialize and validate per-user configuration before migrations
+      - initialize process-local Avalo runtime state
+      - require the configured standard LLM to exist in Ollama
+      - warn but continue when configured non-standard LLMs are unavailable
       - run Alembic migrations during lifespan startup
-      - fail backend startup when configuration or database initialization fails
+      - fail backend startup when required configuration, model, or database initialization fails
       - preserve raw technical exception diagnostics on stderr
     relevant_to:
       - backend startup
@@ -525,6 +569,8 @@ modules:
     behavior:
       - create a persistent chat atomically with its first user message
       - continue existing persistent chats by id
+      - parse command requests during turn preparation and execute commands asynchronously during response streaming
+      - persist command requests and complete command responses in chat history
       - pass only the most recent 100 persisted messages to ModelRuntime
       - prepend the injected avatar persona and instructions as one system message for assistant generation
       - keep automatic title generation independent of avatar persona and instructions
@@ -611,20 +657,30 @@ modules:
       - concrete runtime adapters
 
   backend/app/runtime/ollama.py:
-    role: working Ollama runtime adapter used for runtime spike
+    role: Ollama runtime adapter using the process-local current LLM
     symbols:
       OllamaRuntime:
         implements: ModelRuntime
         methods:
+          model_exists:
+            async: true
+            endpoint: "POST /api/show"
+            behavior: check one explicit Ollama model
           health:
             async: true
             endpoint: "POST /api/show"
-            result:
-              success: true
-              request_or_http_error: false
+            behavior: check the currently selected LLM
+          unload_model:
+            async: true
+            endpoint: "POST /api/generate"
+            behavior: unload one explicit model with keep_alive 0
+          warm_up_model:
+            async: true
+            endpoint: "POST /api/generate"
+            behavior: warm one explicit model without changing runtime state
           warm_up:
             async: true
-            behavior: delegate to minimal complete text generation and discard the response
+            behavior: delegate to minimal complete text generation using the current LLM
           generate_text:
             async: true
             endpoint: "POST /api/generate"
@@ -664,9 +720,15 @@ modules:
             timeout_seconds: 120
     dependencies:
       - backend/app/config.py:settings
+      - backend/app/state.py:AvaloState
       - backend/app/runtime/base.py:ModelRuntime
       - httpx
     status: implemented_spike
+    runtime_selection:
+      - resolve the current LLM lazily from AvaloState for every inference
+      - count active inference operations for text, audio, transcription, and title generation
+      - reject new inference while an LLM switch is active
+      - release the inference counter on completion, failure, or cancellation
     error_semantics:
       remote_errors: RuntimeError
       invalid_remote_response: RuntimeError
@@ -1723,8 +1785,31 @@ change_navigation:
     inspect:
       - backend/app/runtime/ollama.py
       - backend/app/config.py
+      - backend/app/state.py
       - tests/backend/test_ollama_runtime.py
       - tests/integration/test_ollama_integration.py
+
+  change_llm_selection:
+    inspect:
+      - backend/app/config.py
+      - backend/app/state.py
+      - backend/app/commands/base.py
+      - backend/app/commands/registry.py
+      - backend/app/commands/factory.py
+      - backend/app/commands/llm.py
+      - backend/app/runtime/ollama.py
+      - backend/app/services/chat.py
+      - backend/app/main.py
+      - tests/backend/test_llm_command.py
+      - tests/backend/test_state.py
+      - tests/backend/test_ollama_runtime.py
+      - tests/backend/test_main_startup.py
+    relevant_to:
+      - configured selectable LLMs
+      - transient current-model selection
+      - slash-command model switching
+      - inference and switch synchronization
+      - model unload, warm-up, rollback, and startup validation
 
   implement_audio_preparation:
     inspect:

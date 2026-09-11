@@ -1,5 +1,8 @@
 from pathlib import Path
 
+import pytest
+
+from app.config import settings
 from app.state import AvaloState
 from app.user_config import load_user_config
 
@@ -38,6 +41,96 @@ def test_avalo_state_starts_with_standard_avatar() -> None:
 
     assert state.user_config is config
     assert state.current_avatar is config.standard_avatar
+
+
+def test_avalo_state_starts_with_standard_llm() -> None:
+    config = load_user_config(BLUEPRINT_CONFIG)
+    state = AvaloState(config)
+
+    standard = next(llm for llm in settings.llm_models if llm.key == "standard")
+
+    assert state.current_llm is standard
+    assert state.llm_inference_active is False
+
+
+def test_avalo_state_switches_current_llm() -> None:
+    config = load_user_config(BLUEPRINT_CONFIG)
+    state = AvaloState(config)
+
+    changed = state.set_current_llm("uncensored")
+
+    assert changed is True
+    assert state.current_llm.key == "uncensored"
+
+
+def test_avalo_state_rejects_unknown_llm_without_state_change() -> None:
+    config = load_user_config(BLUEPRINT_CONFIG)
+    state = AvaloState(config)
+    selected = state.current_llm
+
+    changed = state.set_current_llm("missing")
+
+    assert changed is False
+    assert state.current_llm is selected
+
+
+def test_llm_lookup_is_case_sensitive() -> None:
+    config = load_user_config(BLUEPRINT_CONFIG)
+    state = AvaloState(config)
+
+    changed = state.set_current_llm("UNCENSORED")
+
+    assert changed is False
+    assert state.current_llm.key == "standard"
+
+
+def test_avalo_state_guards_llm_switch_state() -> None:
+    config = load_user_config(BLUEPRINT_CONFIG)
+    state = AvaloState(config)
+
+    state.begin_llm_switch()
+
+    assert state.llm_switch_active is True
+
+    state.end_llm_switch()
+
+    assert state.llm_switch_active is False
+
+
+def test_avalo_state_rejects_llm_switch_during_inference() -> None:
+    config = load_user_config(BLUEPRINT_CONFIG)
+    state = AvaloState(config)
+
+    state.begin_llm_inference()
+
+    with pytest.raises(RuntimeError, match="LLM inference is active"):
+        state.begin_llm_switch()
+
+    state.end_llm_inference()
+
+
+def test_avalo_state_tracks_concurrent_llm_inferences() -> None:
+    config = load_user_config(BLUEPRINT_CONFIG)
+    state = AvaloState(config)
+
+    state.begin_llm_inference()
+    state.begin_llm_inference()
+
+    assert state.llm_inference_active is True
+
+    state.end_llm_inference()
+    assert state.llm_inference_active is True
+
+    state.end_llm_inference()
+    assert state.llm_inference_active is False
+
+
+def test_avalo_state_rejects_llm_inference_counter_underflow() -> None:
+    config = load_user_config(BLUEPRINT_CONFIG)
+    state = AvaloState(config)
+
+    with pytest.raises(RuntimeError, match="LLM inference counter underflow"):
+        state.end_llm_inference()
 
 
 def test_avalo_state_switches_current_avatar() -> None:
