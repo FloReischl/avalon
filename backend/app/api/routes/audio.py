@@ -8,13 +8,21 @@ from fastapi import APIRouter, Depends, HTTPException, Response, status
 from fastapi.responses import StreamingResponse
 
 from app.api.routes.chat import format_sse_event
-from app.api.schemas import AudioResponseRequest
+from app.api.schemas import (
+    AudioCallStartRequest,
+    AudioCallStatusResponse,
+    AudioResponseRequest,
+)
 from app.audio.capture import CaptureError, PipeWireRecorder
 from app.persistence.chat_repository import ChatRepository
 from app.persistence.database import create_database_engine, create_session_factory
 from app.runtime.ollama import OllamaRuntime
 from app.services.audio_chat import AudioChatService
-from app.state import get_avalo_state
+from app.services.audio_call import (
+    AudioCallAlreadyActiveError,
+    AudioCallState,
+)
+from app.state import get_audio_call_state, get_avalo_state
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +41,47 @@ _audio_chat_service = AudioChatService(
 def get_audio_chat_service() -> AudioChatService:
     """Return the process-local audio service owning the active recorder."""
     return _audio_chat_service
+
+
+@router.get("/call/status", response_model=AudioCallStatusResponse)
+async def get_audio_call_status() -> AudioCallStatusResponse:
+    """Return the global audio-call state for any frontend window."""
+    return AudioCallStatusResponse(**get_audio_call_state().get_status().__dict__)
+
+
+@router.post("/call/start", response_model=AudioCallStatusResponse)
+def start_audio_call(
+    request: AudioCallStartRequest,
+) -> AudioCallStatusResponse:
+    """Start Avalo's one global avatar audio call."""
+    try:
+        status_value = get_audio_call_state().start(request.chat_id)
+    except AudioCallAlreadyActiveError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    return AudioCallStatusResponse(**status_value.__dict__)
+
+
+@router.post("/call/end", response_model=AudioCallStatusResponse)
+def end_audio_call() -> AudioCallStatusResponse:
+    """End Avalo's global avatar audio call and clear its association."""
+    return AudioCallStatusResponse(**get_audio_call_state().end().__dict__)
+
+
+@router.post("/call/turn/complete", response_model=AudioCallStatusResponse)
+def complete_audio_call_turn() -> AudioCallStatusResponse:
+    """Mark the active avatar call turn complete after local TTS playback."""
+    if not get_audio_call_state().get_status().active:
+        return AudioCallStatusResponse(**get_audio_call_state().get_status().__dict__)
+    return AudioCallStatusResponse(
+        **get_audio_call_state().set_turn_active(False).__dict__,
+    )
+
+
+@router.post("/call/speech/consume")
+def consume_audio_call_speech() -> dict[str, str | None]:
+    """Return and clear one assistant response reserved for avatar TTS."""
+    return {"text": get_audio_call_state().consume_speech()}
 
 
 @router.post("/recording/start", status_code=status.HTTP_204_NO_CONTENT)
@@ -137,8 +186,13 @@ async def stream_dialog_response(
             chat_id,
         ):
             if event.kind == "processing":
+                if get_audio_call_state().get_status().active:
+                    get_audio_call_state().set_turn_active(True)
                 yield format_sse_event("processing", {})
             elif event.kind == "chat":
+                call_status = get_audio_call_state().get_status()
+                if call_status.active and call_status.chat_id is None:
+                    get_audio_call_state().bind_chat(int(event.text))
                 yield format_sse_event("chat", {"id": event.text})
             elif event.kind == "assistant":
                 yield format_sse_event("chunk", {"text": event.text})

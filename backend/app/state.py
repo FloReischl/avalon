@@ -1,6 +1,12 @@
 from __future__ import annotations
 
 from app.user_config import AvatarConfig, UserConfig
+from app.services.audio_call import AudioCallState
+
+_audio_call_state = AudioCallState()
+
+def get_audio_call_state() -> AudioCallState:
+    return _audio_call_state
 
 
 class AvaloState:

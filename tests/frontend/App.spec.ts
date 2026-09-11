@@ -518,7 +518,7 @@ describe("App", () => {
     expect(exitAvaloMock).toHaveBeenCalledTimes(1);
   });
 
-  it("shows push-to-talk recording state only while the audio button is held", async () => {
+  it("renders the avatar-owned call button", async () => {
     getBackendSnapshotMock.mockResolvedValue({
       status: "ready",
       logs: ["Backend ready"],
@@ -527,48 +527,10 @@ describe("App", () => {
     const wrapper = mount(App);
     await flushPromises();
 
-    const audioButton = wrapper.get('[data-testid="audio-button"]');
+    const callButton = wrapper.get('[data-testid="avatar-call"]');
 
-    expect(wrapper.find('[data-testid="audio-countdown"]').exists()).toBe(false);
-
-    await audioButton.trigger("pointerdown", { button: 0 });
-
-    expect(audioButton.classes()).toContain("audio-button--recording");
-    expect(audioButton.attributes("aria-pressed")).toBe("true");
-    expect(wrapper.get('[data-testid="audio-countdown"]').text()).toBe("30");
-
-    await audioButton.trigger("pointerup");
-
-    expect(audioButton.classes()).not.toContain("audio-button--recording");
-    expect(audioButton.attributes("aria-pressed")).toBe("false");
-    expect(wrapper.find('[data-testid="audio-countdown"]').exists()).toBe(false);
-  });
-
-  it("aborts push-to-talk when the 30 second limit is reached", async () => {
-    vi.useFakeTimers();
-
-    getBackendSnapshotMock.mockResolvedValue({
-      status: "ready",
-      logs: ["Backend ready"],
-    });
-
-    const wrapper = mount(App);
-    await flushPromises();
-
-    const audioButton = wrapper.get('[data-testid="audio-button"]');
-    await audioButton.trigger("pointerdown", { button: 0 });
-
-    vi.advanceTimersByTime(29_000);
-    await wrapper.vm.$nextTick();
-
-    expect(wrapper.get('[data-testid="audio-countdown"]').text()).toBe("1");
-    expect(audioButton.classes()).toContain("audio-button--recording");
-
-    vi.advanceTimersByTime(1_000);
-    await wrapper.vm.$nextTick();
-
-    expect(audioButton.classes()).not.toContain("audio-button--recording");
-    expect(wrapper.find('[data-testid="audio-countdown"]').exists()).toBe(false);
+    expect(callButton.attributes("aria-label")).toBe("Dialog starten");
+    expect(callButton.attributes("title")).toBe("Dialog starten");
   });
 
   it.todo("sends a text message and renders the complete response");

@@ -112,6 +112,21 @@ class AudioResponseRequest(BaseModel):
     messages: list[ConversationMessage] = Field(default_factory=list)
 
 
+class AudioCallStartRequest(BaseModel):
+    """Start Avalo's one avatar audio call, optionally bound to a chat."""
+
+    chat_id: int | None = Field(default=None, gt=0)
+
+
+class AudioCallStatusResponse(BaseModel):
+    """Frontend-visible state of Avalo's one avatar audio call."""
+
+    active: bool
+    chat_id: int | None
+    turn_active: bool
+    pending_speech: str | None = None
+
+
 class TtsRequest(BaseModel):
     """Plain text to synthesize as local speech."""
 
@@ -122,5 +137,3 @@ class TtsPlaybackEndedRequest(BaseModel):
     """Identify the playback that has stopped in the frontend."""
 
     playback_id: str = Field(min_length=1)
-
-

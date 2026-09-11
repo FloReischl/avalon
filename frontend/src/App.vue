@@ -30,12 +30,18 @@ import {
   listenToAvatarRuntimeState,
   type AvatarRuntimeState,
 } from "./services/avatarState";
-
-type AudioState = "idle" | "recording";
-
+import { useTransientChat } from "./composables/useTransientChat";
+import {
+  completeAudioCallTurn,
+  consumeAudioCallSpeech,
+  endAudioCall,
+  getAudioCallStatus,
+  notifyTtsPlaybackEnded,
+  startAudioCall,
+  synthesizeSpeech,
+} from "./services/backend";
 
 const uiConfig = ref<UiConfig>();
-const MAX_AUDIO_SECONDS = 30;
 
 const AVATAR_DRAG_THRESHOLD_PX = 5;
 const AVATAR_MIN_PERCENT = 50;
@@ -46,8 +52,6 @@ const AVATAR_WINDOW_PADDING_PX = 48;
 
 const backendStatus = ref("initializing");
 const backendLogs = ref<string[]>([]);
-const audioState = ref<AudioState>("idle");
-const remainingRecordingSeconds = ref(MAX_AUDIO_SECONDS);
 const avatarScalePercent = ref(100);
 const avatarRuntimeState = ref<AvatarRuntimeState>({ state: "standard", backendPending: false });
 const animationFrame = ref(0);
@@ -58,8 +62,6 @@ const audioButton = useTemplateRef<HTMLButtonElement>("audioButton");
 const exitButton = useTemplateRef<HTMLButtonElement>("exitButton");
 
 let avatarPointerStart: { x: number; y: number } | undefined;
-let recordingTimer: number | undefined;
-let audioPointerHeld = false;
 let avatarLoaded = false;
 let avatarSyncRunning = false;
 let avatarSyncPending = false;
@@ -67,6 +69,22 @@ let uiConfigLoading = false;
 let unlisten: UnlistenFn | undefined;
 let unlistenAvatarState: UnlistenFn | undefined;
 let animationTimer: number | undefined;
+let dialogTtsAudio: HTMLAudioElement | undefined;
+let dialogTtsUrl: string | undefined;
+let dialogTtsPlaybackId: string | undefined;
+let dialogTtsCompletion: (() => void) | undefined;
+let callStatusTimer: number | undefined;
+
+const {
+  messages: dialogMessages,
+  errorMessage: dialogError,
+  selectChat,
+  sendDialogAudio,
+  abortDialogTurn,
+} = useTransientChat();
+const isDialogActive = ref(false);
+const isDialogSpeaking = ref(false);
+const isDialogThinking = ref(false);
 
 const activeAnimation = computed(() => uiConfig.value?.avatar.animations.find(
   (animation) => animation.key === avatarRuntimeState.value.state,
@@ -265,68 +283,137 @@ async function initializeUiConfig() {
   }
 }
 
-function clearRecordingTimer() {
-
-  if (recordingTimer !== undefined) {
-    window.clearInterval(recordingTimer);
-    recordingTimer = undefined;
+function stopDialogTts() {
+  const complete = dialogTtsCompletion;
+  dialogTtsCompletion = undefined;
+  complete?.();
+  dialogTtsAudio?.pause();
+  dialogTtsAudio = undefined;
+  if (dialogTtsUrl) URL.revokeObjectURL(dialogTtsUrl);
+  dialogTtsUrl = undefined;
+  isDialogSpeaking.value = false;
+  if (dialogTtsPlaybackId) {
+    void notifyTtsPlaybackEnded(dialogTtsPlaybackId).catch((error) =>
+      console.error("[avatar-call] failed to notify TTS playback end", error),
+    );
+    dialogTtsPlaybackId = undefined;
   }
 }
 
-function removeRecordingEndListeners() {
-  window.removeEventListener("pointerup", finishAudioRecording);
-  window.removeEventListener("pointercancel", abortAudioRecording);
-}
-
-function resetAudioRecordingState() {
-  clearRecordingTimer();
-  removeRecordingEndListeners();
-  audioState.value = "idle";
-  remainingRecordingSeconds.value = MAX_AUDIO_SECONDS;
-}
-
-function finishAudioRecording() {
-  audioPointerHeld = false;
-
-  if (audioState.value !== "recording") {
-    return;
+async function speakDialogResponse(index: number) {
+  const text = dialogMessages.value[index]?.content.trim() ?? "";
+  if (!text) return;
+  isDialogThinking.value = true;
+  try {
+    const tts = await synthesizeSpeech(text, new AbortController().signal);
+    dialogTtsPlaybackId = tts.playbackId;
+    const blob = await tts.response.blob();
+    dialogTtsUrl = URL.createObjectURL(blob);
+    const audio = new Audio(dialogTtsUrl);
+    dialogTtsAudio = audio;
+    isDialogThinking.value = false;
+    isDialogSpeaking.value = true;
+    await new Promise<void>((resolve, reject) => {
+      dialogTtsCompletion = resolve;
+      audio.onended = () => {
+        dialogTtsCompletion = undefined;
+        resolve();
+      };
+      audio.onerror = () => {
+        dialogTtsCompletion = undefined;
+        reject(audio.error);
+      };
+      void audio.play().catch(reject);
+    });
+  } catch (error) {
+    console.error("[avatar-call] TTS playback failed", error);
+  } finally {
+    stopDialogTts();
+    isDialogThinking.value = false;
   }
-
-  resetAudioRecordingState();
 }
 
-function abortAudioRecording() {
-  audioPointerHeld = false;
-
-  if (audioState.value !== "recording") {
-    return;
-  }
-
-  resetAudioRecordingState();
-}
-
-function startAudioRecording(event: PointerEvent) {
-  if (event.button !== 0 || audioPointerHeld || audioState.value === "recording") {
-    return;
-  }
-
-  event.preventDefault();
-  audioPointerHeld = true;
-
-  window.addEventListener("pointerup", finishAudioRecording);
-  window.addEventListener("pointercancel", abortAudioRecording);
-
-  audioState.value = "recording";
-  remainingRecordingSeconds.value = MAX_AUDIO_SECONDS;
-
-  recordingTimer = window.setInterval(() => {
-    remainingRecordingSeconds.value -= 1;
-
-    if (remainingRecordingSeconds.value <= 0) {
-      abortAudioRecording();
+async function runAvatarDialogLoop() {
+  while (isDialogActive.value) {
+    const result = await sendDialogAudio();
+    if (!isDialogActive.value) return;
+    if (!result) {
+      if (dialogError.value) {
+        await endAvatarDialog();
+        return;
+      }
+      continue;
     }
-  }, 1000);
+    await speakDialogResponse(result.assistantIndex);
+    try {
+      await completeAudioCallTurn();
+    } catch (error) {
+      console.error("[avatar-call] failed to complete call turn", error);
+    }
+  }
 }
+
+async function startAvatarDialog(alreadyStarted = false, chatId?: number) {
+  if (isDialogActive.value) return;
+  try {
+    if (!alreadyStarted) await startAudioCall();
+    if (chatId !== undefined) await selectChat(chatId);
+    isDialogActive.value = true;
+    dialogError.value = undefined;
+    void runAvatarDialogLoop();
+  } catch (error) {
+    console.error("[avatar-call] failed to start", error);
+  }
+}
+
+async function syncExternalAvatarCall() {
+  if (isDialogActive.value) return;
+  try {
+    const status = await getAudioCallStatus();
+    if (status.active) await startAvatarDialog(true, status.chat_id ?? undefined);
+    if (status.pending_speech && !isDialogSpeaking.value) {
+      const text = await consumeAudioCallSpeech();
+      if (text) {
+        dialogMessages.value.push({ role: "assistant", content: text });
+        await speakDialogResponse(dialogMessages.value.length - 1);
+        await completeAudioCallTurn();
+      }
+    }
+  } catch (error) {
+    console.error("[avatar-call] failed to poll status", error);
+  }
+}
+
+async function endAvatarDialog() {
+  if (!isDialogActive.value) return;
+  isDialogActive.value = false;
+  abortDialogTurn();
+  stopDialogTts();
+  try {
+    await endAudioCall();
+  } catch (error) {
+    console.error("[avatar-call] failed to end", error);
+  }
+}
+
+function handleDialogButton() {
+  if (!isDialogActive.value) {
+    void startAvatarDialog();
+  } else if (isDialogSpeaking.value) {
+    stopDialogTts();
+  } else {
+    void endAvatarDialog();
+  }
+}
+
+watch([isDialogActive, isDialogSpeaking, isDialogThinking], () => {
+  avatarRuntimeState.value = {
+    state: isDialogSpeaking.value ? "speaking" : isDialogActive.value ? (
+      isDialogThinking.value ? "thinking" : "listening"
+    ) : "standard",
+    backendPending: isDialogThinking.value,
+  };
+});
 
 async function applyAvatarInputShape() {
   const image = avatarImage.value;
@@ -521,6 +608,7 @@ async function handleExit() {
 onMounted(async () => {
   window.addEventListener("keydown", handleAvatarScaleKeydown);
   window.addEventListener("resize", handleAvatarWindowResize);
+  callStatusTimer = window.setInterval(() => { void syncExternalAvatarCall(); }, 500);
 
   try {
     unlisten = await listenToBackendLifecycle({
@@ -576,10 +664,10 @@ watch(
 
 
 onBeforeUnmount(() => {
-  audioPointerHeld = false;
   window.removeEventListener("keydown", handleAvatarScaleKeydown);
   window.removeEventListener("resize", handleAvatarWindowResize);
-  resetAudioRecordingState();
+  if (isDialogActive.value) void endAvatarDialog();
+  if (callStatusTimer !== undefined) window.clearInterval(callStatusTimer);
   unlisten?.();
   unlistenAvatarState?.();
   if (animationTimer !== undefined) window.clearInterval(animationTimer);
@@ -658,23 +746,19 @@ onBeforeUnmount(() => {
           <button
             ref="audioButton"
             class="audio-button"
-            :class="{ 'audio-button--recording': audioState === 'recording' }"
             type="button"
-            aria-label="Push to talk"
-            :aria-pressed="audioState === 'recording'"
-            data-testid="audio-button"
-            @pointerdown="startAudioRecording"
-            @pointerup="finishAudioRecording"
-            @pointercancel="abortAudioRecording"
+            data-testid="avatar-call"
+            :aria-label="!isDialogActive ? 'Dialog starten' : isDialogSpeaking ? 'Sprachausgabe stoppen' : 'Dialog beenden'"
+            :title="!isDialogActive ? 'Dialog starten' : isDialogSpeaking ? 'Sprachausgabe stoppen' : 'Dialog beenden'"
+            @click="handleDialogButton"
           >
             <svg
               class="audio-icon"
               viewBox="0 0 24 24"
               aria-hidden="true"
             >
-              <path
-                d="M12 15a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21H8v2h8v-2h-3v-2.08A7 7 0 0 0 19 12h-2Z"
-              />
+              <rect v-if="isDialogSpeaking" x="7" y="7" width="10" height="10" />
+              <path v-else d="M7.4 3.5l2.2 4.1-1.7 1.7a15 15 0 0 0 6.8 6.8l1.7-1.7 4.1 2.2c.5.3.7.8.5 1.3l-.9 2.8c-.2.5-.7.8-1.2.8C9.8 21.5 2.5 14.2 2.5 5.1c0-.5.3-1 .8-1.2l2.8-.9c.5-.2 1 .1 1.3.5z" />
             </svg>
           </button>
 
@@ -699,13 +783,6 @@ onBeforeUnmount(() => {
           </button>
         </div>
 
-        <span
-          v-if="audioState === 'recording'"
-          class="audio-countdown"
-          data-testid="audio-countdown"
-        >
-          {{ remainingRecordingSeconds }}
-        </span>
       </div>
 
     </div>

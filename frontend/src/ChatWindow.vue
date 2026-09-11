@@ -22,6 +22,8 @@ import {
   notifyTtsPlaybackEnded,
   startAudioRecording as startBackendAudioRecording,
   synthesizeSpeech,
+  startAudioCall,
+  getAudioCallStatus,
 } from "./services/backend";
 import { exportChatToMarkdown } from "./services/chatExport";
 import {
@@ -68,6 +70,20 @@ const isDialogActive = ref(false);
 const isDialogTtsActive = ref(false);
 const isTtsPlaying = ref(false);
 const skipDialogTts = ref(false);
+const callTurnActive = ref(false);
+let callStatusTimer: number | undefined;
+
+const isBoundCallTurnActive = computed(() => callTurnActive.value);
+
+async function refreshCallStatus() {
+  try {
+    const status = await getAudioCallStatus();
+    callTurnActive.value = status.active && status.turn_active
+      && status.chat_id === selectedChatId.value;
+  } catch (error) {
+    console.error("[audio-call] failed to poll status", error);
+  }
+}
 
 const isDialogRespondingOrSpeaking = computed(
   () => isDialogResponding.value || isDialogTtsActive.value,
@@ -367,6 +383,8 @@ onMounted(async () => {
   }
 
   await refreshChats(true, 20);
+  await refreshCallStatus();
+  callStatusTimer = window.setInterval(() => { void refreshCallStatus(); }, 500);
 });
 
 
@@ -387,6 +405,7 @@ onBeforeUnmount(() => {
 
   replaceCurrentTts();
   resetRecordingState();
+  if (callStatusTimer !== undefined) window.clearInterval(callStatusTimer);
 });
 
 
@@ -610,17 +629,11 @@ function stopDialogAudio() {
 }
 
 function handleDialogButton() {
-  if (!isDialogActive.value) {
-    startDialog();
-    return;
-  }
-
-  if (isDialogSpeaking.value) {
-    stopDialogAudio();
-    return;
-  }
-
-  endDialog();
+  if (selectedChatId.value === undefined) return;
+  void startAudioCall(selectedChatId.value).catch((error) => {
+    console.error("[audio-call] failed to delegate call to avatar", error);
+    errorMessage.value = "Dialog konnte nicht gestartet werden.";
+  });
 }
 
 const DEFAULT_SIDEBAR_WIDTH_PX = 280;
@@ -1352,7 +1365,7 @@ function handleInputKeydown(event: KeyboardEvent) {
             data-testid="send-chat"
             aria-label="Nachricht senden"
             title="Nachricht senden"
-            :disabled="input.length === 0 || isDialogActive"
+            :disabled="input.length === 0 || isDialogActive || isBoundCallTurnActive"
             @click="sendComposerInput"
           >
             <svg

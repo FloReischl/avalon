@@ -48,6 +48,13 @@ export interface TtsResponse {
   response: Response;
 }
 
+export interface AudioCallStatus {
+  active: boolean;
+  chat_id: number | null;
+  turn_active: boolean;
+  pending_speech: string | null;
+}
+
 interface ChatChunkData {
   text: string;
 }
@@ -236,6 +243,40 @@ export async function streamDialogResponse(
   );
 
   await consumeChatStream(response, handlers);
+}
+
+export async function startAudioCall(chatId?: number): Promise<AudioCallStatus> {
+  const response = await fetch(`${BACKEND_BASE_URL}/api/v1/audio/call/start`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(chatId === undefined ? {} : { chat_id: chatId }),
+  });
+  if (!response.ok) throw new Error(`Audio call start failed with ${response.status}`);
+  return response.json() as Promise<AudioCallStatus>;
+}
+
+export async function getAudioCallStatus(): Promise<AudioCallStatus> {
+  const response = await fetch(`${BACKEND_BASE_URL}/api/v1/audio/call/status`);
+  if (!response.ok) throw new Error(`Audio call status failed with ${response.status}`);
+  return response.json() as Promise<AudioCallStatus>;
+}
+
+export async function consumeAudioCallSpeech(): Promise<string | null> {
+  const response = await fetch(`${BACKEND_BASE_URL}/api/v1/audio/call/speech/consume`, { method: "POST" });
+  if (!response.ok) throw new Error(`Audio call speech consume failed with ${response.status}`);
+  return (await response.json() as { text: string | null }).text;
+}
+
+export async function endAudioCall(): Promise<AudioCallStatus> {
+  const response = await fetch(`${BACKEND_BASE_URL}/api/v1/audio/call/end`, { method: "POST" });
+  if (!response.ok) throw new Error(`Audio call end failed with ${response.status}`);
+  return response.json() as Promise<AudioCallStatus>;
+}
+
+export async function completeAudioCallTurn(): Promise<AudioCallStatus> {
+  const response = await fetch(`${BACKEND_BASE_URL}/api/v1/audio/call/turn/complete`, { method: "POST" });
+  if (!response.ok) throw new Error(`Audio call turn completion failed with ${response.status}`);
+  return response.json() as Promise<AudioCallStatus>;
 }
 
 export async function synthesizeSpeech(
