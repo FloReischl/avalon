@@ -44,6 +44,18 @@ def test_audio_call_end_clears_everything() -> None:
     assert state.end() == state.get_status().__class__(False, None, False)
 
 
+def test_audio_call_queues_one_text_response_until_avatar_consumes_it() -> None:
+    state = AudioCallState()
+    state.start(42)
+    state.set_turn_active(True)
+    state.queue_speech("Antwort")
+
+    assert state.get_status().pending_speech == "Antwort"
+    assert state.consume_speech() == "Antwort"
+    assert state.get_status().pending_speech is None
+    assert state.set_turn_active(False).turn_active is False
+
+
 def test_second_audio_call_is_rejected() -> None:
     state = AudioCallState()
     state.start()

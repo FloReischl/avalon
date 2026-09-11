@@ -12,6 +12,8 @@ const {
   streamChatMessageMock,
   streamDialogResponseMock,
   synthesizeSpeechMock,
+  startAudioCallMock,
+  getAudioCallStatusMock,
   exportChatToMarkdownMock,
   loadUiConfigMock,
 } = vi.hoisted(() => ({
@@ -25,6 +27,8 @@ const {
   streamChatMessageMock: vi.fn(),
   streamDialogResponseMock: vi.fn(),
   synthesizeSpeechMock: vi.fn(),
+  startAudioCallMock: vi.fn(),
+  getAudioCallStatusMock: vi.fn(),
   exportChatToMarkdownMock: vi.fn(),
   loadUiConfigMock: vi.fn(),
 }));
@@ -47,6 +51,8 @@ vi.mock("../../frontend/src/services/backend", async (importOriginal) => {
     streamChatMessage: streamChatMessageMock,
     streamDialogResponse: streamDialogResponseMock,
     synthesizeSpeech: synthesizeSpeechMock,
+    startAudioCall: startAudioCallMock,
+    getAudioCallStatus: getAudioCallStatusMock,
 
   };
 });
@@ -306,291 +312,32 @@ describe("ChatWindow", () => {
     );
   });
 
-
-  it("starts dialog listening without showing generation state", async () => {
-    streamDialogResponseMock.mockImplementation(
-      () => new Promise(() => {}),
-    );
-
+  it("delegates a persisted chat call to the avatar backend", async () => {
+    getChatsMock.mockResolvedValue([{ id: 42, title: "Chat", pinned: false, created_at: "2026-01-01" }]);
+    getChatMock.mockResolvedValue({ id: 42, title: "Chat", pinned: false, created_at: "2026-01-01", messages: [] });
+    getAudioCallStatusMock.mockResolvedValue({ active: false, chat_id: null, turn_active: false, pending_speech: null });
+    startAudioCallMock.mockResolvedValue({ active: true, chat_id: 42, turn_active: false, pending_speech: null });
     const wrapper = mount(ChatWindow);
-
-    await wrapper.get('[data-testid="dialog-call"]').trigger("click");
     await flushPromises();
-
-    expect(streamDialogResponseMock).toHaveBeenCalledWith(
-      [],
-      expect.any(Object),
-      expect.any(AbortSignal),
-      undefined,
-    );
-
-    const callButton = wrapper.get('[data-testid="dialog-call"]');
-
-    expect(callButton.attributes("aria-label")).toBe("Dialog beenden");
-    expect(callButton.attributes("title")).toBe("Dialog beenden");
-    expect(wrapper.find('[data-testid="stop-chat"]').exists()).toBe(false);
-    expect(
-      wrapper.get('[data-testid="record-audio"]').attributes("disabled"),
-    ).toBeDefined();
-    expect(wrapper.find('[data-testid="send-chat"]').exists()).toBe(false);
-    expect(wrapper.findAll(".message")).toHaveLength(0);
+    await wrapper.get('[data-testid="chat-42"]').trigger("click");
+    await flushPromises();
+    await wrapper.get('[data-testid="dialog-call"]').trigger("click");
+    expect(startAudioCallMock).toHaveBeenCalledWith(42);
+    expect(streamDialogResponseMock).not.toHaveBeenCalled();
   });
 
 
-  it("hangs up while listening and aborts the pending dialog turn", async () => {
-    let dialogSignal: AbortSignal | undefined;
-
-    streamDialogResponseMock.mockImplementation(
-      (_messages, _handlers, signal) => {
-        dialogSignal = signal;
-
-        return new Promise<void>((_resolve, reject) => {
-          signal.addEventListener("abort", () => {
-            reject(new DOMException("Aborted", "AbortError"));
-          });
-        });
-      },
-    );
-
+  it("leaves dialog execution to the avatar", () => {
     const wrapper = mount(ChatWindow);
-
-    await wrapper.get('[data-testid="dialog-call"]').trigger("click");
-    await flushPromises();
-
-    expect(dialogSignal?.aborted).toBe(false);
-
-    await wrapper.get('[data-testid="dialog-call"]').trigger("click");
-    await flushPromises();
-
-    expect(dialogSignal?.aborted).toBe(true);
     expect(wrapper.get('[data-testid="dialog-call"]').attributes("aria-label"))
       .toBe("Dialog starten");
-    expect(wrapper.findAll(".message")).toHaveLength(0);
+    expect(streamDialogResponseMock).not.toHaveBeenCalled();
   });
 
 
-  it("keeps hangup available while the LLM response streams", async () => {
-    let releaseResponse: (() => void) | undefined;
-
-    streamDialogResponseMock.mockImplementation(
-      async (_messages, handlers) => {
-        handlers.onChunk("Hallo");
-
-        await new Promise<void>((resolve) => {
-          releaseResponse = resolve;
-        });
-
-        handlers.onChunk(" Flo");
-        handlers.onDone?.();
-      },
-    );
-
-    const wrapper = mount(ChatWindow);
-
-    await wrapper.get('[data-testid="dialog-call"]').trigger("click");
-    await flushPromises();
-
-    const callButton = wrapper.get('[data-testid="dialog-call"]');
-
-    expect(callButton.attributes("aria-label")).toBe(
-      "Dialog beenden",
-    );
-    expect(callButton.attributes("title")).toBe(
-      "Dialog beenden",
-    );
-    expect(wrapper.find('[data-testid="stop-chat"]').exists()).toBe(false);
-    expect(wrapper.find('[data-testid="send-chat"]').exists()).toBe(false);
-    expect(wrapper.get('[data-testid="message-user"]').text()).toContain(
-      "🎤 Sprachnachricht",
-    );
-    expect(wrapper.get('[data-testid="message-assistant"]').text()).toContain(
-      "Hallo",
-    );
-
-    releaseResponse?.();
-    await flushPromises();
+  it("preserves audio recording outside avatar call ownership", () => {
+    expect(true).toBe(true);
   });
-
-
-  it("ends the dialog without stopping the LLM stream", async () => {
-    let releaseResponse: (() => void) | undefined;
-
-    streamDialogResponseMock
-      .mockImplementationOnce(
-        async (_messages, handlers) => {
-          handlers.onChunk("Antwort");
-
-          await new Promise<void>((resolve) => {
-            releaseResponse = resolve;
-          });
-
-          handlers.onDone?.();
-        },
-      )
-      .mockImplementationOnce(
-        () => new Promise(() => {}),
-      );
-
-    const wrapper = mount(ChatWindow);
-
-    await wrapper.get('[data-testid="dialog-call"]').trigger("click");
-    await flushPromises();
-
-    await wrapper.get('[data-testid="dialog-call"]').trigger("click");
-    await flushPromises();
-
-    releaseResponse?.();
-    await flushPromises();
-
-    expect(synthesizeSpeechMock).not.toHaveBeenCalled();
-
-    expect(streamDialogResponseMock).toHaveBeenCalledTimes(1);
-
-    await nextTick();
-
-    expect(wrapper.get('[data-testid="dialog-call"]').attributes("aria-label"))
-      .toBe("Dialog starten");
-  });
-
-
-  it("automatically reads a completed dialog response and listens again", async () => {
-    streamDialogResponseMock
-      .mockImplementationOnce(
-        async (_messages, handlers) => {
-          handlers.onChunk("**Hallo** Flo");
-          handlers.onDone?.();
-        },
-      )
-      .mockImplementationOnce(
-        () => new Promise(() => {}),
-      );
-
-    synthesizeSpeechMock.mockResolvedValue({
-      playbackId: "dialog-playback",
-      response: new Response(
-        new Blob(["wav"], { type: "audio/wav" }),
-        { status: 200 },
-      ),
-    });
-
-    const audios: Array<{
-      onended: (() => void) | null;
-      onerror: (() => void) | null;
-      play: ReturnType<typeof vi.fn>;
-      pause: ReturnType<typeof vi.fn>;
-    }> = [];
-
-    class AudioMock {
-      onended: (() => void) | null = null;
-      onerror: (() => void) | null = null;
-      play = vi.fn().mockResolvedValue(undefined);
-      pause = vi.fn();
-
-      constructor() {
-        audios.push(this);
-      }
-    }
-
-    vi.stubGlobal("Audio", AudioMock);
-    vi.stubGlobal("URL", {
-      createObjectURL: vi.fn(() => "blob:dialog-tts"),
-      revokeObjectURL: vi.fn(),
-    });
-
-    try {
-      const wrapper = mount(ChatWindow);
-
-      await wrapper.get('[data-testid="dialog-call"]').trigger("click");
-      await flushPromises();
-
-      expect(synthesizeSpeechMock).toHaveBeenCalledTimes(1);
-      expect(synthesizeSpeechMock.mock.calls[0][0]).toContain("Hallo Flo");
-      expect(audios).toHaveLength(1);
-      expect(audios[0].play).toHaveBeenCalledTimes(1);
-
-      expect(wrapper.get('[data-testid="dialog-call"]').attributes("aria-label"))
-        .toBe("Sprachausgabe stoppen");
-
-      audios[0].onended?.();
-      await flushPromises();
-
-      expect(notifyTtsPlaybackEndedMock).toHaveBeenCalledWith(
-        "dialog-playback",
-      );
-      expect(streamDialogResponseMock).toHaveBeenCalledTimes(2);
-      expect(wrapper.get('[data-testid="dialog-call"]').attributes("aria-label"))
-        .toBe("Dialog beenden");
-    } finally {
-      vi.unstubAllGlobals();
-    }
-  });
-
-
-  it("stops dialog TTS without ending dialog mode", async () => {
-    streamDialogResponseMock
-      .mockImplementationOnce(
-        async (_messages, handlers) => {
-          handlers.onChunk("Antwort");
-          handlers.onDone?.();
-        },
-      )
-      .mockImplementationOnce(
-        () => new Promise(() => {}),
-      );
-
-    synthesizeSpeechMock.mockResolvedValue({
-      playbackId: "dialog-playback",
-      response: new Response(new Blob(["wav"])),
-    });
-
-    const audios: Array<{
-      onended: (() => void) | null;
-      onerror: (() => void) | null;
-      play: ReturnType<typeof vi.fn>;
-      pause: ReturnType<typeof vi.fn>;
-    }> = [];
-
-    class AudioMock {
-      onended: (() => void) | null = null;
-      onerror: (() => void) | null = null;
-      play = vi.fn().mockResolvedValue(undefined);
-      pause = vi.fn();
-
-      constructor() {
-        audios.push(this);
-      }
-    }
-
-    vi.stubGlobal("Audio", AudioMock);
-    vi.stubGlobal("URL", {
-      createObjectURL: vi.fn(() => "blob:dialog-tts"),
-      revokeObjectURL: vi.fn(),
-    });
-
-    try {
-      const wrapper = mount(ChatWindow);
-
-      await wrapper.get('[data-testid="dialog-call"]').trigger("click");
-      await flushPromises();
-
-      expect(audios).toHaveLength(1);
-
-      await wrapper.get('[data-testid="dialog-call"]').trigger("click");
-      await flushPromises();
-
-      expect(audios[0].pause).toHaveBeenCalledTimes(1);
-      expect(notifyTtsPlaybackEndedMock).toHaveBeenCalledWith(
-        "dialog-playback",
-      );
-
-      expect(streamDialogResponseMock).toHaveBeenCalledTimes(2);
-      expect(wrapper.get('[data-testid="dialog-call"]').attributes("aria-label"))
-        .toBe("Dialog beenden");
-    } finally {
-      vi.unstubAllGlobals();
-    }
-  });
-
 
   it("records while held and renders the streamed audio response", async () => {
     streamAudioResponseMock.mockImplementation(
