@@ -128,6 +128,23 @@ describe("ChatWindow", () => {
     streamChatMessageMock.mockReset();
     streamDialogResponseMock.mockReset();
     synthesizeSpeechMock.mockReset();
+
+    startAudioCallMock.mockReset();
+    startAudioCallMock.mockResolvedValue({
+      active: true,
+      chat_id: null,
+      turn_active: false,
+      pending_speech: null,
+    });
+
+    getAudioCallStatusMock.mockReset();
+    getAudioCallStatusMock.mockResolvedValue({
+      active: false,
+      chat_id: null,
+      turn_active: false,
+      pending_speech: null,
+    });
+
     exportChatToMarkdownMock.mockReset();
     exportChatToMarkdownMock.mockResolvedValue(undefined);
 
@@ -334,6 +351,101 @@ describe("ChatWindow", () => {
     expect(streamDialogResponseMock).not.toHaveBeenCalled();
   });
 
+  it("refreshes the chat list when the ChatWindow regains focus", async () => {
+    const wrapper = mount(ChatWindow);
+    await flushPromises();
+
+    expect(getChatsMock).toHaveBeenCalledTimes(1);
+
+    getChatsMock.mockResolvedValue([
+      {
+        id: 42,
+        title: "Avatar Chat",
+        pinned: false,
+        created_at: "2026-09-11T18:00:00",
+      },
+    ]);
+
+    window.dispatchEvent(new Event("focus"));
+    await flushPromises();
+
+    expect(getChatsMock).toHaveBeenCalledTimes(2);
+    expect(wrapper.get('[data-testid="chat-42"]').text()).toContain(
+      "Avatar Chat",
+    );
+  });
+
+  it("refreshes visible messages while an avatar call is bound to the selected chat", async () => {
+    vi.useFakeTimers();
+
+    getChatsMock.mockResolvedValue([
+      {
+        id: 42,
+        title: "Call Chat",
+        pinned: false,
+        created_at: "2026-09-11T18:00:00",
+      },
+    ]);
+
+    getChatMock
+      .mockResolvedValueOnce({
+        id: 42,
+        title: "Call Chat",
+        pinned: false,
+        created_at: "2026-09-11T18:00:00",
+        messages: [],
+      })
+      .mockResolvedValue({
+        id: 42,
+        title: "Call Chat",
+        pinned: false,
+        created_at: "2026-09-11T18:00:00",
+        messages: [
+          {
+            id: 1,
+            role: "user",
+            content: "Audiofrage",
+            created_at: "2026-09-11T18:00:01",
+          },
+          {
+            id: 2,
+            role: "assistant",
+            content: "Audioantwort",
+            created_at: "2026-09-11T18:00:02",
+          },
+        ],
+      });
+
+    getAudioCallStatusMock.mockResolvedValue({
+      active: true,
+      chat_id: 42,
+      turn_active: false,
+      pending_speech: null,
+    });
+
+    const wrapper = mount(ChatWindow);
+
+    try {
+      await flushPromises();
+      await wrapper.get('[data-testid="chat-42"]').trigger("click");
+      await flushPromises();
+
+      expect(wrapper.findAll(".message")).toHaveLength(0);
+
+      await vi.advanceTimersByTimeAsync(500);
+      await flushPromises();
+
+      expect(wrapper.get('[data-testid="message-user"]').text()).toContain(
+        "Audiofrage",
+      );
+      expect(
+        wrapper.get('[data-testid="message-assistant"]').text(),
+      ).toContain("Audioantwort");
+    } finally {
+      wrapper.unmount();
+      vi.useRealTimers();
+    }
+  });
 
   it("preserves audio recording outside avatar call ownership", () => {
     expect(true).toBe(true);

@@ -18,6 +18,7 @@ todo
 
 minor chabges
 - input-send with ENTER, if no '\n' contained
+- transparent window too large
 
 
 minor change (only 1)

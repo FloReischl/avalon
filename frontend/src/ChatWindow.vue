@@ -46,6 +46,7 @@ const {
   chatSummaries,
   selectedChatId,
   refreshChats,
+  refreshSelectedChat,
   selectChat,
   newChat,
   renameChat,
@@ -78,8 +79,14 @@ const isBoundCallTurnActive = computed(() => callTurnActive.value);
 async function refreshCallStatus() {
   try {
     const status = await getAudioCallStatus();
-    callTurnActive.value = status.active && status.turn_active
+    const isBoundCall = status.active
       && status.chat_id === selectedChatId.value;
+
+    callTurnActive.value = isBoundCall && status.turn_active;
+
+    if (isBoundCall) {
+      await refreshSelectedChat();
+    }
   } catch (error) {
     console.error("[audio-call] failed to poll status", error);
   }
@@ -368,9 +375,15 @@ function handleWindowKeydown(event: KeyboardEvent) {
   closeChatMenu();
 }
 
+async function handleWindowFocus() {
+  await refreshChats();
+  await refreshCallStatus();
+}
+
 onMounted(async () => {
   document.addEventListener("pointerdown", closeChatMenu);
   window.addEventListener("keydown", handleWindowKeydown);
+  window.addEventListener("focus", handleWindowFocus);
 
   try {
     uiConfig.value = await loadUiConfig();
@@ -391,6 +404,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   document.removeEventListener("pointerdown", closeChatMenu);
   window.removeEventListener("keydown", handleWindowKeydown);
+  window.removeEventListener("focus", handleWindowFocus);
 
   if (isRecording.value) {
     void abortBackendAudioRecording().catch((error) => {

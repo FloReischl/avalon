@@ -14,8 +14,8 @@ class Settings:
     default_language: str = "de"
     audio_max_seconds: int = 30
     ollama_host: str = "127.0.0.1:11434"
-    ollama_model: str = "gemma4:e4b-it-q4_K_M"
-    # ollama_model: str = "hf.co/TrevorJS/gemma-4-E4B-it-uncensored-GGUF:Q4_K_M"
+    # ollama_model: str = "gemma4:e4b-it-q4_K_M"
+    ollama_model: str = "gemma4:e4b-it-q4_K_M-ctx32k"
     tts_engine: str = "kokoro"
     tts_device: str = "auto"
 

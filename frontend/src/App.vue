@@ -367,11 +367,19 @@ async function startAvatarDialog(alreadyStarted = false, chatId?: number) {
 }
 
 async function syncExternalAvatarCall() {
-  if (isDialogActive.value) return;
   try {
     const status = await getAudioCallStatus();
-    if (status.active) await startAvatarDialog(true, status.chat_id ?? undefined);
-    if (status.pending_speech && !isDialogSpeaking.value) {
+
+    if (status.active && !isDialogActive.value) {
+      await startAvatarDialog(true, status.chat_id ?? undefined);
+    }
+
+    if (
+      status.active
+      && status.pending_speech
+      && !isDialogSpeaking.value
+      && !isDialogThinking.value
+    ) {
       const text = await consumeAudioCallSpeech();
       if (text) {
         dialogMessages.value.push({ role: "assistant", content: text });

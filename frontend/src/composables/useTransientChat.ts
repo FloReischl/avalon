@@ -224,6 +224,44 @@ export function useTransientChat(
     }
   }
 
+  async function refreshSelectedChat() {
+    const state = currentState.value;
+    const chatId = state.chatId;
+
+    if (
+      chatId === undefined
+      || state.activeTurn
+    ) {
+      return;
+    }
+
+    let detail;
+
+    try {
+      detail = await chatManagement.getChat(chatId);
+    } catch (error) {
+      console.error("[chat] failed to refresh selected chat", error);
+      return;
+    }
+
+    if (
+      currentState.value !== state
+      || state.chatId !== chatId
+      || state.activeTurn
+    ) {
+      return;
+    }
+
+    state.messages.splice(
+      0,
+      state.messages.length,
+      ...detail.messages.map(({ role, content }) => ({
+        role,
+        content,
+      })),
+    );
+  }
+
   async function selectChat(chatId: number) {
     if (currentState.value.chatId === chatId) {
       return;
@@ -777,6 +815,7 @@ export function useTransientChat(
     chatSummaries,
     selectedChatId,
     refreshChats,
+    refreshSelectedChat,
     selectChat,
     newChat,
     renameChat,
