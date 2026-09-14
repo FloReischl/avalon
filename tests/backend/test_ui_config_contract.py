@@ -77,6 +77,11 @@ def test_ui_config_exposes_only_frontend_runtime_data() -> None:
         "/api/v1/assets/avatar/images/standard",
     )
 
+    assert assert_avatar_asset_url(
+        payload["avatar"]["greetingAudioUrl"],
+        "/api/v1/assets/avatar/greeting",
+    ) == cache_token
+
     assert payload["avatar"]["animations"]
 
     for animation in payload["avatar"]["animations"]:

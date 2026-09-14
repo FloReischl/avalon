@@ -48,8 +48,9 @@ def _valid_config(tmp_path: Path) -> tuple[dict, Path]:
                 "key": "standard",
                 "persona": "Friendly.",
                 "instructions": "Answer briefly.",
+                "base_path": str(avatar_dir),
+                "greeting_audio": "greeting.wav",
                 "images": {
-                    "base_path": str(avatar_dir),
                     "standard": "standard.png",
                     "animations": [
                         {
@@ -101,7 +102,8 @@ def test_loads_and_normalizes_valid_user_config(tmp_path: Path) -> None:
 
     assert config.name == "Frieda"
     assert config.standard_avatar.key == "standard"
-    assert config.standard_avatar.images.base_path == (tmp_path / "avatar").resolve()
+    assert config.standard_avatar.base_path == (tmp_path / "avatar").resolve()
+    assert config.standard_avatar.greeting_audio == "greeting.wav"
     assert config.tts.kokoro.model == (tmp_path / "tts" / "model.pth").resolve()
     assert config.standard_avatar.images.animations[0].sprites[0].width == 10
 
@@ -203,6 +205,21 @@ def test_missing_declared_avatar_asset_is_fatal(tmp_path: Path) -> None:
 
     with pytest.raises(ValidationError, match="Avatar asset is missing"):
         load_user_config(config_path)
+
+
+def test_missing_greeting_audio_is_allowed_at_config_load(
+    tmp_path: Path,
+) -> None:
+    data, config_path = _valid_config(tmp_path)
+    _write_config(config_path, data)
+
+    config = load_user_config(config_path)
+
+    assert config.standard_avatar.greeting_audio == "greeting.wav"
+    assert not (
+        config.standard_avatar.base_path
+        / config.standard_avatar.greeting_audio
+    ).exists()
 
 
 def test_avatar_asset_must_stay_inside_base_path(tmp_path: Path) -> None:

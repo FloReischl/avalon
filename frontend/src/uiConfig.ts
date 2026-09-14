@@ -17,6 +17,7 @@ export type UiAvatarAnimation = {
 export type UiConfig = {
   name: string;
   avatar: {
+    greetingAudioUrl: string;
     standard: {
       key: "standard";
       url: string;

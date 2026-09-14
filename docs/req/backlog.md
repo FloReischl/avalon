@@ -1,12 +1,13 @@
 todo
 
 - search
-- llm warm-up
-  - wenn audio gestartet. modell schon laden
-  - wenn text eingabe im text-feld, modell schon laden
+- agents/mcp monitor
+- internet suchen
+- agents
 - chat kontext komprimieren
 - animations
-- audio generation in batches (4?)
+- system instructions
+  - current timestamp
 - nsfw mode (slow llm, hq audio)
 
 minor changes
@@ -14,4 +15,5 @@ minor changes
 
 minor change (only 1)
 - doppel-klick, **neues** ChatWindow
-- audio call -> greeting.wav
+- chat name im audio-modus generieren
+

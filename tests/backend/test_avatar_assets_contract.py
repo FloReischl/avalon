@@ -1,6 +1,7 @@
 """Tests for configured avatar image delivery."""
 
 import asyncio
+import logging
 from pathlib import Path
 
 from httpx import ASGITransport, AsyncClient
@@ -99,13 +100,79 @@ def test_avatar_assets_use_current_avatar() -> None:
     assert state.set_current_avatar("second") is True
 
     expected = (
-        alternate_images.base_path / alternate_asset
+        second.base_path / alternate_asset
     ).resolve().read_bytes()
 
     response = request("/api/v1/assets/avatar/images/standard")
 
     assert response.status_code == 200
     assert response.content == expected
+
+
+def test_avatar_greeting_is_served_from_current_avatar() -> None:
+    initialize_blueprint_config()
+    standard = state_module.get_avalo_state().current_avatar
+    second = standard.model_copy(
+        update={
+            "key": "second",
+            "greeting_audio": standard.images.standard,
+        },
+        deep=True,
+    )
+    config = user_config_module.get_user_config().model_copy(
+        update={
+            "avatars": [
+                standard,
+                second,
+            ]
+        },
+        deep=True,
+    )
+
+    state_module._avalo_state = None
+    state = initialize_avalo_state(config)
+    assert state.set_current_avatar("second") is True
+
+    expected = (
+        second.base_path / second.greeting_audio
+    ).resolve().read_bytes()
+
+    response = request("/api/v1/assets/avatar/greeting")
+
+    assert response.status_code == 200
+    assert response.content == expected
+
+
+def test_missing_avatar_greeting_returns_not_found_and_logs(
+    caplog,
+) -> None:
+    initialize_blueprint_config()
+    config = user_config_module.get_user_config()
+    standard = config.standard_avatar.model_copy(
+        update={"greeting_audio": "missing-greeting.wav"},
+        deep=True,
+    )
+    updated = config.model_copy(
+        update={
+            "avatars": [
+                standard if avatar.key == "standard" else avatar
+                for avatar in config.avatars
+            ]
+        },
+        deep=True,
+    )
+
+    state_module._avalo_state = None
+    initialize_avalo_state(updated)
+
+    with caplog.at_level(logging.ERROR):
+        response = request("/api/v1/assets/avatar/greeting")
+
+    assert response.status_code == 404
+    assert response.json() == {
+        "detail": "Avatar greeting audio not found.",
+    }
+    assert "[avatar-assets] greeting audio unavailable" in caplog.text
 
 
 def test_unknown_avatar_image_returns_not_found() -> None:

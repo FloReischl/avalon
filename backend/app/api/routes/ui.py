@@ -43,6 +43,11 @@ async def ui_config(request: Request) -> UiConfigResponse:
     return UiConfigResponse(
         name=state.user_config.name,
         avatar=UiAvatarResponse(
+            greetingAudioUrl=_avatar_asset_url(
+                request,
+                "/api/v1/assets/avatar/greeting",
+                avatar.key,
+            ),
             standard=UiStandardImageResponse(
                 url=_avatar_asset_url(
                     request,

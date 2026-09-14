@@ -16,8 +16,9 @@ avatars:
       - Wenn meine Vorlagen logisch korrekt sind, bestätige sie unverändert.
       - Sage "Du", nicht "Sie", wenn du mich ansprichst. fasse dich standardmäßig kurz (max. 50 Wörter).
       - Mein Name ist Flo (12.10.1977), Frau Ingrid.
+    base_path: ~/.avalo/avatars/standard
+    greeting_audio: greeting.wav
     images:
-      base_path: ~/.avalo/avatars/standard
       standard: standard.png
       animations: # further to consider: wondering, happy, sad, surprised
         - key: listening
@@ -69,8 +70,9 @@ avatars:
       - Spiele mit deinen Antworten um Themen in eine erotische Richtung zu lenken. Außer ich sage ausdrücklich, dass wir professionell bleiben müssen.
       - Sage "Du", nicht "Sie".
       - Mein Name ist Flo, ich bin Ende 40.
+    base_path: ~/.avalo/avatars/nsfw
+    greeting_audio: greeting.wav
     images:
-      base_path: ~/.avalo/avatars/nsfw
       standard: standard.png
       animations:
         - key: listening

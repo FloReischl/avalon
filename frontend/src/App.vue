@@ -75,6 +75,8 @@ let unlisten: UnlistenFn | undefined;
 let unlistenAvatarState: UnlistenFn | undefined;
 let unlistenAudioCall: UnlistenFn | undefined;
 let animationTimer: number | undefined;
+let dialogGreetingAudio: HTMLAudioElement | undefined;
+let dialogGreetingCompletion: (() => void) | undefined;
 let dialogTtsAudio: HTMLAudioElement | undefined;
 let dialogTtsUrl: string | undefined;
 let dialogTtsPlaybackId: string | undefined;
@@ -292,6 +294,65 @@ async function initializeUiConfig() {
   }
 }
 
+function stopDialogGreeting() {
+  const complete = dialogGreetingCompletion;
+  dialogGreetingCompletion = undefined;
+  complete?.();
+  dialogGreetingAudio?.pause();
+  dialogGreetingAudio = undefined;
+}
+
+async function playDialogGreeting() {
+  const greetingUrl = uiConfig.value?.avatar.greetingAudioUrl;
+  if (!greetingUrl) {
+    console.error("[avatar-call] greeting audio URL unavailable");
+    return;
+  }
+
+  const audio = new Audio(greetingUrl);
+  dialogGreetingAudio = audio;
+
+  try {
+    await new Promise<void>((resolve, reject) => {
+      let settled = false;
+
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        dialogGreetingCompletion = undefined;
+        resolve();
+      };
+
+      dialogGreetingCompletion = finish;
+      audio.onended = finish;
+      audio.onerror = () => {
+        if (settled) return;
+        settled = true;
+        dialogGreetingCompletion = undefined;
+        reject(
+          audio.error
+          ?? new Error("Avatar greeting audio playback failed"),
+        );
+      };
+
+      void audio.play().catch((error) => {
+        if (settled) return;
+        settled = true;
+        dialogGreetingCompletion = undefined;
+        reject(error);
+      });
+    });
+  } catch (error) {
+    console.error("[avatar-call] greeting audio playback failed", error);
+  } finally {
+    if (dialogGreetingAudio === audio) {
+      audio.pause();
+      dialogGreetingAudio = undefined;
+    }
+    dialogGreetingCompletion = undefined;
+  }
+}
+
 function stopDialogTts() {
   const complete = dialogTtsCompletion;
   dialogTtsCompletion = undefined;
@@ -365,17 +426,29 @@ async function runAvatarDialogLoop() {
 
 async function startAvatarDialog(alreadyStarted = false, chatId?: number) {
   if (isDialogActive.value) return;
+
   try {
+    const runtimeReady = requestRuntimeWarmUp();
+
     if (!alreadyStarted) {
-      requestRuntimeWarmUp();
       await startAudioCall();
     }
+
     if (chatId !== undefined) await selectChat(chatId);
+
     isDialogActive.value = true;
     dialogError.value = undefined;
+
     if (!alreadyStarted) {
       await publishAudioCallChanged();
     }
+
+    if (await runtimeReady) {
+      if (!isDialogActive.value) return;
+      await playDialogGreeting();
+    }
+
+    if (!isDialogActive.value) return;
     void runAvatarDialogLoop();
   } catch (error) {
     console.error("[avatar-call] failed to start", error);
@@ -413,6 +486,7 @@ async function endAvatarDialog() {
   if (!isDialogActive.value) return;
   isDialogActive.value = false;
   abortDialogTurn();
+  stopDialogGreeting();
   stopDialogTts();
   try {
     await endAudioCall();

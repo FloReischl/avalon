@@ -41,6 +41,7 @@ class UiAnimationResponse(BaseModel):
 class UiAvatarResponse(BaseModel):
     """Frontend rendering configuration for the effective avatar."""
 
+    greetingAudioUrl: str
     standard: UiStandardImageResponse
     animations: list[UiAnimationResponse]
 

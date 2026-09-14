@@ -85,22 +85,11 @@ class AvatarAnimationConfig(StrictConfigModel):
 class AvatarImagesConfig(StrictConfigModel):
     """Static and animated image assets for one avatar."""
 
-    base_path: Path
     standard: NonEmptyStr
     animations: list[AvatarAnimationConfig] = Field(min_length=1)
 
-    @field_validator("base_path", mode="after")
-    @classmethod
-    def normalize_base_path(cls, value: Path) -> Path:
-        return _resolve_runtime_path(value)
-
     @model_validator(mode="after")
     def validate_images(self) -> Self:
-        if not self.base_path.is_dir():
-            raise ValueError(
-                f"Avatar base_path is missing or not a directory: {self.base_path}"
-            )
-
         animation_keys = [animation.key for animation in self.animations]
         if len(animation_keys) != len(set(animation_keys)):
             raise ValueError("Animation keys must be unique within one avatar.")
@@ -113,13 +102,6 @@ class AvatarImagesConfig(StrictConfigModel):
             missing = ", ".join(sorted(missing_keys))
             raise ValueError(f"Required avatar animations are missing: {missing}")
 
-        resolve_avatar_asset_path(self.base_path, self.standard)
-        for animation in self.animations:
-            resolve_avatar_asset_path(
-                self.base_path,
-                animation.sprite_set,
-            )
-
         return self
 
 
@@ -129,7 +111,30 @@ class AvatarConfig(StrictConfigModel):
     key: NonEmptyStr
     persona: NonEmptyStr
     instructions: NonEmptyStr
+    base_path: Path
+    greeting_audio: NonEmptyStr
     images: AvatarImagesConfig
+
+    @field_validator("base_path", mode="after")
+    @classmethod
+    def normalize_base_path(cls, value: Path) -> Path:
+        return _resolve_runtime_path(value)
+
+    @model_validator(mode="after")
+    def validate_assets(self) -> Self:
+        if not self.base_path.is_dir():
+            raise ValueError(
+                f"Avatar base_path is missing or not a directory: {self.base_path}"
+            )
+
+        resolve_avatar_asset_path(self.base_path, self.images.standard)
+        for animation in self.images.animations:
+            resolve_avatar_asset_path(
+                self.base_path,
+                animation.sprite_set,
+            )
+
+        return self
 
 
 class ChatterboxUserConfig(StrictConfigModel):

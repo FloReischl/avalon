@@ -13,6 +13,9 @@ const {
   setAvatarWindowTitleMock,
   listenToAvatarRuntimeStateMock,
   getAudioCallStatusMock,
+  startAudioCallMock,
+  endAudioCallMock,
+  requestRuntimeWarmUpMock,
   listenToAudioCallChangedMock,
   publishAudioCallChangedMock,
 } = vi.hoisted(() => ({
@@ -30,6 +33,9 @@ const {
   setAvatarWindowTitleMock: vi.fn(),
   listenToAvatarRuntimeStateMock: vi.fn(),
   getAudioCallStatusMock: vi.fn(),
+  startAudioCallMock: vi.fn(),
+  endAudioCallMock: vi.fn(),
+  requestRuntimeWarmUpMock: vi.fn(),
   listenToAudioCallChangedMock: vi.fn(),
   publishAudioCallChangedMock: vi.fn(),
 }));
@@ -55,8 +61,14 @@ vi.mock("../../frontend/src/services/backend", async (importOriginal) => {
   return {
     ...original,
     getAudioCallStatus: getAudioCallStatusMock,
+    startAudioCall: startAudioCallMock,
+    endAudioCall: endAudioCallMock,
   };
 });
+
+vi.mock("../../frontend/src/services/runtimeWarmup", () => ({
+  requestRuntimeWarmUp: requestRuntimeWarmUpMock,
+}));
 
 vi.mock("../../frontend/src/services/backendLifecycle", () => ({
 
@@ -102,6 +114,9 @@ describe("App", () => {
     setAvatarWindowTitleMock.mockReset();
     listenToAvatarRuntimeStateMock.mockReset();
     getAudioCallStatusMock.mockReset();
+    startAudioCallMock.mockReset();
+    endAudioCallMock.mockReset();
+    requestRuntimeWarmUpMock.mockReset();
     listenToAudioCallChangedMock.mockReset();
     publishAudioCallChangedMock.mockReset();
     exitAvaloMock.mockResolvedValue(undefined);
@@ -113,6 +128,19 @@ describe("App", () => {
       turn_active: false,
       pending_speech: null,
     });
+    startAudioCallMock.mockResolvedValue({
+      active: true,
+      chat_id: null,
+      turn_active: false,
+      pending_speech: null,
+    });
+    endAudioCallMock.mockResolvedValue({
+      active: false,
+      chat_id: null,
+      turn_active: false,
+      pending_speech: null,
+    });
+    requestRuntimeWarmUpMock.mockResolvedValue(true);
     listenToAudioCallChangedMock.mockResolvedValue(() => {});
     publishAudioCallChangedMock.mockResolvedValue(undefined);
 
@@ -125,6 +153,8 @@ describe("App", () => {
     loadUiConfigMock.mockResolvedValue({
       name: "Frieda",
       avatar: {
+        greetingAudioUrl:
+          "http://127.0.0.1:8095/api/v1/assets/avatar/greeting",
         standard: {
           key: "standard",
           url: "http://127.0.0.1:8095/api/v1/assets/avatar/images/standard",
@@ -681,6 +711,57 @@ describe("App", () => {
 
     expect(callButton.attributes("aria-label")).toBe("Dialog starten");
     expect(callButton.attributes("title")).toBe("Dialog starten");
+  });
+
+  it("plays the avatar greeting only after runtime warm-up is ready", async () => {
+    getBackendSnapshotMock.mockResolvedValue({
+      status: "ready",
+      logs: ["Backend ready"],
+    });
+
+    let resolveWarmUp: ((ready: boolean) => void) | undefined;
+    requestRuntimeWarmUpMock.mockReturnValue(
+      new Promise<boolean>((resolve) => {
+        resolveWarmUp = resolve;
+      }),
+    );
+
+    const playMock = vi.fn().mockResolvedValue(undefined);
+    const pauseMock = vi.fn();
+    const originalAudio = globalThis.Audio;
+    const audioMock = vi.fn().mockImplementation(() => ({
+      play: playMock,
+      pause: pauseMock,
+      onended: null,
+      onerror: null,
+      error: null,
+    }));
+
+    globalThis.Audio = audioMock as unknown as typeof Audio;
+
+    const wrapper = mount(App);
+
+    try {
+      await flushPromises();
+
+      await wrapper.get('[data-testid="avatar-call"]').trigger("click");
+      await flushPromises();
+
+      expect(startAudioCallMock).toHaveBeenCalledTimes(1);
+      expect(audioMock).not.toHaveBeenCalled();
+
+      resolveWarmUp?.(true);
+      await flushPromises();
+
+      expect(audioMock).toHaveBeenCalledTimes(1);
+      expect(audioMock).toHaveBeenCalledWith(
+        "http://127.0.0.1:8095/api/v1/assets/avatar/greeting",
+      );
+      expect(playMock).toHaveBeenCalledTimes(1);
+    } finally {
+      wrapper.unmount();
+      globalThis.Audio = originalAudio;
+    }
   });
 
   it.todo("sends a text message and renders the complete response");

@@ -199,6 +199,8 @@ key_flows:
         dialog:
           - avatar-window Call action owns continuous dialog mode
           - chat-window Call action delegates call start with the currently selected chat id
+          - every audio call adopted by the avatar waits for runtime readiness, plays greeting_audio once, then starts listening
+          - greeting audio is static avatar media and never enters chat history, persistence, or LLM context
           - a call started directly from the avatar begins without a bound chat
           - the first submitted speech turn creates and binds a persistent chat when no chat id was supplied
           - the bound chat remains fixed for the lifetime of the call
@@ -475,6 +477,7 @@ modules:
           - avatar image locations are backend URLs rather than filesystem paths
       UiAvatarResponse:
         fields:
+          greetingAudioUrl: str
           standard: UiStandardImageResponse
           animations: list[UiAnimationResponse]
       UiAnimationResponse:
@@ -998,6 +1001,10 @@ modules:
       - native window resize completion is followed by browser resize before recalculating X11 input shape
       - avoids applying an input shape from stale pre-resize DOM geometry
       - Call control starts and ends the single global avatar audio call
+      - waits for successful runtime warm-up before starting the automatic dialog listener
+      - plays the current avatar's static greeting audio once after runtime readiness for every adopted or directly started audio call
+      - greeting playback is independent of TTS, chat messages, persistence, and LLM conversation context
+      - greeting playback failure is logged and does not terminate the active call
       - adopts calls started through the chat window through cross-webview audio-call change events
       - backend audio-call status remains the source of truth and is read on events or recovery synchronization
       - no periodic idle audio-call status polling is used
@@ -1131,7 +1138,7 @@ modules:
       - load GET /api/v1/ui/config from the local backend
       - share an in-flight request within one frontend webview
       - cache successfully loaded UI configuration within one frontend webview
-      - expose configured assistant name, standard avatar URL, animations, and sprite regions
+      - expose configured assistant name, greeting audio URL, standard avatar URL, animations, and sprite regions
       - retry on a later call after a failed request
     dependencies:
       - frontend/src/services/backend.ts:BACKEND_BASE_URL
@@ -1174,8 +1181,10 @@ modules:
       - each avatar defines persona and instructions used as assistant system context
       - requires listening, speaking, and thinking animation keys per avatar
       - validates compact sprite regions
-      - normalizes avatar base paths and prevents configured image assets from escaping them
+      - each avatar owns one normalized base_path shared by image and greeting assets
+      - prevents configured avatar assets from escaping their base_path
       - validates all declared avatar image files during startup
+      - greeting_audio is resolved lazily and may be missing without failing backend startup
       - resolves relative runtime artifact paths against project root
       - validates active Kokoro model, voice, and config artifacts during startup
       - does not require inactive Chatterbox reference audio to exist
@@ -1193,20 +1202,25 @@ modules:
       - exposes global configured name
       - exposes effective standard avatar only
       - exposes configured animations including custom categories
+      - exposes the current avatar greeting as a finished backend asset URL
       - returns finished absolute backend asset URLs
-      - adds one process-start cache token to all avatar asset URLs so images reload after backend restart while remaining cacheable within the process lifetime
+      - adds one process-start cache token to all avatar asset URLs so assets reload after backend restart while remaining cacheable within the process lifetime
       - does not expose persona, instructions, filesystem paths, or TTS configuration
     dependencies:
       - backend/app/user_config.py
       - backend/app/api/schemas.py
 
   backend/app/api/routes/assets.py:
-    role: configured effective-avatar image asset endpoint
-    endpoint: "GET /api/v1/assets/avatar/images/{key}"
+    role: configured effective-avatar asset endpoint
+    endpoints:
+      images: "GET /api/v1/assets/avatar/images/{key}"
+      greeting: "GET /api/v1/assets/avatar/greeting"
     behavior:
       - serves standard image for key standard
       - resolves animation keys only from validated effective-avatar configuration
-      - returns HTTP 404 for unknown keys
+      - serves greeting_audio relative to the current avatar base_path
+      - missing or invalid greeting audio is logged and returned as HTTP 404 without invalidating avatar configuration
+      - returns HTTP 404 for unknown image keys
       - accepts no client-provided filesystem paths
     dependencies:
       - backend/app/user_config.py
@@ -1247,12 +1261,13 @@ modules:
       - "@tauri-apps/api/event"
 
   frontend/src/services/runtimeWarmup.ts:
-    role: throttled non-blocking frontend runtime warm-up trigger
+    role: throttled frontend runtime readiness trigger
     behavior:
-      - request backend runtime warm-up without blocking user interaction
-      - throttle requests for 60 seconds within one frontend webview
-      - update throttle state before awaiting the request
-      - log warm-up failures without surfacing them as user-facing chat failures
+      - expose completion of backend runtime warm-up as Promise<boolean>
+      - share one in-flight warm-up within the frontend webview
+      - treat a successful warm-up within 60 seconds as already ready
+      - update the throttle timestamp only after successful warm-up
+      - log warm-up failures and resolve false without surfacing them as user-facing chat failures
     dependencies:
       - frontend/src/services/backend.ts
 
