@@ -77,6 +77,31 @@ architecture:
       tts: interchangeable speech synthesis adapters
       config: central technical configuration
 
+  server:
+    technology:
+      - Python
+      - MCP Python SDK v2
+    root: server
+    status: implemented_foundation
+    responsibility:
+      - standalone local Avalo capability server
+      - expose deterministic capabilities to Avalo through MCP
+    transport:
+      type: MCP Streamable HTTP
+      address: "127.0.0.1:8096"
+      endpoint: "/mcp"
+    lifecycle:
+      - runs independently from the FastAPI backend
+      - development start through scripts/others/start-server.sh
+    capabilities:
+      music:
+        root: server/mcp/music
+        tools:
+          - music.play_tracks
+    logging:
+      path: /tmp/avalo_server.log
+      namespace: server
+
   communication:
     backend_address: "127.0.0.1:8095"
     transport: HTTP
@@ -122,6 +147,30 @@ architecture:
       - Stop affects only the currently selected running chat
 
 key_flows:
+
+  server_music_play_tracks:
+    tool: music.play_tracks
+    registration: server/mcp/music/tools.py:register_music_tools
+    transport: MCP Streamable HTTP
+    request:
+      track_ids: list[int]
+    flow:
+      - MCPServer dispatches music.play_tracks
+      - complete track_ids request payload is logged
+      - server/mcp/music/repository.py resolves tracks.id to tracks.file_path from configured external music SQLite database
+      - resolved paths preserve supplied track-id order and duplicates
+      - unknown track ids are omitted
+      - server/mcp/music/playlist.py writes /tmp/avalo_music.m3u
+      - server/mcp/music/player.py launches Celluloid with the generated playlist
+    verification:
+      unit_tests: tests/server
+      vertical_integration_test: tests/integration/test_server_music_mcp.py
+      integration_test_behavior:
+        - requires already-running MCP server
+        - requires configured music database with tracks
+        - launches real Celluloid
+        - verifies MCP call, playlist contents, and request logging
+        - skipped by default because external infrastructure is required
 
   backend_startup:
     entry: backend/app/main.py:create_app
@@ -296,6 +345,63 @@ key_flows:
       - TtsService is engine-independent and owns the shared synthesis/playback/unload lifecycle.
 
 modules:
+
+  server/main.py:
+    role: standalone Avalo server process entry point
+    behavior:
+      - configure file logging
+      - construct MCP server
+      - run Streamable HTTP on configured loopback host and port
+    dependencies:
+      - server/config.py
+      - server/logging.py
+      - server/mcp/server.py
+
+  server/config.py:
+    role: static standalone-server configuration
+    settings:
+      mcp_address: "127.0.0.1:8096"
+      music_db_path: "/media/flo/2TB_SSD/music/mp3db.sqlite3"
+      log_path: "/tmp/avalo_server.log"
+
+  server/mcp/server.py:
+    role: MCP server composition
+    behavior:
+      - construct Avalo MCPServer
+      - register music capabilities
+
+  server/mcp/music/tools.py:
+    role: MCP music capability boundary
+    tools:
+      music.play_tracks:
+        input: track_ids list[int]
+        responsibility:
+          - log complete request payload
+          - resolve track ids
+          - create playlist
+          - start player
+    dependencies:
+      - server/mcp/music/repository.py
+      - server/mcp/music/playlist.py
+      - server/mcp/music/player.py
+
+  server/mcp/music/repository.py:
+    role: music execution-data access
+    database: configured external SQLite music database
+    behavior:
+      - resolve tracks.id to tracks.file_path
+      - preserve requested order and duplicate ids
+      - omit unknown ids
+
+  server/mcp/music/playlist.py:
+    role: M3U playlist writer
+    output: /tmp/avalo_music.m3u
+
+  server/mcp/music/player.py:
+    role: local music-player process adapter
+    player: Celluloid
+    behavior:
+      - launch Celluloid with generated playlist in a new process session
 
   backend/app/config.py:
     role: central technical backend configuration
@@ -1972,6 +2078,32 @@ change_navigation:
       - Interactive controls must be included in the native input-region union.
       - After native avatar resize, recalculate input regions from post-resize browser geometry rather than stale pre-resize bounds.
       - Backend-served avatar images used for canvas alpha inspection must remain CORS-readable.
+
+  change_server_mcp:
+    inspect:
+      - server/main.py
+      - server/config.py
+      - server/logging.py
+      - server/mcp/server.py
+      - tests/server/test_mcp_server.py
+    maybe_inspect:
+      - pyproject.toml
+      - scripts/others/start-server.sh
+
+  change_music_playback_capability:
+    inspect:
+      - server/mcp/music/tools.py
+      - server/mcp/music/repository.py
+      - server/mcp/music/playlist.py
+      - server/mcp/music/player.py
+      - tests/server/test_music_tools.py
+      - tests/server/test_music_repository.py
+      - tests/server/test_music_playlist.py
+      - tests/server/test_music_player.py
+    maybe_inspect:
+      - server/config.py
+      - server/mcp/server.py
+      - tests/integration/test_server_music_mcp.py
 
 
 architectural_constraints:
