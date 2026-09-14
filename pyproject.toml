@@ -12,6 +12,7 @@ dependencies = [
     "pydantic>=2.10,<3",
     "PyYAML>=6.0,<7",
     "uvicorn[standard]>=0.34,<1",
+    "mcp>=2,<3",
 
     "httpx>=0.28,<1",
     "sqlalchemy>=2.0,<3",
@@ -36,11 +37,12 @@ dev = [
 ]
 
 [tool.setuptools.packages.find]
-where = ["backend"]
+where = ["backend", "."]
+include = ["app*", "server*"]
 
 [tool.pytest.ini_options]
 addopts = "-ra"
-testpaths = ["tests/backend", "tests/integration"]
+testpaths = ["tests/backend", "tests/integration", "tests/server"]
 markers = [
     "integration: tests requiring explicitly available local services or hardware",
 ]
