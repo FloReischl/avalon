@@ -1,8 +1,8 @@
 from app.runtime.ollama import OllamaRuntime
 from app.state import AvaloState
 
-from .avatar import AvatarCommand
-from .llm import LlmCommand
+from .avatar_set import AvatarCommand
+from .llm_set import LlmCommand
 from .registry import CommandRegistry
 
 

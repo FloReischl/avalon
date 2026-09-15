@@ -19,6 +19,9 @@ class CommandRegistry:
 
         self._commands[key] = command
 
+    def contains(self, request: CommandRequest) -> bool:
+        return request.key.lower() in self._commands
+
     async def execute(self, request: CommandRequest) -> str:
         if not request.key:
             return "missing command identifier"

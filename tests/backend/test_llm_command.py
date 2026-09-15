@@ -1,6 +1,6 @@
 import pytest
 
-from app.commands.llm import LlmCommand
+from app.commands.llm_set import LlmCommand
 from app.config import settings
 
 

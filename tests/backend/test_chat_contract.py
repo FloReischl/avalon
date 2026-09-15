@@ -107,7 +107,7 @@ def test_chat_streams_command_response_as_regular_chunk() -> None:
             yield turn.command_response
 
     response = post_chat(
-        {"message": "/command test"},
+        {"message": "/test echo payload"},
         CommandChatService(),
     )
 

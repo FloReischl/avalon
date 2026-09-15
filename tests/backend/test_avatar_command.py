@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.commands.avatar import AvatarCommand
+from app.commands.avatar_set import AvatarCommand
 from app.commands.factory import build_command_registry
 from app.commands.parser import CommandRequest
 
@@ -65,7 +65,7 @@ async def test_command_registry_factory_registers_avatar_command() -> None:
 
     response = await registry.execute(
         CommandRequest(
-            key="avatar",
+            key="avatar_set",
             payload="second",
         )
     )

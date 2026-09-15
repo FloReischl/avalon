@@ -4,7 +4,7 @@ from app.state import AvaloState
 class AvatarCommand:
     """Select the process-local current avatar."""
 
-    key = "avatar"
+    key = "avatar_set"
 
     def __init__(self, state: AvaloState) -> None:
         self._state = state

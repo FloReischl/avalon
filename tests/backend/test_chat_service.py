@@ -70,7 +70,7 @@ async def test_command_turn_persists_request_and_response_without_runtime(
     _, repository, runtime = service
 
     class EchoCommand:
-        key = "echo"
+        key = "test_echo"
 
         async def execute(self, payload: str) -> str:
             return f"echo: {payload}"
@@ -83,7 +83,7 @@ async def test_command_turn_persists_request_and_response_without_runtime(
         command_registry=registry,
     )
 
-    turn = chat_service.start_turn(None, "/command echo hello   world")
+    turn = chat_service.start_turn(None, "/test echo hello   world")
     chunks = [chunk async for chunk in chat_service.stream_response(turn)]
 
     assert chunks == ["echo: hello   world"]
@@ -91,44 +91,46 @@ async def test_command_turn_persists_request_and_response_without_runtime(
 
     messages = repository.get_messages(turn.chat_id)
     assert [(message.role, message.content) for message in messages] == [
-        ("user", "/command echo hello   world"),
+        ("user", "/test echo hello   world"),
         ("assistant", "echo: hello   world"),
     ]
 
 
 @pytest.mark.asyncio
-async def test_unknown_command_is_persisted_without_runtime(service) -> None:
+async def test_unknown_slash_command_is_processed_by_runtime(service) -> None:
     chat_service, repository, runtime = service
 
-    turn = chat_service.start_turn(None, "/command foobar test")
+    turn = chat_service.start_turn(None, "/avatar foo test")
     chunks = [chunk async for chunk in chat_service.stream_response(turn)]
 
-    assert chunks == ["unknown command: foobar"]
-    assert runtime.calls == []
+    assert chunks == ["Hallo ", "Flo"]
+    assert runtime.calls == [
+        [{"role": "user", "content": "/avatar foo test"}]
+    ]
 
     messages = repository.get_messages(turn.chat_id)
     assert [(message.role, message.content) for message in messages] == [
-        ("user", "/command foobar test"),
-        ("assistant", "unknown command: foobar"),
+        ("user", "/avatar foo test"),
+        ("assistant", "Hallo Flo"),
     ]
 
 
 @pytest.mark.asyncio
-async def test_missing_command_identifier_is_persisted_without_runtime(
-    service,
-) -> None:
+async def test_incomplete_slash_command_is_processed_by_runtime(service) -> None:
     chat_service, repository, runtime = service
 
-    turn = chat_service.start_turn(None, "/command   ")
+    turn = chat_service.start_turn(None, "/avatar")
     chunks = [chunk async for chunk in chat_service.stream_response(turn)]
 
-    assert chunks == ["missing command identifier"]
-    assert runtime.calls == []
+    assert chunks == ["Hallo ", "Flo"]
+    assert runtime.calls == [
+        [{"role": "user", "content": "/avatar"}]
+    ]
 
     messages = repository.get_messages(turn.chat_id)
     assert [(message.role, message.content) for message in messages] == [
-        ("user", "/command   "),
-        ("assistant", "missing command identifier"),
+        ("user", "/avatar"),
+        ("assistant", "Hallo Flo"),
     ]
 
 

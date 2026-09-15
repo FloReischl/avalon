@@ -15,15 +15,17 @@ def parse_command(text: str) -> CommandRequest | None:
     stripped = text.lstrip()
 
     parts = stripped.split(None, 2)
-    if not parts or parts[0].lower() != "/command":
+    if len(parts) < 2:
         return None
 
-    if len(parts) < 2:
-        return CommandRequest(key="", payload="")
+    group = parts[0]
+    if not group.startswith("/") or not _IDENTIFIER_PATTERN.fullmatch(group[1:]):
+        return None
 
-    key = parts[1]
-    if not _IDENTIFIER_PATTERN.fullmatch(key):
-        return CommandRequest(key="", payload="")
+    command = parts[1]
+    if not _IDENTIFIER_PATTERN.fullmatch(command):
+        return None
 
+    key = f"{group[1:].lower()}_{command.lower()}"
     payload = parts[2] if len(parts) == 3 else ""
-    return CommandRequest(key=key.lower(), payload=payload)
+    return CommandRequest(key=key, payload=payload)

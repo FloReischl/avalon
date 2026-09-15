@@ -18,46 +18,55 @@ class StubCommand:
 
 
 def test_parse_command_with_payload():
-    assert parse_command("/command avatar standard") == CommandRequest(
-        key="avatar",
+    assert parse_command("/avatar set standard") == CommandRequest(
+        key="avatar_set",
         payload="standard",
     )
 
 
 def test_parse_command_without_payload():
-    assert parse_command("/command jodel") == CommandRequest(
-        key="jodel",
+    assert parse_command("/avatar set") == CommandRequest(
+        key="avatar_set",
         payload="",
     )
 
 
 def test_parse_command_ignores_leading_and_duplicate_separator_whitespace():
-    assert parse_command("  /command   foo   hello   world") == CommandRequest(
-        key="foo",
+    assert parse_command("  /foo   bar   hello   world") == CommandRequest(
+        key="foo_bar",
         payload="hello   world",
     )
 
 
 def test_parse_command_is_case_insensitive():
-    assert parse_command("/COMMAND AvAtAr standard") == CommandRequest(
-        key="avatar",
+    assert parse_command("/AvAtAr SeT standard") == CommandRequest(
+        key="avatar_set",
         payload="standard",
     )
 
 
 def test_parse_command_accepts_identifier_characters():
-    assert parse_command("/command foo_2-bar payload") == CommandRequest(
-        key="foo_2-bar",
+    assert parse_command("/foo_2-bar baz_3-qux payload") == CommandRequest(
+        key="foo_2-bar_baz_3-qux",
         payload="payload",
     )
 
 
-def test_parse_command_rejects_non_command_prefix():
-    assert parse_command("/commandx foo") is None
+def test_parse_command_rejects_non_slash_prefix():
+    assert parse_command("avatar set standard") is None
 
 
-def test_parse_command_without_identifier():
-    assert parse_command("/command   ") == CommandRequest(key="", payload="")
+def test_parse_command_without_subcommand():
+    assert parse_command("/avatar") is None
+
+
+def test_registry_reports_registered_command():
+    command = StubCommand()
+    registry = CommandRegistry()
+    registry.register(command)
+
+    assert registry.contains(CommandRequest(key="test", payload="hello"))
+    assert not registry.contains(CommandRequest(key="missing", payload="hello"))
 
 
 @pytest.mark.asyncio
