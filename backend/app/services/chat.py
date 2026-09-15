@@ -1,17 +1,28 @@
 """Text-chat application service."""
 
+import asyncio
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any, Callable
 
 from app.commands import CommandRegistry, CommandRequest, parse_command
 from app.persistence.chat_repository import ChatRepository
 from app.user_config import AvatarConfig
 from app.runtime.base import ModelRuntime
+from app.services.context_compression import (
+    ContextCompressionService,
+    build_active_context,
+    parse_compressed_context,
+)
 
 
 class ChatNotFoundError(Exception):
     """Raised when a requested persistent chat does not exist."""
+
+
+class ChatCompressionFailedError(Exception):
+    """Raised when a chat has reached its terminal compression error state."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,11 +44,20 @@ class ChatService:
         repository: ChatRepository,
         avatar: AvatarConfig | None = None,
         command_registry: CommandRegistry | None = None,
+        compression_service: ContextCompressionService | None = None,
+        task_scheduler: Callable[[Any], Any] | None = None,
     ) -> None:
         self._runtime = runtime
         self._repository = repository
         self._avatar = avatar
         self._command_registry = command_registry or CommandRegistry()
+        self._compression_service = compression_service or ContextCompressionService(
+            runtime,
+            repository,
+            avatar,
+        )
+        self._task_scheduler = task_scheduler or asyncio.create_task
+        self._compression_tasks: set[asyncio.Task[object]] = set()
 
     def start_turn(
         self,
@@ -54,8 +74,13 @@ class ChatService:
             )
             chat_id = chat.id
         else:
-            if self._repository.get_chat(chat_id) is None:
+            chat = self._repository.get_chat(chat_id)
+            if chat is None:
                 raise ChatNotFoundError(f"Chat {chat_id} does not exist.")
+            if chat.compression_error_code is not None:
+                raise ChatCompressionFailedError(
+                    chat.compression_error_code
+                )
 
             self._repository.add_message(chat_id, "user", message)
 
@@ -70,25 +95,15 @@ class ChatService:
                 command_request=command_request,
             )
 
-        context = self._repository.get_context_messages(chat_id, limit=100)
-        messages = [
-            {
-                "role": persisted.role,
-                "content": persisted.content,
-            }
-            for persisted in context
-        ]
-        if self._avatar is not None:
-            messages.insert(
-                0,
-                {
-                    "role": "system",
-                    "content": (
-                        f"{self._avatar.persona}\n\n"
-                        f"{self._avatar.instructions}"
-                    ),
-                },
-            )
+        chat = self._repository.get_chat(chat_id)
+        assert chat is not None
+        context = self._repository.get_messages(chat_id)
+        messages = build_active_context(
+            context,
+            parse_compressed_context(chat.compressed_context),
+            chat.compressed_through_seq,
+            self._avatar,
+        )
         return ChatTurn(chat_id=chat_id, messages=messages)
 
     async def stream_response(
@@ -133,17 +148,23 @@ class ChatService:
 
     async def finalize_turn(self, turn: ChatTurn) -> None:
         """Run optional post-response work after the client receives done."""
-        if (
-            turn.command_response is not None
-            or turn.command_request is not None
-        ):
-            return
+        self._schedule_compression(turn.chat_id)
 
-        try:
-            await self._try_auto_title(turn.chat_id)
-        except Exception:
-            # Optional post-response work must never affect a completed turn.
-            return
+        if turn.command_response is None and turn.command_request is None:
+            try:
+                await self._try_auto_title(turn.chat_id)
+            except Exception:
+                # Optional post-response work must never affect a completed turn.
+                pass
+
+    def _schedule_compression(self, chat_id: int) -> None:
+        """Start compression without awaiting it in the completed turn path."""
+        task = self._task_scheduler(
+            self._compression_service.compress_if_needed(chat_id)
+        )
+        if isinstance(task, asyncio.Task):
+            self._compression_tasks.add(task)
+            task.add_done_callback(self._compression_tasks.discard)
 
     async def _try_auto_title(self, chat_id: int) -> None:
         """Attempt automatic title generation after roundtrip two."""

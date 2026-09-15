@@ -21,6 +21,35 @@ function createChatManagement(
 
 
 describe("useTransientChat", () => {
+  it("locks a loaded chat with a terminal compression error", async () => {
+    const streamMessage = vi.fn();
+    const management = createChatManagement({
+      getChat: vi.fn().mockResolvedValue({
+        id: 42,
+        title: "Zu groß",
+        pinned: false,
+        created_at: "2026-09-07T10:00:00",
+        messages: [],
+        compression_error_code: "chat_context_compression_failed",
+      }),
+    });
+    const chat = useTransientChat(
+      streamMessage,
+      undefined,
+      management,
+    );
+
+    await chat.selectChat(42);
+    chat.input.value = "Nicht senden";
+    await chat.send();
+
+    expect(chat.isChatCompressionFailed.value).toBe(true);
+    expect(chat.errorMessage.value).toBe(
+      "Dieser Chat kann wegen eines zu großen Kontextes nicht fortgesetzt werden.",
+    );
+    expect(streamMessage).not.toHaveBeenCalled();
+  });
+
   it("renames a chat only after the backend succeeds", async () => {
     const management = createChatManagement({
       getChats: vi.fn().mockResolvedValue([

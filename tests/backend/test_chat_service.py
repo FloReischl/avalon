@@ -1,5 +1,6 @@
 """Tests for the persistent text-chat application service."""
 
+import asyncio
 from collections.abc import AsyncIterator
 from pathlib import Path
 from types import SimpleNamespace
@@ -13,7 +14,11 @@ from app.persistence.database import (
     create_session_factory,
 )
 from app.persistence.migrations import run_migrations
-from app.services.chat import ChatNotFoundError, ChatService
+from app.services.chat import (
+    ChatCompressionFailedError,
+    ChatNotFoundError,
+    ChatService,
+)
 
 
 class FakeRuntime:
@@ -199,6 +204,31 @@ async def test_auto_title_is_generated_after_second_roundtrip(service) -> None:
 
 
 @pytest.mark.asyncio
+async def test_finalize_schedules_compression_without_waiting_for_it(service) -> None:
+    chat_service, repository, runtime = service
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    class BlockingCompression:
+        async def compress_if_needed(self, chat_id: int) -> None:
+            assert chat_id > 0
+            started.set()
+            await release.wait()
+
+    chat_service = ChatService(
+        runtime,
+        repository,
+        compression_service=BlockingCompression(),  # type: ignore[arg-type]
+    )
+    turn = chat_service.start_turn(None, "Hallo")
+    _ = [chunk async for chunk in chat_service.stream_response(turn)]
+
+    await chat_service.finalize_turn(turn)
+    await asyncio.wait_for(started.wait(), timeout=0.1)
+    release.set()
+
+
+@pytest.mark.asyncio
 async def test_manual_title_prevents_auto_title_generation(service) -> None:
     chat_service, repository, runtime = service
     chat = repository.create_chat_with_message("New Chat", "user", "Hallo")
@@ -260,6 +290,23 @@ def test_unknown_chat_is_rejected_before_streaming(service) -> None:
         chat_service.start_turn(999, "Hallo")
 
 
+def test_terminal_compression_error_rejects_before_persisting_user_message(
+    service,
+) -> None:
+    chat_service, repository, _ = service
+    chat = repository.create_chat("Chat")
+    assert repository.set_compression_error_if_version(
+        chat.id,
+        expected_version=0,
+        error_code="chat_context_compression_failed",
+    )
+
+    with pytest.raises(ChatCompressionFailedError, match="chat_context_compression_failed"):
+        chat_service.start_turn(chat.id, "Weiter")
+
+    assert repository.get_messages(chat.id) == []
+
+
 @pytest.mark.asyncio
 async def test_runtime_failure_keeps_user_without_partial_assistant(service) -> None:
     chat_service, repository, runtime = service
@@ -283,7 +330,7 @@ async def test_runtime_failure_keeps_user_without_partial_assistant(service) -> 
 
 
 @pytest.mark.asyncio
-async def test_model_context_is_limited_to_latest_100_messages(service) -> None:
+async def test_model_context_contains_all_uncompressed_messages(service) -> None:
     chat_service, repository, runtime = service
     chat = repository.create_chat_with_message("Chat", "user", "Message 0")
 
@@ -294,6 +341,6 @@ async def test_model_context_is_limited_to_latest_100_messages(service) -> None:
     _ = [chunk async for chunk in chat_service.stream_response(turn)]
 
     assert runtime.messages is not None
-    assert len(runtime.messages) == 100
-    assert runtime.messages[0]["content"] == "Message 1"
+    assert len(runtime.messages) == 101
+    assert runtime.messages[0]["content"] == "Message 0"
     assert runtime.messages[-1]["content"] == "Message 100"

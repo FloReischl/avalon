@@ -8,9 +8,11 @@ const props = withDefaults(
     modelValue: string;
     placeholder: string;
     toolbarEnabled?: boolean;
+    disabled?: boolean;
   }>(),
   {
     toolbarEnabled: false,
+    disabled: false,
   },
 );
 
@@ -26,9 +28,9 @@ const emit = defineEmits<{
       :model-value="props.modelValue"
       :placeholder="props.placeholder"
       :toolbar-enabled="props.toolbarEnabled"
+      :disabled="props.disabled"
       @update:model-value="emit('update:modelValue', $event)"
       @keydown="emit('keydown', $event)"
     />
   </MilkdownProvider>
 </template>
-

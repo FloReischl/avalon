@@ -35,6 +35,7 @@ const props = defineProps<{
   modelValue: string;
   placeholder: string;
   toolbarEnabled: boolean;
+  disabled: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -93,6 +94,9 @@ function runCommand<T>(
   command: $Command<T>,
   payload?: T,
 ) {
+  if (props.disabled) {
+    return;
+  }
   const editor = get();
   if (!editor) {
     return;
@@ -113,6 +117,10 @@ function insertLink() {
 }
 
 function handleKeydown(event: KeyboardEvent) {
+  if (props.disabled) {
+    event.preventDefault();
+    return;
+  }
   emit("keydown", event);
 }
 </script>
@@ -120,10 +128,15 @@ function handleKeydown(event: KeyboardEvent) {
 <template>
   <div
     class="markdown-composer"
-    :class="{ 'markdown-composer--toolbar': toolbarEnabled }"
+    :class="{
+      'markdown-composer--toolbar': toolbarEnabled,
+      'markdown-composer--disabled': disabled,
+    }"
     data-testid="chat-input"
     :data-placeholder="placeholder"
     aria-label="Nachricht"
+    :aria-disabled="disabled"
+    :tabindex="disabled ? -1 : undefined"
     @keydown="handleKeydown"
   >
     <div
@@ -415,5 +428,10 @@ function handleKeydown(event: KeyboardEvent) {
 
 .markdown-composer--toolbar:has(:deep(.ProseMirror p:first-child:last-child:empty))::before {
   top: 2.6rem;
+}
+
+.markdown-composer--disabled {
+  opacity: 0.55;
+  pointer-events: none;
 }
 </style>

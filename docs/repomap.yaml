@@ -1892,6 +1892,43 @@ change_navigation:
       - tests/frontend/useTransientChat.spec.ts
       - tests/frontend/ChatWindow.spec.ts
 
+  change_context_compression:
+    inspect:
+      - backend/app/services/context_compression.py
+      - backend/app/services/context_builder.py
+      - backend/app/services/chat.py
+      - backend/app/services/audio_chat.py
+      - backend/app/persistence/models.py
+      - backend/app/persistence/chat_repository.py
+      - backend/app/config.py
+      - backend/app/api/routes/chat.py
+      - backend/app/api/routes/audio.py
+      - backend/app/api/schemas.py
+      - frontend/src/ChatWindow.vue
+      - frontend/src/composables/useTransientChat.ts
+      - frontend/src/services/backend.ts
+      - frontend/src/types/chat.ts
+      - tests/backend/test_context_compression.py
+      - tests/backend/test_chat_service.py
+      - tests/backend/test_audio_chat_contract.py
+      - tests/backend/test_chat_contract.py
+    maybe_inspect:
+      - alembic/versions
+      - backend/app/runtime/base.py
+      - backend/app/runtime/ollama.py
+      - tests/frontend/ChatWindow.spec.ts
+      - tests/frontend/useTransientChat.spec.ts
+      - tests/frontend/backend.spec.ts
+    relevant_to:
+      - bounded text and audio LLM context
+      - asynchronous post-turn context compression
+      - compressed historical context and message sequence tracking
+      - protected recent roundtrips and compression fallback
+      - compression output budgeting and deterministic pruning
+      - optimistic compression-version locking
+      - terminal chat context-compression error state
+      - text and audio rejection for terminally failed chats
+
   change_runtime_contract:
     inspect:
       - backend/app/runtime/base.py

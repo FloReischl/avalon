@@ -10,6 +10,11 @@ from app.audio.capture import CapturedAudio, PipeWireRecorder
 from app.persistence.chat_repository import ChatRepository
 from app.runtime.base import ModelRuntime
 from app.user_config import AvatarConfig
+from app.services.context_compression import (
+    ContextCompressionService,
+    build_active_context,
+    parse_compressed_context,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,17 +44,29 @@ class AudioChatService:
         runtime: ModelRuntime,
         repository: ChatRepository | None = None,
         avatar_provider: Callable[[], AvatarConfig] | None = None,
+        compression_service: ContextCompressionService | None = None,
     ) -> None:
         self._recorder = recorder
         self._runtime = runtime
         self._repository = repository
         self._avatar_provider = avatar_provider
+        self._compression_service = compression_service
+        self._compression_tasks: set[asyncio.Task[object]] = set()
 
     async def start_recording(self) -> None:
         await self._recorder.start()
 
     async def abort_recording(self) -> None:
         await self._recorder.abort()
+
+    def terminal_compression_error(self, chat_id: int | None) -> str | None:
+        """Return a chat's terminal compression error, if it has one."""
+        if chat_id is None or self._repository is None:
+            return None
+        chat = self._repository.get_chat(chat_id)
+        if chat is None:
+            return None
+        return chat.compression_error_code
 
     async def stream_response(
         self,
@@ -143,6 +160,8 @@ class AudioChatService:
     ) -> AsyncIterator[AudioStreamEvent]:
         persistent_chat_id: int | None = None
         user_message_id: int | None = None
+        context_messages = messages
+        context_includes_avatar = False
 
         if self._repository is not None:
             if chat_id is None:
@@ -156,10 +175,20 @@ class AudioChatService:
                 user_message = self._repository.get_messages(chat.id)[0]
                 user_message_id = user_message.id
             else:
-                if self._repository.get_chat(chat_id) is None:
+                chat = self._repository.get_chat(chat_id)
+                if chat is None:
                     raise ValueError(f"Chat {chat_id} does not exist.")
+                if chat.compression_error_code is not None:
+                    raise ValueError(chat.compression_error_code)
 
                 persistent_chat_id = chat_id
+                context_messages = build_active_context(
+                    self._repository.get_messages(chat_id),
+                    parse_compressed_context(chat.compressed_context),
+                    chat.compressed_through_seq,
+                    self._avatar_provider() if self._avatar_provider else None,
+                )
+                context_includes_avatar = True
                 user_message = self._repository.add_message(
                     chat_id,
                     "user",
@@ -175,9 +204,12 @@ class AudioChatService:
         transcript_chunks: list[str] = []
         assistant_chunks: list[str] = []
 
+        transcript_persisted = False
+        assistant_persisted = False
         async for event in self._stream_captured_turn(
             captured,
-            messages,
+            context_messages,
+            context_includes_avatar,
         ):
             if event.kind == "transcript":
                 transcript_chunks.append(event.text)
@@ -195,6 +227,7 @@ class AudioChatService:
                         user_message_id,
                         transcript,
                     )
+                    transcript_persisted = True
             elif (
                 event.kind == "assistant_done"
                 and self._repository is not None
@@ -207,13 +240,22 @@ class AudioChatService:
                         "assistant",
                         assistant,
                     )
+                    assistant_persisted = True
 
             yield event
+
+        if (
+            persistent_chat_id is not None
+            and transcript_persisted
+            and assistant_persisted
+        ):
+            self._schedule_compression(persistent_chat_id)
 
     async def _stream_captured_turn(
         self,
         captured: CapturedAudio,
         messages: list[dict[str, str]],
+        context_includes_avatar: bool = False,
     ) -> AsyncIterator[AudioStreamEvent]:
         queue: asyncio.Queue[
             tuple[
@@ -225,7 +267,7 @@ class AudioChatService:
         async def stream_assistant() -> None:
             try:
                 assistant_messages = list(messages)
-                if self._avatar_provider is not None:
+                if self._avatar_provider is not None and not context_includes_avatar:
                     avatar = self._avatar_provider()
                     assistant_messages.insert(
                         0,
@@ -306,3 +348,16 @@ class AudioChatService:
                 return_exceptions=True,
             )
             captured.path.unlink(missing_ok=True)
+
+    def _schedule_compression(self, chat_id: int) -> None:
+        """Run compression after a fully persisted audio roundtrip."""
+        if self._repository is None:
+            return
+        service = self._compression_service or ContextCompressionService(
+            self._runtime,
+            self._repository,
+            self._avatar_provider() if self._avatar_provider else None,
+        )
+        task = asyncio.create_task(service.compress_if_needed(chat_id))
+        self._compression_tasks.add(task)
+        task.add_done_callback(self._compression_tasks.discard)

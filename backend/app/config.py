@@ -22,6 +22,11 @@ class Settings:
     default_language: str = "de"
     audio_max_seconds: int = 30
     audio_wait_exceed_seconds: float = 1.0
+    context_compression_trigger_tokens: int = 8_000
+    context_compression_target_tokens: int = 6_000
+    context_compression_chars_per_token: int = 3
+    context_compression_protected_roundtrips: int = 2
+    context_compression_max_attempts: int = 3
     ollama_host: str = "127.0.0.1:11434"
     llm_models: tuple[LlmConfig, ...] = (
         LlmConfig(

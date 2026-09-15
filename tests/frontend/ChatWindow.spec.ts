@@ -108,6 +108,10 @@ vi.mock("../../frontend/src/components/MarkdownComposer.vue", async () => {
           type: String,
           required: true,
         },
+        disabled: {
+          type: Boolean,
+          default: false,
+        },
       },
       emits: [
         "update:modelValue",
@@ -118,6 +122,7 @@ vi.mock("../../frontend/src/components/MarkdownComposer.vue", async () => {
           "data-testid": "chat-input",
           "aria-label": "Nachricht",
           placeholder: props.placeholder,
+          disabled: props.disabled,
           value: props.modelValue,
           onInput: (event: Event) => {
             emit(
@@ -1539,6 +1544,42 @@ describe("ChatWindow", () => {
       (wrapper.get('[data-testid="chat-input"]').element as HTMLTextAreaElement)
         .value,
     ).toBe("");
+  });
+
+  it("shows the terminal compression error and disables chat input", async () => {
+    getChatsMock.mockResolvedValue([
+      {
+        id: 42,
+        title: "Zu großer Kontext",
+        pinned: false,
+        created_at: "2026-09-07T10:00:00",
+      },
+    ]);
+    getChatMock.mockResolvedValue({
+      id: 42,
+      title: "Zu großer Kontext",
+      pinned: false,
+      created_at: "2026-09-07T10:00:00",
+      messages: [],
+      compression_error_code: "chat_context_compression_failed",
+    });
+
+    const wrapper = mount(ChatWindow);
+    await flushPromises();
+    await wrapper.get('[data-testid="chat-42"]').trigger("click");
+    await flushPromises();
+
+    expect(wrapper.get('[data-testid="chat-error"]').text()).toContain(
+      "kann wegen eines zu großen Kontextes nicht fortgesetzt werden",
+    );
+    expect(wrapper.get('[data-testid="chat-input"]').attributes("disabled"))
+      .toBeDefined();
+    expect(wrapper.get('[data-testid="record-audio"]').attributes("disabled"))
+      .toBeDefined();
+    expect(wrapper.get('[data-testid="dialog-call"]').attributes("disabled"))
+      .toBeDefined();
+    expect(wrapper.get('[data-testid="send-chat"]').attributes("disabled"))
+      .toBeDefined();
   });
 
   it("continues a persisted chat using its chat ID", async () => {

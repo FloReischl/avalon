@@ -71,6 +71,7 @@ interface ChatState {
   activeTurn?: ActiveTurn;
   backendPending: boolean;
   dialogProcessing: boolean;
+  compressionErrorCode?: string;
 }
 
 interface ActiveTurn {
@@ -95,6 +96,7 @@ function createChatState(
     activeTurn: undefined,
     backendPending: false,
     dialogProcessing: false,
+    compressionErrorCode: undefined,
   });
 }
 
@@ -156,6 +158,22 @@ export function useTransientChat(
   const selectedChatId = computed(
     () => currentState.value.chatId,
   );
+
+  const isChatCompressionFailed = computed(
+    () => currentState.value.compressionErrorCode
+      === "chat_context_compression_failed",
+  );
+
+  function applyCompressionStatus(
+    state: ChatState,
+    errorCode: string | null | undefined,
+  ) {
+    state.compressionErrorCode = errorCode ?? undefined;
+    if (state.compressionErrorCode === "chat_context_compression_failed") {
+      state.errorMessage =
+        "Dieser Chat kann wegen eines zu großen Kontextes nicht fortgesetzt werden.";
+    }
+  }
 
   function rollbackTurn(
     state: ChatState,
@@ -261,6 +279,7 @@ export function useTransientChat(
         created_at,
       })),
     );
+    applyCompressionStatus(state, detail.compression_error_code);
   }
 
   async function selectChat(chatId: number) {
@@ -298,6 +317,7 @@ export function useTransientChat(
         created_at,
       })),
     );
+    applyCompressionStatus(state, detail.compression_error_code);
 
     chatStates.set(detail.id, state);
     currentState.value = state;
@@ -394,6 +414,7 @@ export function useTransientChat(
 
     if (
       state.activeTurn
+      || isChatCompressionFailed.value
       || state.input.length === 0
     ) {
       return;
@@ -502,7 +523,7 @@ export function useTransientChat(
   async function sendAudio() {
     const state = currentState.value;
 
-    if (state.activeTurn) {
+    if (state.activeTurn || isChatCompressionFailed.value) {
       return;
     }
 
@@ -610,7 +631,7 @@ export function useTransientChat(
   async function sendDialogAudio(): Promise<DialogTurnResult | undefined> {
     const state = currentState.value;
 
-    if (state.activeTurn) {
+    if (state.activeTurn || isChatCompressionFailed.value) {
       return undefined;
     }
 
@@ -816,6 +837,7 @@ export function useTransientChat(
     errorMessage,
     chatSummaries,
     selectedChatId,
+    isChatCompressionFailed,
     refreshChats,
     refreshSelectedChat,
     selectChat,

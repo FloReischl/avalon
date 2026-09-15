@@ -41,6 +41,7 @@ export interface PersistentMessage {
 
 export interface ChatDetail extends ChatSummary {
   messages: PersistentMessage[];
+  compression_error_code?: string | null;
 }
 
 export interface TtsResponse {

@@ -16,6 +16,7 @@ class FakeAudioChatService:
         self.received_messages: list[dict[str, str]] | None = None
         self.received_chat_id: int | None = None
         self.error: Exception | None = None
+        self.compression_error: str | None = None
 
     async def start_recording(self) -> None:
         if self.error:
@@ -24,6 +25,10 @@ class FakeAudioChatService:
 
     async def abort_recording(self) -> None:
         self.aborted = True
+
+    def terminal_compression_error(self, chat_id: int | None) -> str | None:
+        del chat_id
+        return self.compression_error
 
     async def stream_response_with_transcription(
         self,
@@ -136,3 +141,35 @@ def test_dialog_turn_announces_processing_before_assistant_output() -> None:
         'event: chunk\ndata: {"text": "Hallo"}\n\n'
         "event: done\ndata: {}\n\n"
     )
+
+
+def test_audio_stop_rejects_terminal_chat_and_discards_recording() -> None:
+    service = FakeAudioChatService()
+    service.compression_error = "chat_context_compression_failed"
+
+    response = request(
+        "POST",
+        "/api/v1/audio/recording/stop",
+        service,
+        json={"chat_id": 42, "messages": []},
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": "chat_context_compression_failed"}
+    assert service.aborted is True
+
+
+def test_dialog_rejects_terminal_chat_before_recording() -> None:
+    service = FakeAudioChatService()
+    service.compression_error = "chat_context_compression_failed"
+
+    response = request(
+        "POST",
+        "/api/v1/audio/dialog/turn",
+        service,
+        json={"chat_id": 42, "messages": []},
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": "chat_context_compression_failed"}
+    assert service.aborted is False

@@ -15,7 +15,12 @@ from app.persistence.database import (
     create_session_factory,
 )
 from app.runtime.ollama import OllamaRuntime
-from app.services.chat import ChatNotFoundError, ChatService, ChatTurn
+from app.services.chat import (
+    ChatCompressionFailedError,
+    ChatNotFoundError,
+    ChatService,
+    ChatTurn,
+)
 from app.state import get_avalo_state
 from app.state import get_audio_call_state
 
@@ -83,6 +88,8 @@ async def create_chat_response(
         turn = service.start_turn(request.chat_id, message)
     except ChatNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ChatCompressionFailedError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     call_status = get_audio_call_state().get_status()
     if call_status.active and call_status.chat_id == turn.chat_id:

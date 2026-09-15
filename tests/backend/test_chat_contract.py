@@ -2,11 +2,21 @@ import asyncio
 from collections.abc import AsyncIterator
 
 import pytest
+from fastapi import HTTPException
 from httpx import ASGITransport, AsyncClient
 
-from app.api.routes.chat import get_chat_service, stream_chat_response
+from app.api.routes.chat import (
+    create_chat_response,
+    get_chat_service,
+    stream_chat_response,
+)
+from app.api.schemas import ChatRequest
 from app.main import create_app
-from app.services.chat import ChatNotFoundError, ChatTurn
+from app.services.chat import (
+    ChatCompressionFailedError,
+    ChatNotFoundError,
+    ChatTurn,
+)
 
 
 class FakeChatService:
@@ -29,6 +39,8 @@ class FakeChatService:
 
         if chat_id == 999:
             raise ChatNotFoundError("Chat 999 does not exist.")
+        if chat_id == 998:
+            raise ChatCompressionFailedError("chat_context_compression_failed")
 
         return ChatTurn(
             chat_id=chat_id or self._chat_id,
@@ -161,6 +173,19 @@ def test_chat_rejects_unknown_chat() -> None:
     )
 
     assert response.status_code == 404
+
+
+def test_chat_rejects_terminal_compression_failure() -> None:
+    async def request() -> None:
+        with pytest.raises(HTTPException) as error:
+            await create_chat_response(
+                ChatRequest(chat_id=998, message="Weiter"),
+                FakeChatService(),  # type: ignore[arg-type]
+            )
+        assert error.value.status_code == 409
+        assert error.value.detail == "chat_context_compression_failed"
+
+    asyncio.run(request())
 
 
 @pytest.mark.asyncio

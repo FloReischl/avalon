@@ -8,14 +8,22 @@
 
 **Candidates**
 
-- architect (mini)
-- planner
+- commands
+- instructions
+- permissions
+
+
+**roles**
+
+- architect / planner
 - coder
 - reviewer
+- DJane
+- VJane
+- redacteur / podcast sprecherin
 
-   command
-   instructions
-   permissions
+**topics**
+
 
 ## MCP Server
 

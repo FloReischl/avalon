@@ -72,6 +72,7 @@ def get_chat(
         title=chat.title,
         pinned=chat.pinned,
         created_at=chat.created_at,
+        compression_error_code=chat.compression_error_code,
 
         messages=[
             PersistentMessageResponse(

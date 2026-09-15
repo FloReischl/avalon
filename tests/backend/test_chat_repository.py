@@ -42,6 +42,11 @@ def test_create_and_get_chat(repository) -> None:
     assert loaded.title_is_manual is False
     assert loaded.auto_title_attempted is False
     assert loaded.pinned is False
+    assert loaded.compressed_context == '{"summaries":[],"stars":[]}'
+    assert loaded.compressed_through_seq == 0
+    assert loaded.compression_version == 0
+    assert loaded.compression_error_code is None
+    assert loaded.next_message_seq == 1
 
 
 
@@ -110,6 +115,60 @@ def test_add_and_get_messages_in_chronological_order(repository) -> None:
     assert [message.id for message in messages] == [first.id, second.id]
     assert [message.role for message in messages] == ["user", "assistant"]
     assert [message.content for message in messages] == ["Hallo", "Hallo Flo"]
+    assert [message.seq for message in messages] == [1, 2]
+
+
+def test_first_message_uses_sequence_one(repository) -> None:
+    repo, _ = repository
+    chat = repo.create_chat_with_message("Chat", "user", "Hallo")
+
+    message = repo.get_messages(chat.id)[0]
+    loaded = repo.get_chat(chat.id)
+
+    assert message.seq == 1
+    assert loaded is not None
+    assert loaded.next_message_seq == 2
+
+
+def test_compression_state_uses_optimistic_locking(repository) -> None:
+    repo, _ = repository
+    chat = repo.create_chat("Chat")
+
+    assert repo.compare_and_set_compression_state(
+        chat.id,
+        expected_version=0,
+        compressed_context='{"summaries":["A"],"stars":[]}',
+        compressed_through_seq=8,
+    )
+    assert not repo.compare_and_set_compression_state(
+        chat.id,
+        expected_version=0,
+        compressed_context='{"summaries":["veraltet"],"stars":[]}',
+        compressed_through_seq=9,
+    )
+
+    loaded = repo.get_chat(chat.id)
+    assert loaded is not None
+    assert loaded.compression_version == 1
+    assert loaded.compressed_through_seq == 8
+    assert loaded.compressed_context == '{"summaries":["A"],"stars":[]}'
+
+
+def test_terminal_compression_error_is_guarded_by_version(repository) -> None:
+    repo, _ = repository
+    chat = repo.create_chat("Chat")
+
+    assert repo.set_compression_error_if_version(
+        chat.id,
+        expected_version=0,
+        error_code="chat_context_compression_failed",
+    )
+    assert not repo.compare_and_set_compression_state(
+        chat.id,
+        expected_version=0,
+        compressed_context='{"summaries":[],"stars":[]}',
+        compressed_through_seq=0,
+    )
 
 
 @pytest.mark.parametrize("role", ["system", "tool", "", "USER"])

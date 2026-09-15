@@ -165,6 +165,11 @@ async def stop_audio_recording(
     service: AudioChatService = Depends(get_audio_chat_service),
 ) -> StreamingResponse:
     """Stop capture and stream Gemma's response using prior chat context."""
+    error_code = service.terminal_compression_error(request.chat_id)
+    if error_code is not None:
+        await service.abort_recording()
+        raise HTTPException(status_code=409, detail=error_code)
+
     messages = [message.model_dump() for message in request.messages]
     return StreamingResponse(
         stream_audio_response(service, messages, request.chat_id),
@@ -219,6 +224,10 @@ async def create_dialog_turn(
     service: AudioChatService = Depends(get_audio_chat_service),
 ) -> StreamingResponse:
     """Wait for one speech turn and stream Gemma's response."""
+    error_code = service.terminal_compression_error(request.chat_id)
+    if error_code is not None:
+        raise HTTPException(status_code=409, detail=error_code)
+
     messages = [message.model_dump() for message in request.messages]
     return StreamingResponse(
         stream_dialog_response(service, messages, request.chat_id),

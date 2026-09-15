@@ -5,7 +5,7 @@ from datetime import datetime
 
 from httpx import ASGITransport, AsyncClient
 
-from app.api.routes.chats import get_chat_repository
+from app.api.routes.chats import get_chat, get_chat_repository
 from app.main import create_app
 from app.persistence.models import Chat, Message
 
@@ -138,6 +138,7 @@ def test_get_chat_returns_complete_history() -> None:
     assert payload["id"] == 1
     assert payload["title"] == "Erster Chat"
     assert payload["pinned"] is False
+    assert payload["compression_error_code"] is None
     assert [message["id"] for message in payload["messages"]] == [10, 11]
 
     assert [message["role"] for message in payload["messages"]] == [
@@ -153,6 +154,17 @@ def test_get_chat_returns_complete_history() -> None:
         "created_at" in message
         for message in payload["messages"]
     )
+
+
+def test_get_chat_exposes_terminal_compression_error() -> None:
+    repository = FakeChatRepository()
+    repository.chats[1].compression_error_code = (
+        "chat_context_compression_failed"
+    )
+
+    detail = get_chat(1, repository)  # type: ignore[arg-type]
+
+    assert detail.compression_error_code == "chat_context_compression_failed"
 
 
 def test_get_unknown_chat_returns_404() -> None:

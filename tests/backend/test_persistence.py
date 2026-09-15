@@ -2,13 +2,16 @@
 
 from pathlib import Path
 
+from alembic import command
+from alembic.config import Config
 from sqlalchemy import inspect, text
 
 from app.persistence.database import (
     create_database_engine,
+    database_url,
     database_path,
 )
-from app.persistence.migrations import run_migrations
+from app.persistence.migrations import migration_script_location, run_migrations
 
 
 def test_database_path_is_per_user(monkeypatch, tmp_path: Path) -> None:
@@ -37,6 +40,16 @@ def test_migrations_create_initial_schema(tmp_path: Path) -> None:
         assert len(message_foreign_keys) == 1
         assert message_foreign_keys[0]["referred_table"] == "chats"
         assert message_foreign_keys[0]["options"]["ondelete"] == "CASCADE"
+        assert {"seq"}.issubset(
+            {column["name"] for column in inspector.get_columns("messages")}
+        )
+        assert {
+            "compressed_context",
+            "compressed_through_seq",
+            "compression_version",
+            "compression_error_code",
+            "next_message_seq",
+        }.issubset({column["name"] for column in inspector.get_columns("chats")})
     finally:
         engine.dispose()
 
@@ -68,5 +81,52 @@ def test_sqlite_foreign_keys_are_enabled(tmp_path: Path) -> None:
             ).scalar_one()
 
         assert enabled == 1
+    finally:
+        engine.dispose()
+
+
+def test_compression_migration_backfills_existing_message_sequences(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "avalo.sqlite"
+    config = Config()
+    config.set_main_option("script_location", str(migration_script_location()))
+    config.set_main_option("sqlalchemy.url", database_url(path))
+    command.upgrade(config, "0003")
+
+    engine = create_database_engine(path)
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text("INSERT INTO chats (id, title) VALUES (1, 'Chat')")
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO messages (id, chat_id, role, content, created_at) "
+                    "VALUES (2, 1, 'assistant', 'Zweite', '2026-01-01 10:00:00')"
+                )
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO messages (id, chat_id, role, content, created_at) "
+                    "VALUES (1, 1, 'user', 'Erste', '2026-01-01 10:00:00')"
+                )
+            )
+    finally:
+        engine.dispose()
+
+    run_migrations(path)
+    engine = create_database_engine(path)
+    try:
+        with engine.connect() as connection:
+            sequences = connection.execute(
+                text("SELECT id, seq FROM messages ORDER BY id")
+            ).all()
+            next_sequence = connection.execute(
+                text("SELECT next_message_seq FROM chats WHERE id = 1")
+            ).scalar_one()
+
+        assert sequences == [(1, 1), (2, 2)]
+        assert next_sequence == 3
     finally:
         engine.dispose()

@@ -35,6 +35,31 @@ class Chat(Base):
         default=False,
         server_default="0",
     )
+    compressed_context: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default='{"summaries":[],"stars":[]}',
+        server_default='{"summaries":[],"stars":[]}',
+    )
+    compressed_through_seq: Mapped[int] = mapped_column(
+        nullable=False,
+        default=0,
+        server_default="0",
+    )
+    compression_version: Mapped[int] = mapped_column(
+        nullable=False,
+        default=0,
+        server_default="0",
+    )
+    compression_error_code: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+    )
+    next_message_seq: Mapped[int] = mapped_column(
+        nullable=False,
+        default=1,
+        server_default="1",
+    )
     created_at: Mapped[datetime] = mapped_column(
 
         DateTime,
@@ -54,6 +79,7 @@ class Message(Base):
     __tablename__ = "messages"
     __table_args__ = (
         Index("ix_messages_chat_id_created_at", "chat_id", "created_at"),
+        Index("ix_messages_chat_id_seq", "chat_id", "seq", unique=True),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -63,6 +89,7 @@ class Message(Base):
     )
     role: Mapped[str] = mapped_column(String(16), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
+    seq: Mapped[int] = mapped_column(nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
         nullable=False,

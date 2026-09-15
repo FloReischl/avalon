@@ -1,6 +1,6 @@
 """Persistent chat and message operations."""
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.persistence.models import Chat, Message
@@ -34,11 +34,12 @@ class ChatRepository:
         self._validate_message(role, content)
 
         with self._session_factory() as session:
-            chat = Chat(title=normalized_title)
+            chat = Chat(title=normalized_title, next_message_seq=2)
             message = Message(
                 chat=chat,
                 role=role,
                 content=content,
+                seq=1,
             )
             session.add_all([chat, message])
             session.commit()
@@ -55,10 +56,20 @@ class ChatRepository:
         self._validate_message(role, content)
 
         with self._session_factory() as session:
+            next_sequence = session.execute(
+                update(Chat)
+                .where(Chat.id == chat_id)
+                .values(next_message_seq=Chat.next_message_seq + 1)
+                .returning(Chat.next_message_seq)
+            ).scalar_one_or_none()
+            if next_sequence is None:
+                raise ValueError(f"Chat {chat_id} does not exist.")
+
             message = Message(
                 chat_id=chat_id,
                 role=role,
                 content=content,
+                seq=next_sequence - 1,
             )
             session.add(message)
             session.commit()
@@ -117,6 +128,51 @@ class ChatRepository:
             messages = list(session.scalars(statement))
             messages.reverse()
             return messages
+
+    def compare_and_set_compression_state(
+        self,
+        chat_id: int,
+        expected_version: int,
+        compressed_context: str,
+        compressed_through_seq: int,
+    ) -> bool:
+        """Persist a compression result only if its snapshot is current."""
+        with self._session_factory() as session:
+            result = session.execute(
+                update(Chat)
+                .where(
+                    Chat.id == chat_id,
+                    Chat.compression_version == expected_version,
+                    Chat.compression_error_code.is_(None),
+                )
+                .values(
+                    compressed_context=compressed_context,
+                    compressed_through_seq=compressed_through_seq,
+                    compression_version=expected_version + 1,
+                )
+            )
+            session.commit()
+            return result.rowcount == 1
+
+    def set_compression_error_if_version(
+        self,
+        chat_id: int,
+        expected_version: int,
+        error_code: str,
+    ) -> bool:
+        """Persist a terminal compression error for a current job snapshot."""
+        with self._session_factory() as session:
+            result = session.execute(
+                update(Chat)
+                .where(
+                    Chat.id == chat_id,
+                    Chat.compression_version == expected_version,
+                    Chat.compression_error_code.is_(None),
+                )
+                .values(compression_error_code=error_code)
+            )
+            session.commit()
+            return result.rowcount == 1
 
     def list_chats(self) -> list[Chat]:
         """Return all chats ordered by most recent message activity."""

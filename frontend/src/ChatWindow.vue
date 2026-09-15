@@ -51,6 +51,7 @@ const {
   errorMessage,
   chatSummaries,
   selectedChatId,
+  isChatCompressionFailed,
   refreshChats,
   refreshSelectedChat,
   selectChat,
@@ -187,6 +188,7 @@ async function startAudioRecording(event: PointerEvent) {
   if (
     event.button !== 0
     || isGenerating.value
+    || isChatCompressionFailed.value
     || isRecording.value
     || recordingStartPending
   ) {
@@ -635,6 +637,7 @@ function startDialog() {
     || isRecording.value
     || recordingStartPending
     || isGenerating.value
+    || isChatCompressionFailed.value
   ) {
     return;
   }
@@ -664,7 +667,10 @@ function stopDialogAudio() {
 }
 
 function handleDialogButton() {
-  if (selectedChatId.value === undefined) return;
+  if (
+    selectedChatId.value === undefined
+    || isChatCompressionFailed.value
+  ) return;
   requestRuntimeWarmUp();
   void startAudioCall(selectedChatId.value)
     .then(async (status) => {
@@ -785,6 +791,7 @@ function handleInputKeydown(event: KeyboardEvent) {
   if (
     event.key !== "Enter"
     || isGenerating.value
+    || isChatCompressionFailed.value
   ) {
     return;
   }
@@ -1320,6 +1327,7 @@ function handleInputKeydown(event: KeyboardEvent) {
             v-model="input"
             placeholder="Dein Prompt hier"
             :toolbar-enabled="isComposerExpanded"
+            :disabled="isChatCompressionFailed"
             @keydown="handleInputKeydown"
           />
 
@@ -1353,7 +1361,7 @@ function handleInputKeydown(event: KeyboardEvent) {
             data-testid="record-audio"
             aria-label="Sprachnachricht aufnehmen"
             title="Zum Aufnehmen gedrückt halten"
-            :disabled="isGenerating || isDialogActive"
+            :disabled="isGenerating || isDialogActive || isChatCompressionFailed"
             @pointerdown="startAudioRecording"
           >
             <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -1386,7 +1394,7 @@ function handleInputKeydown(event: KeyboardEvent) {
                   ? 'Sprachausgabe stoppen'
                   : 'Dialog beenden'
             "
-            :disabled="isRecording || recordingStartPending"
+            :disabled="isRecording || recordingStartPending || isChatCompressionFailed"
             @click="handleDialogButton"
           >
             <svg
@@ -1432,7 +1440,7 @@ function handleInputKeydown(event: KeyboardEvent) {
             data-testid="send-chat"
             aria-label="Nachricht senden"
             title="Nachricht senden"
-            :disabled="input.length === 0 || isDialogActive || isBoundCallTurnActive"
+            :disabled="input.length === 0 || isDialogActive || isBoundCallTurnActive || isChatCompressionFailed"
             @click="sendComposerInput"
           >
             <svg

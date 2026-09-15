@@ -91,6 +91,7 @@ class ChatDetailResponse(ChatSummaryResponse):
     """One persistent chat including its complete message history."""
 
     messages: list[PersistentMessageResponse]
+    compression_error_code: str | None = None
 
 
 class RenameChatRequest(BaseModel):
