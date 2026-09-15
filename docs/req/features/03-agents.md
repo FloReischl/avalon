@@ -1,5 +1,22 @@
 # Agents
 
+## Coding
+
+**General**
+
+- dedicated persona/instructions for each agent (see Obsidian Qwen2.5:7b series)
+
+**Candidates**
+
+- architect (mini)
+- planner
+- coder
+- reviewer
+
+   command
+   instructions
+   permissions
+
 ## MCP Server
 
 ### Internet Search

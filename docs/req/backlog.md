@@ -3,6 +3,10 @@ todo
 - search
 - agents/mcp monitor
 - internet suchen
+- reconsider command pattern implementation
+  - /command --> ~command
+  - /command --> /avatar
+  - /agent
 - agents
 - chat kontext komprimieren
 - animations

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 BASE_MODEL="gemma4:e4b-it-q4_K_M"
-# BASE_MODEL="hf.co/TrevorJS/gemma-4-E4B-it-uncensored-GGUF:Q4_K_M"
+# BASE_MODEL="qwen2.5-coder:7b-instruct"
 GPU_LAYERS="${1:-34}"
 TARGET_MODEL="${BASE_MODEL}-test-balanced"
 

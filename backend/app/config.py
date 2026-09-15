@@ -26,7 +26,8 @@ class Settings:
     llm_models: tuple[LlmConfig, ...] = (
         LlmConfig(
             key="standard",
-            model="gemma4:e4b-it-q4_K_M-ctx32k",
+            # model="gemma4:e4b-it-q4_K_M-ctx32k",
+            model="qwen2.5-coder:7b-instruct",
         ),
         LlmConfig(
             key="uncensored",
