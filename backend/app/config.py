@@ -26,7 +26,15 @@ class Settings:
     llm_models: tuple[LlmConfig, ...] = (
         LlmConfig(
             key="standard",
-            # model="gemma4:e4b-it-q4_K_M-ctx32k",
+            model="gemma4:e4b-it-q4_K_M-ctx32k",
+            # model="qwen2.5-coder:7b-instruct",
+        ),
+        LlmConfig(
+            key="gemma",
+            model="gemma4:e4b-it-q4_K_M-ctx32k",
+        ),
+        LlmConfig(
+            key="qwen",
             model="qwen2.5-coder:7b-instruct",
         ),
         LlmConfig(
