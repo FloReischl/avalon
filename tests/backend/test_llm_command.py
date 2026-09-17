@@ -60,8 +60,13 @@ class FakeRuntime:
 
 
 def optional_llm():
+    standard = next(
+        llm for llm in settings.llm_models if llm.key == "standard"
+    )
     return next(
-        llm for llm in settings.llm_models if llm.key != "standard"
+        llm
+        for llm in settings.llm_models
+        if llm.key != "standard" and llm.model != standard.model
     )
 
 

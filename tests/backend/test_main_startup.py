@@ -51,8 +51,13 @@ async def test_startup_rejects_missing_standard_llm(
 async def test_startup_warns_about_missing_optional_llm(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
+    standard = next(
+        llm for llm in settings.llm_models if llm.key == "standard"
+    )
     optional = next(
-        llm for llm in settings.llm_models if llm.key != "standard"
+        llm
+        for llm in settings.llm_models
+        if llm.key != "standard" and llm.model != standard.model
     )
     runtime = FakeRuntime({optional.model})
 
