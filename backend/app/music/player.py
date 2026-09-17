@@ -1,4 +1,4 @@
-"""Music player process integration."""
+"""Celluloid process adapter."""
 
 from pathlib import Path
 import subprocess

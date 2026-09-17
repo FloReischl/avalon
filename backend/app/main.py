@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.router import api_router
 from app.config import settings
+from app.mcp.server import create_mcp_server
 from app.persistence.migrations import run_migrations
 from app.runtime.ollama import OllamaRuntime
 from app.state import initialize_avalo_state
@@ -51,19 +52,17 @@ async def validate_configured_llms(runtime: OllamaRuntime) -> None:
 @asynccontextmanager
 async def lifespan(application: FastAPI) -> AsyncIterator[None]:
     """Prepare persistent state before serving requests."""
-    del application
+    async with application.state.mcp.session_manager.run():
+        try:
+            user_config = initialize_user_config()
+            initialize_avalo_state(user_config)
+            await validate_configured_llms(OllamaRuntime())
+            run_migrations()
+        except Exception:
+            traceback.print_exc(file=sys.stderr)
+            raise
 
-    try:
-        user_config = initialize_user_config()
-        initialize_avalo_state(user_config)
-        await validate_configured_llms(OllamaRuntime())
-        run_migrations()
-    except Exception:
-
-        traceback.print_exc(file=sys.stderr)
-        raise
-
-    yield
+        yield
 
 
 class StderrExceptionMiddleware:
@@ -95,6 +94,15 @@ def create_app() -> FastAPI:
 
     )
     application.include_router(api_router)
+    mcp = create_mcp_server()
+    application.state.mcp = mcp
+    application.mount(
+        "/mcp",
+        mcp.streamable_http_app(
+            streamable_http_path="/",
+            host=settings.api_host,
+        ),
+    )
     return application
 
 

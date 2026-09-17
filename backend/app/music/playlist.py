@@ -1,4 +1,4 @@
-"""M3U playlist creation."""
+"""M3U playlist creation adapter."""
 
 from pathlib import Path
 

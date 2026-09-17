@@ -4,6 +4,7 @@ from app.config import settings
 def test_local_api_address_is_fixed() -> None:
     assert settings.api_host == "127.0.0.1"
     assert settings.api_port == 8095
+    assert settings.music_db_path == "/media/flo/2TB_SSD/music/mp3db.sqlite3"
 
 
 def test_gemma_audio_limit_is_recorded() -> None:
@@ -23,5 +24,4 @@ def test_chatterbox_tts_settings_are_recorded() -> None:
         == "5bb1f6ee58e50c3b8d408bc82a6d3740c2db6e18"
     )
     assert settings.tts_idle_unload_seconds == 300.0
-
 

@@ -66,41 +66,26 @@ architecture:
     technology:
       - Python
       - FastAPI
+      - MCP Python SDK v2
     root: backend/app
     status: partial
     layers:
       api: HTTP endpoints and public schemas
+      mcp: MCP inbound capability boundary
       application: use-case orchestration
-      persistence: SQLite conversation storage and schema lifecycle
+      persistence: SQLite conversation storage, schema lifecycle, and external execution-data access
       runtime: interchangeable local model adapters
       audio: backend-local audio capture and preparation boundary
       tts: interchangeable speech synthesis adapters
       config: central technical configuration
-
-  server:
-    technology:
-      - Python
-      - MCP Python SDK v2
-    root: server
-    status: implemented_foundation
-    responsibility:
-      - standalone local Avalo capability server
-      - expose deterministic capabilities to Avalo through MCP
     transport:
-      type: MCP Streamable HTTP
-      address: "127.0.0.1:8096"
-      endpoint: "/mcp"
-    lifecycle:
-      - runs independently from the FastAPI backend
-      - development start through scripts/others/start-server.sh
+      address: "127.0.0.1:8095"
+      namespaces:
+        api: "/api/v1"
+        mcp: "/mcp"
     capabilities:
       music:
-        root: server/mcp/music
-        tools:
-          - music.play_tracks
-    logging:
-      path: /tmp/avalo_server.log
-      namespace: server
+        tool: music.play_tracks
 
   communication:
     backend_address: "127.0.0.1:8095"
@@ -148,29 +133,7 @@ architecture:
 
 key_flows:
 
-  server_music_play_tracks:
-    tool: music.play_tracks
-    registration: server/mcp/music/tools.py:register_music_tools
-    transport: MCP Streamable HTTP
-    request:
-      track_ids: list[int]
-    flow:
-      - MCPServer dispatches music.play_tracks
-      - complete track_ids request payload is logged
-      - server/mcp/music/repository.py resolves tracks.id to tracks.file_path from configured external music SQLite database
-      - resolved paths preserve supplied track-id order and duplicates
-      - unknown track ids are omitted
-      - server/mcp/music/playlist.py writes /tmp/avalo_music.m3u
-      - server/mcp/music/player.py launches Celluloid with the generated playlist
-    verification:
-      unit_tests: tests/server
-      vertical_integration_test: tests/integration/test_server_music_mcp.py
-      integration_test_behavior:
-        - requires already-running MCP server
-        - requires configured music database with tracks
-        - launches real Celluloid
-        - verifies MCP call, playlist contents, and request logging
-        - skipped by default because external infrastructure is required
+  backend_music_play_tracks:
 
   backend_startup:
     entry: backend/app/main.py:create_app

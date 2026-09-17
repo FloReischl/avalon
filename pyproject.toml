@@ -38,11 +38,11 @@ dev = [
 
 [tool.setuptools.packages.find]
 where = ["backend", "."]
-include = ["app*", "server*"]
+include = ["app*"]
 
 [tool.pytest.ini_options]
 addopts = "-ra"
-testpaths = ["tests/backend", "tests/integration", "tests/server"]
+testpaths = ["tests/backend", "tests/integration"]
 markers = [
     "integration: tests requiring explicitly available local services or hardware",
 ]
