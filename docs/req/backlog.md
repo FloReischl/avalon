@@ -3,6 +3,8 @@ todo
 - search
 - agents/mcp monitor
 - internet suchen
+- log window
+- permissions window
 - agents
 - input-send with ENTER, if no '\n' contained
 - chat kontext komprimieren

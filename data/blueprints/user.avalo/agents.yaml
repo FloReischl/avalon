@@ -1,0 +1,74 @@
+agents:
+- name: orange
+  key: coder
+  persona:
+  - <persona for coder agent>
+  instructions:
+  - <instructions for coder agent>
+  permissions:
+  - context: files
+    type: read
+    scope: [ '~/dev/acme-app' ]
+    grant_policy:
+      validity: permanent
+  - context: files
+    type: write
+    scope: [ '~/dev/acme-app' ]
+    grant_policy:
+      validity: duration
+      minutes: 60
+  - context: files
+    type: delete
+    scope: [ '~/dev/acme-app' ]
+    grant_policy:
+      validity: range
+      count: "{request}"
+- name: fowler
+  key: architect
+  persona: 
+  - <persona for architect agent>
+  instructions:
+  - <instructions for architect agent>
+  permissions:
+  - context: files
+    type: read
+    scope: [ '~/dev/acme-app' ]
+    grant_policy:
+      validity: permanent
+- name: destructivus
+  key: tester
+  persona: 
+  - <persona for tester agent>
+  instructions:
+  - <instructions for tester agent>
+  permissions:
+  - context: files
+    type: read
+    scope: [ '~/dev/acme-app/tests' ]
+    grant_policy:
+      validity: permanent
+  - context: shell
+    type: execute
+    scope: [ 'pytest' ]
+    grant_policy:
+      validity: duration
+      minutes: 600
+- name: monique
+  key: deejane
+  persona: 
+  - <persona for deejane agent>
+  instructions:
+  - <instructions for deejane agent>
+  permissions:
+  - context: music
+    type: read
+    grant_policy:
+      validity: permanent
+  - context: music
+    type: play
+    grant_policy:
+      validity: duration
+      minutes: 600
+
+# future
+# postman/postoffice write/organize mails

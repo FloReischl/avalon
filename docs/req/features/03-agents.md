@@ -1,17 +1,6 @@
 # Agents
 
-## Coding
-
-**General**
-
 - dedicated persona/instructions for each agent (see Obsidian Qwen2.5:7b series)
-
-**Candidates**
-
-- commands
-- instructions
-- permissions
-
 
 **roles**
 
@@ -22,10 +11,41 @@
 - VJane
 - redacteur / podcast sprecherin
 
+## Coder
+
+**Semantik**
+
+- arbeit an sehr vielen kleinen dateien
+- komplexe operationen (sed, grep, ...)
+- undo-fähigkeit, wenn man ./.git auf read-only setzt
+- finales HITL möglich
+
+**Lösung**
+
+- Grobgranular `rw` auf den projekt folder
+- read-only auf `.git`
+
+
+
 **topics**
 
+## Deejane
+
+**Semantik**
+
+- fachlich komplexe logik, nicht infrastrukturell
+- wenige, fachliche schnittstellen (z.b. read-only auf music db)
+- schreiben nur sehr speziell
+
+**Lösung**
+
+- Leserechte grob-granular
+- Schreiben **gar nicht** am MCP vorbei. Beispiel
+  - Monique: playlist geht wunderbar
+  - File Organizer: wenige operationen (cp, rm, mv) - nicht reversible -> MCP zwingend
 
 ## MCP Server
+
 
 ### Internet Search
 

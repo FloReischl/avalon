@@ -3,7 +3,7 @@ set -euo pipefail
 
 BASE_MODEL="gemma4:e4b-it-q4_K_M"
 # BASE_MODEL="qwen2.5-coder:7b-instruct"
-TARGET_MODEL="${BASE_MODEL}-ctx32k"
+TARGET_MODEL="${BASE_MODEL}-ctx16k"
 
 TMPFILE="$(mktemp)"
 trap 'rm -f "$TMPFILE"' EXIT
@@ -11,7 +11,7 @@ trap 'rm -f "$TMPFILE"' EXIT
 # note to myself 32k = 32768, 16k = 16384
 cat >"$TMPFILE" <<EOF
 FROM ${BASE_MODEL}
-PARAMETER num_ctx 32768 
+PARAMETER num_ctx 16384
 EOF
 
 echo "Creating Ollama model:"
