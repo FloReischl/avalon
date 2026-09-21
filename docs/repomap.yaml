@@ -105,7 +105,9 @@ architecture:
       - application startup always begins with a fresh transient New Chat
       - a transient New Chat is persisted only when its first message is sent
       - persisted chats can be listed and reopened with complete stored history
-      - model context for text chat is limited to the most recent 100 persisted messages
+      - model context combines avatar system instructions, compressed historical context, and persisted messages newer than compressed_through_seq
+      - completed text and audio turns schedule best-effort asynchronous context compression after persistence
+      - chats with terminal compression failure reject further text and audio turns with HTTP 409
       - the effective standard avatar provides persona and instructions for assistant generation
       - persona and instructions are prepended as one system message for text and audio assistant generation
       - transcription and automatic title generation do not receive avatar persona or instructions
@@ -134,6 +136,28 @@ architecture:
 key_flows:
 
   backend_music_play_tracks:
+    tool: music.play_tracks
+    registration: backend/app/mcp/music.py:register_music_tools
+    transport: MCP Streamable HTTP
+    endpoint: "/mcp"
+    request:
+      track_ids: list[int]
+    flow:
+      - MCPServer dispatches music.play_tracks
+      - complete track_ids request payload is logged
+      - backend/app/mcp/music.py delegates to MusicService
+      - backend/app/persistence/music_repository.py resolves tracks.id to tracks.file_path from configured external music SQLite database
+      - resolved paths preserve supplied track-id order and duplicates
+      - unknown track ids are omitted
+      - backend/app/music/playlist.py writes /tmp/avalo_music.m3u
+      - backend/app/music/player.py launches Celluloid with the generated playlist
+    verification:
+      unit_tests:
+        - tests/backend/test_mcp_music.py
+        - tests/backend/test_music_service.py
+        - tests/backend/test_music_repository.py
+        - tests/backend/test_music_adapters.py
+      vertical_integration_test: tests/integration/test_music_mcp.py
 
   backend_startup:
     entry: backend/app/main.py:create_app
@@ -187,7 +211,7 @@ key_flows:
       - unknown supplied chat id returns HTTP 404 before StreamingResponse begins
       - first SSE event identifies the persistent chat id
       - user message is persisted before model generation
-      - runtime receives at most the most recent 100 persisted conversation messages
+      - runtime receives the active context reconstructed from avatar instructions, compressed history, and uncompressed persisted messages
       - successful generation persists the complete assistant message
       - partial assistant output is not persisted on failure or cancellation
       - successful stream emits chat, zero or more chunk events, then done
@@ -203,9 +227,9 @@ key_flows:
           - chat-window pointer-held recording interaction
           - POST /api/v1/audio/recording/start
           - backend-local microphone capture through PipeWireRecorder
-          - POST /api/v1/audio/recording/stop with prior conversation context and optional persistent chat id
+          - POST /api/v1/audio/recording/stop with client context and optional persistent chat id
           - AudioChatService stops capture and reuses the same WAV for assistant generation and transcription
-          - assistant generation receives prior conversation context plus native audio
+          - assistant generation uses server-reconstructed active context for a persistent chat, otherwise client context, plus native audio
           - transcription receives native audio only, without conversation context
           - assistant response and transcript stream independently through Avalo SSE
         dialog:
@@ -216,13 +240,13 @@ key_flows:
           - a call started directly from the avatar begins without a bound chat
           - the first submitted speech turn creates and binds a persistent chat when no chat id was supplied
           - the bound chat remains fixed for the lifetime of the call
-          - POST /api/v1/audio/dialog/turn with prior conversation context
+          - POST /api/v1/audio/dialog/turn with client context and optional persistent chat id
           - backend waits indefinitely for speech without creating empty turns
           - simple PCM amplitude detection starts the turn on speech
-          - 3 seconds of consecutive silence or 30 seconds from speech start completes the turn
+          - configured consecutive silence or 30 seconds from speech start completes the turn
           - after completed capture, a processing SSE event marks the transition from listening to backend processing
           - AudioChatService reuses the captured WAV for assistant generation and transcription
-          - assistant generation receives prior conversation context plus native audio
+          - assistant generation uses server-reconstructed active context for a persistent chat, otherwise client context, plus native audio
           - transcription receives native audio only, without conversation context
           - assistant response and transcript stream independently through Avalo SSE
           - backend call state marks the complete recording, model-processing, and response-playback phase as one active turn
@@ -309,62 +333,6 @@ key_flows:
 
 modules:
 
-  server/main.py:
-    role: standalone Avalo server process entry point
-    behavior:
-      - configure file logging
-      - construct MCP server
-      - run Streamable HTTP on configured loopback host and port
-    dependencies:
-      - server/config.py
-      - server/logging.py
-      - server/mcp/server.py
-
-  server/config.py:
-    role: static standalone-server configuration
-    settings:
-      mcp_address: "127.0.0.1:8096"
-      music_db_path: "/media/flo/2TB_SSD/music/mp3db.sqlite3"
-      log_path: "/tmp/avalo_server.log"
-
-  server/mcp/server.py:
-    role: MCP server composition
-    behavior:
-      - construct Avalo MCPServer
-      - register music capabilities
-
-  server/mcp/music/tools.py:
-    role: MCP music capability boundary
-    tools:
-      music.play_tracks:
-        input: track_ids list[int]
-        responsibility:
-          - log complete request payload
-          - resolve track ids
-          - create playlist
-          - start player
-    dependencies:
-      - server/mcp/music/repository.py
-      - server/mcp/music/playlist.py
-      - server/mcp/music/player.py
-
-  server/mcp/music/repository.py:
-    role: music execution-data access
-    database: configured external SQLite music database
-    behavior:
-      - resolve tracks.id to tracks.file_path
-      - preserve requested order and duplicate ids
-      - omit unknown ids
-
-  server/mcp/music/playlist.py:
-    role: M3U playlist writer
-    output: /tmp/avalo_music.m3u
-
-  server/mcp/music/player.py:
-    role: local music-player process adapter
-    player: Celluloid
-    behavior:
-      - launch Celluloid with generated playlist in a new process session
 
   backend/app/config.py:
     role: central technical backend configuration
@@ -382,10 +350,16 @@ modules:
           app_name: str
           api_host: str
           api_port: int
+          music_db_path: str
           frontend_dev_origin: str
           default_language: str
           audio_max_seconds: int
           audio_wait_exceed_seconds: float
+          context_compression_trigger_tokens: int
+          context_compression_target_tokens: int
+          context_compression_chars_per_token: int
+          context_compression_protected_roundtrips: int
+          context_compression_max_attempts: int
           ollama_host: str
           llm_models: "tuple[LlmConfig, ...]"
           tts_engine: str
@@ -420,12 +394,14 @@ modules:
 
   backend/app/commands:
     role: process-local slash-command infrastructure
-    syntax: "/command <key> <payload>"
+    syntax: "/<group> <command> [payload]"
     execution: async
     commands:
       avatar:
+        syntax: "/avatar set <avatar-key>"
         behavior: select the current avatar
       llm:
+        syntax: "/llm set <llm-key>"
         behavior: select the current process-local LLM
         semantics:
           - reject switching while LLM inference is active
@@ -448,6 +424,7 @@ modules:
         kind: FastAPI instance
     dependencies:
       - backend/app/api/router.py
+      - backend/app/mcp/server.py
       - backend/app/config.py
       - backend/app/user_config.py
       - database migration runner
@@ -457,6 +434,8 @@ modules:
       - require the configured standard LLM to exist in Ollama
       - warn but continue when configured non-standard LLMs are unavailable
       - run Alembic migrations during lifespan startup
+      - run the MCP session manager within the backend lifespan
+      - mount MCP Streamable HTTP at /mcp
       - fail backend startup when required configuration, model, or database initialization fails
       - preserve raw technical exception diagnostics on stderr
     relevant_to:
@@ -478,7 +457,8 @@ modules:
       - configured avatar asset router under /api/v1
       - runtime router under /api/v1
       - chat router under /api/v1
-      - audio recording router under /api/v1
+      - chat-management router under /api/v1
+      - audio recording, dialog, and call router under /api/v1
       - TTS router under /api/v1
     dependencies:
       - backend/app/api/routes/health.py
@@ -486,6 +466,7 @@ modules:
       - backend/app/api/routes/assets.py
       - backend/app/api/routes/runtime.py
       - backend/app/api/routes/chat.py
+      - backend/app/api/routes/chats.py
       - backend/app/api/routes/audio.py
       - backend/app/api/routes/tts.py
 
@@ -517,6 +498,7 @@ modules:
         extends: ChatSummaryResponse
         fields:
           messages: list[PersistentMessageResponse]
+          compression_error_code: optional_str
       RenameChatRequest:
         fields:
           title: non_empty_str_max_200
@@ -585,7 +567,7 @@ modules:
     status: implemented
 
   backend/app/api/routes/chat.py:
-    role: persisted text-chat HTTP and CRUD boundary
+    role: persisted text-chat streaming boundary
     symbols:
       get_chat_service:
         role: request-scoped ChatService composition using OllamaRuntime and persistence
@@ -595,11 +577,6 @@ modules:
         signature: "(request: ChatRequest, service: ChatService) -> StreamingResponse"
     endpoints:
       stream: "POST /api/v1/chat"
-      list: "GET /api/v1/chats"
-      detail: "GET /api/v1/chats/{id}"
-      rename: "PATCH /api/v1/chats/{id}"
-      pin: "PATCH /api/v1/chats/{id}/pinned"
-      delete: "DELETE /api/v1/chats/{id}"
     response_media_type: text/event-stream
     dependencies:
       - backend/app/api/schemas.py
@@ -622,6 +599,48 @@ modules:
       - asyncio cancellation is not converted to an error event
       - cancellation propagates into ChatService and ModelRuntime
 
+  backend/app/api/routes/chats.py:
+    role: persisted chat-management HTTP boundary
+    endpoints:
+      list: "GET /api/v1/chats"
+      detail: "GET /api/v1/chats/{chat_id}"
+      rename: "PATCH /api/v1/chats/{chat_id}"
+      pin: "PATCH /api/v1/chats/{chat_id}/pinned"
+      delete: "DELETE /api/v1/chats/{chat_id}"
+    dependencies:
+      - backend/app/api/schemas.py
+      - backend/app/persistence/chat_repository.py:ChatRepository
+      - backend/app/persistence/database.py
+    status: implemented
+
+  backend/app/api/routes/audio.py:
+    role: backend-local recording, dialog, and global audio-call HTTP boundary
+    endpoints:
+      call_status: "GET /api/v1/audio/call/status"
+      call_start: "POST /api/v1/audio/call/start"
+      call_end: "POST /api/v1/audio/call/end"
+      call_turn_complete: "POST /api/v1/audio/call/turn/complete"
+      call_consume_speech: "POST /api/v1/audio/call/speech/consume"
+      recording_start: "POST /api/v1/audio/recording/start"
+      recording_abort: "POST /api/v1/audio/recording/abort"
+      recording_stop: "POST /api/v1/audio/recording/stop"
+      dialog_turn: "POST /api/v1/audio/dialog/turn"
+    dependencies:
+      - backend/app/services/audio_chat.py:AudioChatService
+      - backend/app/services/audio_call.py:AudioCallState
+      - backend/app/persistence/chat_repository.py:ChatRepository
+    status: implemented
+
+  backend/app/api/routes/tts.py:
+    role: local speech-synthesis and frontend-playback lifecycle HTTP boundary
+    endpoints:
+      synthesize: "POST /api/v1/tts"
+      playback_ended: "POST /api/v1/tts/playback-ended"
+    dependencies:
+      - backend/app/services/tts.py:TtsService
+      - backend/app/tts/factory.py:create_tts_engine
+    status: implemented
+
   backend/app/services/chat.py:
     role: persisted text-chat use-case boundary
     symbols:
@@ -643,7 +662,7 @@ modules:
       - continue existing persistent chats by id
       - parse command requests during turn preparation and execute commands asynchronously during response streaming
       - persist command requests and complete command responses in chat history
-      - pass only the most recent 100 persisted messages to ModelRuntime
+      - build active context from avatar instructions, persisted compressed context, and messages newer than compressed_through_seq
       - prepend the injected avatar persona and instructions as one system message for assistant generation
       - keep automatic title generation independent of avatar persona and instructions
       - accumulate streamed assistant chunks and persist them only on successful completion
@@ -654,6 +673,61 @@ modules:
       - remain independent of concrete runtime adapter
     future_scope:
       - long-term memory is not implemented yet
+
+  backend/app/services/context_compression.py:
+    role: asynchronous persisted-chat context compression and active-context construction
+    symbols:
+      ContextCompressionService:
+        role: compress an optimistic chat snapshot after a completed turn without delaying that turn
+      CompressedContext:
+        role: validated persisted JSON with summaries and at most two durable stars
+      build_active_context:
+        role: assemble avatar system message, compressed context, and uncompressed messages
+    behavior:
+      - triggers from a model-independent character-based token estimate
+      - protects configured recent roundtrips before compression, then retries including them only if needed
+      - recalculates the concrete compressor output budget for every attempt
+      - deterministically removes least-valued summaries until the target budget fits
+      - applies results through compression-version compare-and-set
+      - persists chat_context_compression_failed only when stars alone cannot fit
+    dependencies:
+      - backend/app/config.py:settings
+      - backend/app/persistence/chat_repository.py:ChatRepository
+      - backend/app/runtime/base.py:ModelRuntime
+    status: implemented
+
+  backend/app/persistence/chat_repository.py:
+    role: SQLite chat/message persistence plus optimistic compression-state updates
+    behavior:
+      - creates the initial chat and user message atomically
+      - assigns per-chat monotonically increasing message sequence numbers
+      - lists chats by latest message activity and supports rename, pin, delete, and one-shot auto-title claim
+      - atomically stores compressed context or terminal compression failure only for the expected compression version
+    dependencies:
+      - backend/app/persistence/models.py
+      - backend/app/persistence/database.py
+    status: implemented
+
+  backend/app/persistence/models.py:
+    role: SQLAlchemy chat and message schema
+    entities:
+      Chat:
+        state: title, manual-title marker, pin, compressed context, compression sequence/version/error, next message sequence
+      Message:
+        state: chat id, role, content, per-chat sequence, creation time
+    status: implemented
+
+  backend/app/mcp/server.py:
+    role: MCP Streamable HTTP composition mounted by the FastAPI application
+    dependencies:
+      - backend/app/mcp/music.py
+    status: implemented
+
+  backend/app/mcp/music.py:
+    role: MCP music.play_tracks capability boundary
+    dependencies:
+      - backend/app/services/music.py:MusicService
+    status: implemented
 
   backend/app/services/audio_chat.py:
     role: native-audio chat use-case boundary
@@ -1707,6 +1781,91 @@ tests:
       - backend/app/audio/capture.py
       - backend/app/config.py
 
+  tests/backend/test_audio_chat_contract.py:
+    covers:
+      - push-to-talk and dialog SSE contracts
+      - independent assistant/transcript completion and failure behavior
+      - persisted audio-turn and terminal compression-error behavior
+    inspect_with:
+      - backend/app/api/routes/audio.py
+      - backend/app/services/audio_chat.py
+
+  tests/backend/test_audio_dialog.py:
+    covers:
+      - global call lifecycle, chat binding, processing transition, and queued avatar speech
+    inspect_with:
+      - backend/app/api/routes/audio.py
+      - backend/app/services/audio_call.py
+
+  tests/backend/test_chat_repository.py:
+    covers:
+      - chat/message persistence, sequence allocation, CRUD, and compression-state compare-and-set
+    inspect_with:
+      - backend/app/persistence/chat_repository.py
+      - backend/app/persistence/models.py
+
+  tests/backend/test_chats_contract.py:
+    covers:
+      - persisted chat list, detail, rename, pin, and delete HTTP contracts
+    inspect_with:
+      - backend/app/api/routes/chats.py
+      - backend/app/api/schemas.py
+
+  tests/backend/test_commands.py:
+    covers:
+      - slash-command parsing, registration, and execution error handling
+    inspect_with:
+      - backend/app/commands/parser.py
+      - backend/app/commands/registry.py
+
+  tests/backend/test_context_compression_service.py:
+    covers:
+      - active-context construction, compression retry/budgeting, and terminal failure state
+    inspect_with:
+      - backend/app/services/context_compression.py
+      - backend/app/persistence/chat_repository.py
+
+  tests/backend/test_llm_command.py:
+    covers:
+      - process-local LLM selection, unload/warm-up, rollback, and concurrency guards
+    inspect_with:
+      - backend/app/commands/llm_set.py
+      - backend/app/state.py
+
+  tests/backend/test_mcp_music.py:
+    covers:
+      - MCP music.play_tracks registration and request delegation
+    inspect_with:
+      - backend/app/mcp/server.py
+      - backend/app/mcp/music.py
+
+  tests/backend/test_tts_contract.py:
+    covers:
+      - synthesis and playback-ended HTTP contracts
+    inspect_with:
+      - backend/app/api/routes/tts.py
+      - backend/app/services/tts.py
+
+  tests/backend/test_tts_service.py:
+    covers:
+      - single-synthesis guard, playback identity, idle unload, and stale completion handling
+    inspect_with:
+      - backend/app/services/tts.py
+
+  tests/backend/test_ui_config_contract.py:
+    covers:
+      - frontend-safe avatar configuration and asset URLs
+    inspect_with:
+      - backend/app/api/routes/ui.py
+      - backend/app/api/routes/assets.py
+      - backend/app/user_config.py
+
+  tests/backend/test_user_config.py:
+    covers:
+      - strict editable user configuration and avatar/TTS asset validation
+    inspect_with:
+      - backend/app/user_config.py
+
   tests/backend/test_tts_blueprint.py:
     covers:
       - TTS protocol / Chatterbox blueprint
@@ -1795,9 +1954,22 @@ tests:
       - frontend/src/services/chatWindow.ts
       - frontend/src/services/windowDrag.ts
     likely_change_when:
-      - frontend chat UI is implemented
       - companion interaction behavior changes
       - avatar drag behavior changes
+
+  tests/frontend/ChatWindow.spec.ts:
+    covers:
+      - chat persistence/sidebar UI, text and push-to-talk turns, dialog delegation, and TTS playback state
+    inspect_with:
+      - frontend/src/ChatWindow.vue
+      - frontend/src/composables/useTransientChat.ts
+
+  tests/frontend/useTransientChat.spec.ts:
+    covers:
+      - transient/persisted conversation state and streaming rollback behavior
+    inspect_with:
+      - frontend/src/composables/useTransientChat.ts
+      - frontend/src/services/backend.ts
 
 test_data:
 
@@ -1845,7 +2017,10 @@ change_navigation:
       - backend/app/services/chat.py
       - backend/app/persistence/database.py
       - backend/app/persistence/models.py
-      - alembic configuration and migrations
+      - alembic/versions/0001_create_chat_schema.py
+      - alembic/versions/0002_add_auto_title_attempted.py
+      - alembic/versions/0003_add_chat_pinned.py
+      - alembic/versions/0004_add_context_compression_state.py
       - frontend/src/services/backend.ts
       - frontend/src/composables/useTransientChat.ts
       - frontend/src/ChatWindow.vue
@@ -1858,7 +2033,6 @@ change_navigation:
   change_context_compression:
     inspect:
       - backend/app/services/context_compression.py
-      - backend/app/services/context_builder.py
       - backend/app/services/chat.py
       - backend/app/services/audio_chat.py
       - backend/app/persistence/models.py
@@ -1917,7 +2091,7 @@ change_navigation:
       - backend/app/commands/base.py
       - backend/app/commands/registry.py
       - backend/app/commands/factory.py
-      - backend/app/commands/llm.py
+      - backend/app/commands/llm_set.py
       - backend/app/runtime/ollama.py
       - backend/app/services/chat.py
       - backend/app/main.py
@@ -2079,31 +2253,32 @@ change_navigation:
       - After native avatar resize, recalculate input regions from post-resize browser geometry rather than stale pre-resize bounds.
       - Backend-served avatar images used for canvas alpha inspection must remain CORS-readable.
 
-  change_server_mcp:
+  change_backend_mcp:
     inspect:
-      - server/main.py
-      - server/config.py
-      - server/logging.py
-      - server/mcp/server.py
-      - tests/server/test_mcp_server.py
+      - backend/app/main.py
+      - backend/app/mcp/server.py
+      - backend/app/mcp/music.py
+      - tests/backend/test_mcp_music.py
     maybe_inspect:
+      - backend/app/config.py
       - pyproject.toml
-      - scripts/others/start-server.sh
+      - tests/integration/test_music_mcp.py
 
   change_music_playback_capability:
     inspect:
-      - server/mcp/music/tools.py
-      - server/mcp/music/repository.py
-      - server/mcp/music/playlist.py
-      - server/mcp/music/player.py
-      - tests/server/test_music_tools.py
-      - tests/server/test_music_repository.py
-      - tests/server/test_music_playlist.py
-      - tests/server/test_music_player.py
+      - backend/app/mcp/music.py
+      - backend/app/services/music.py
+      - backend/app/persistence/music_repository.py
+      - backend/app/music/playlist.py
+      - backend/app/music/player.py
+      - tests/backend/test_mcp_music.py
+      - tests/backend/test_music_service.py
+      - tests/backend/test_music_repository.py
+      - tests/backend/test_music_adapters.py
     maybe_inspect:
-      - server/config.py
-      - server/mcp/server.py
-      - tests/integration/test_server_music_mcp.py
+      - backend/app/config.py
+      - backend/app/mcp/server.py
+      - tests/integration/test_music_mcp.py
 
 
 architectural_constraints:
@@ -2212,12 +2387,14 @@ known_state:
     - native-audio response streaming through shared Avalo SSE
     - shared transient conversation context for text and audio turns
     - streaming text chat through Ollama /v1/chat/completions
+    - persisted context compression with optimistic locking and terminal error state
+    - slash commands for process-local avatar and LLM selection
+    - MCP Streamable HTTP music.play_tracks capability
+    - local TTS synthesis, frontend playback lifecycle, and avatar call read-aloud
 
   contracts_or_stubs:
     - AudioInputPreparer
     - llama.cpp runtime
-    - TTS protocol
-    - Chatterbox TTS adapter
 
   not_present:
 
@@ -2228,6 +2405,4 @@ known_state:
     - final local LLM runtime pending runtime spike decision
     - llama.cpp native Gemma audio feasibility
     - Chatterbox resource and quality spike
-    - whether user audio is surfaced as transcript
-    - representation of previous audio user turns in future model context
     - audio chunking / incremental Ollama processing feasibility

@@ -17,6 +17,4 @@ todo
   - chat name im audio-modus generieren
 
 - reconsider command pattern implementation
-  - /command --> ~command
-  - /command --> /avatar
   - /agent

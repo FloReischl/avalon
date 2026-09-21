@@ -11,15 +11,15 @@ Avalo wird genutzt, um einen AI-unterstützten Engineering-Prozess praktisch zu 
 
 ## 2. Verantwortung und Rollen
 
-Flo und Codex tragen die fachliche und technische Verantwortung für Anforderungen und Architektur gemeinsam. Codex liefert keine unfehlbaren Vorgaben, sondern begründete Empfehlungen, Alternativen, Risiken und erkennbare Unsicherheiten. Flo entscheidet final.
+Flo und ein Frontier Modell tragen die fachliche und technische Verantwortung für Anforderungen und Architektur gemeinsam. Das Frontier liefert keine unfehlbaren Vorgaben, sondern begründete Empfehlungen, Alternativen, Risiken und erkennbare Unsicherheiten. Flo entscheidet final.
 
-Codex und Flo legen vor der Umsetzung Ziel, relevante Architekturentscheidungen, Fehlerverhalten, Akzeptanzkriterien und Testbedarf fest. Fehlende oder widersprüchliche Vorgaben werden vor der Umsetzung geklärt.
+Frontier und Flo legen vor der Umsetzung Ziel, relevante Architekturentscheidungen, Fehlerverhalten, Akzeptanzkriterien und Testbedarf fest. Fehlende oder widersprüchliche Vorgaben werden vor der Umsetzung geklärt.
 
 ## 3. Ablauf
 
 ### 3.1 Requirements Engineering
 
-Neue Funktionalitäten werden zuerst fachlich besprochen. Codex klärt insbesondere Ziel, Nutzerwirkung, Abgrenzung, relevante Fehlerfälle und Akzeptanzkriterien.
+Neue Funktionalitäten werden zuerst fachlich besprochen. Frontier klärt insbesondere Ziel, Nutzerwirkung, Abgrenzung, relevante Fehlerfälle und Akzeptanzkriterien.
 
 Wenn wesentliche Informationen fehlen, erfolgt ein kurzes Interview:
 
@@ -32,7 +32,7 @@ Ergebnis ist ein gemeinsames, implementierbares Verständnis der Funktionalität
 
 ### 3.2 Architektur
 
-Codex und Flo diskutieren geeignete Lösungsoptionen und deren Konsequenzen. Berücksichtigt werden nur für die Entscheidung relevante Aspekte, beispielsweise Komplexität, Wartbarkeit, Testbarkeit, Datenhaltung, Abhängigkeiten und spätere Erweiterbarkeit.
+Frontier und Flo diskutieren geeignete Lösungsoptionen und deren Konsequenzen. Berücksichtigt werden nur für die Entscheidung relevante Aspekte, beispielsweise Komplexität, Wartbarkeit, Testbarkeit, Datenhaltung, Abhängigkeiten und spätere Erweiterbarkeit.
 
 Eine langfristig bedeutsame oder schwer rückgängig zu machende Entscheidung kann in einem Architecture Decision Record dokumentiert werden. Ein ADR wird nicht für triviale Implementierungsdetails angelegt.
 
@@ -48,9 +48,9 @@ Die Tests sollen Risiken abdecken und nicht lediglich Implementierungsdetails sp
 
 ### 3.4 Arbeitspakete und Implementierung
 
-Nach Abschluss von Requirements Engineering, Architektur und Testkonzept zerlegt Codex die Umsetzung in kleine, klar prüfbare Arbeitspakete. Ein Paket soll möglichst genau ein kohärentes Ergebnis erzeugen.
+Nach Abschluss von Requirements Engineering, Architektur und Testkonzept zerlegt Frontier die Umsetzung in kleine, klar prüfbare Arbeitspakete. Ein Paket soll möglichst genau ein kohärentes Ergebnis erzeugen.
 
-Für kleine und deterministische Änderungen kann Codex auf Basis der aktuellen relevanten Quelldateien einen Prompt2Code-Patch erzeugen. Flo wendet den Patch an und führt die vereinbarte Verifikation aus.
+Für kleine und deterministische Änderungen kann Frontier auf Basis der aktuellen relevanten Quelldateien einen Prompt2Code-Patch erzeugen. Flo wendet den Patch an und führt die vereinbarte Verifikation aus.
 
 Benötigt ein Arbeitspaket breite Repository-Exploration, umfangreiche oder stark verteilte Änderungen, interaktives Debugging oder größere Implementierungsautonomie, kann es gezielt an einen repository-aware Coding-Agenten übergeben werden.
 

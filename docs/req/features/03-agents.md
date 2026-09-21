@@ -1,17 +1,20 @@
 # Agents
 
+## Generals
+
 - dedicated persona/instructions for each agent (see Obsidian Qwen2.5:7b series)
 
 **roles**
 
 - architect / planner
-- coder
-- reviewer
-- DJane
-- VJane
 - redacteur / podcast sprecherin
 
-## Coder
+
+## Agent Types
+
+### Planner
+
+### Coder
 
 **Semantik**
 
@@ -26,10 +29,14 @@
 - read-only auf `.git`
 
 
+### Tester
 
-**topics**
+### Deejane
 
-## Deejane
+instructed/specialiced for assembling music playlists (m3u?).
+input:
+    - Spiele etwas ruhiges. 
+    - Spiele Trance von Tiesto
 
 **Semantik**
 
@@ -43,6 +50,26 @@
 - Schreiben **gar nicht** am MCP vorbei. Beispiel
   - Monique: playlist geht wunderbar
   - File Organizer: wenige operationen (cp, rm, mv) - nicht reversible -> MCP zwingend
+
+### Lois (Ancor Woman)
+
+instructed for my special interests.
+scheduled.
+collect information of my interest.
+create a 10 minutes audio news-flash for me.
+
+### VJane
+
+instructed to provide video playlists based on current interest.
+
+### Daliina
+
+images SD/Flux
+
+### Mail Organizer
+
+inspect new mails. assign tags/catgegories (e.g. created 2024, shopping, social, family...).
+(move in mail system? bluemail? thunderbird?)
 
 ## MCP Server
 
@@ -66,20 +93,6 @@
 
 ### Send E-Mail ⚡
 
-## Permissions
-
-Examples
-
-- All MCP Interfaces (separately)
-- File System
-- Mails (read, send separate)
-
-Granting
-
-- On request (e.g. file access, mail wend)
-- Timed (e.g. internet, mail read)
-- Permanent (e.g. music library for DJane)
-
 
 ## Dialogs
 
@@ -89,30 +102,4 @@ Granting
 
 ### Chat Window: Agent Permssions
 
-## Agents (Consideration)
 
-### DJane
-
-instructed/specialiced for assembling music playlists (m3u?).
-input:
-    - Spiele etwas ruhiges. 
-    - Spiele Trance von Tiesto
-
-### Anchor Woman
-
-instructed for my special interests.
-scheduled.
-collect information of my interest.
-create a 10 minutes audio news-flash for me.
-
-### VJane
-
-instructed to provide video playlists based on current interest.
-
-input:
-    - ...
-
-### Mail Organizer
-
-inspect new mails. assign tags/catgegories (e.g. created 2024, shopping, social, family...).
-(move in mail system? bluemail? thunderbird?)

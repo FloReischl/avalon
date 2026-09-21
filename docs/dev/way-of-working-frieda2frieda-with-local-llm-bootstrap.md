@@ -25,7 +25,7 @@ TASK COMPILATION
   ↓
 Minimal sufficient Execution Contract
   ↓
-Aider + local coding LLM
+*AI Agent Framework* + local coding LLM
   ↓
 Implementation + tests
   ↓
@@ -376,12 +376,12 @@ Full repository/project context
             ↓
 minimal sufficient working set
             ↓
-     Aider + local coder
+     Agent framework + local coder
 ```
 
 ---
 
-# 9. Aider Is Part of the System
+# 9. Agent Framework Is Part of the System
 
 Do NOT diagnose every bad implementation as a model failure.
 
@@ -390,7 +390,7 @@ Actual system:
 ```text
 Execution Contract
        ↓
-     Aider
+Agent Framework
        ↓
 system prompt
 edit format
@@ -406,7 +406,7 @@ Possible failure classes therefore include:
 
 ```text
 Specification failure
-Harness/Aider failure
+Harness/Agent framework failure
 Instruction-following failure
 Coding/reasoning failure
 Testing failure
@@ -414,7 +414,7 @@ Context failure
 Design-escalation failure
 ```
 
-Aider configuration matters.
+Agent configuration matters.
 
 Relevant variables include:
 
@@ -430,7 +430,7 @@ test/lint feedback
 
 When debugging the workflow, inspect these rather than guessing.
 
-Useful Aider diagnostics include conceptually:
+Useful Agent diagnostics include conceptually:
 
 ```text
 --show-prompts
@@ -439,7 +439,20 @@ Useful Aider diagnostics include conceptually:
 --edit-format
 ```
 
-Verify exact supported options against the installed Aider version before changing configuration.
+Verify exact supported options against the installed Agent framework version before changing configuration.
+
+## 9.1 Agent Framework Alternatives
+
+The phrase *Agent Framework* represents one of the below alternatives.
+
+* Roo Code
+* Cline
+* Aider
+* Gemini CLI
+* Codex
+* Copilot
+
+While technically and functionally different, conceptionally the way of working applies in all these cases.
 
 ---
 

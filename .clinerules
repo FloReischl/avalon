@@ -1,0 +1,14 @@
+# Avalo Local Augmented Engineering Rules
+
+## Core Principles & Way of Working
+1. **Frieda Bootstrap Contract:** Strictly follow `docs/dev/way-of-working-frieda2frieda-with-local-llm-bootstrap.md`.
+2. **Task Compilation:** Do not dump full repo context to the local model. Provide a **Minimal Sufficient Execution Contract** (minimal info, minimal decision breadth, clear positive specs).
+3. **Source of Truth:** Architecture lives in `docs/adrs/`, requirements in `docs/req/`, active index in `docs/repomap.yaml`.
+
+## Role Separation
+- **Frontier / Discussion (Frieda):** Architecture analysis, scope boundary, failure semantics, acceptance criteria, test concept.
+- **Local Coder (Qwen):** Implementation & local coding/editing inside the defined contract.
+
+## Context Boundary
+- Always check `docs/repomap.yaml` first.
+- Only load explicitly referenced ADRs or feature specs required for the concrete task.

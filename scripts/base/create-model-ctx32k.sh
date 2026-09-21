@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BASE_MODEL="gemma4:e4b-it-q4_K_M"
-# BASE_MODEL="qwen2.5-coder:7b-instruct"
+# BASE_MODEL="gemma4:e4b-it-q4_K_M"
+BASE_MODEL="qwen2.5-coder:14b-instruct"
 TARGET_MODEL="${BASE_MODEL}-ctx16k"
 
 TMPFILE="$(mktemp)"
