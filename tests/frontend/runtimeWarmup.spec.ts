@@ -31,19 +31,20 @@ describe("runtimeWarmup", () => {
     vi.useRealTimers();
   });
 
-  it("sends at most one warm-up request per minute", () => {
-    requestRuntimeWarmUp();
+  it("sends at most one warm-up request per minute", async () => {
+    const first = requestRuntimeWarmUp();
     requestRuntimeWarmUp();
 
     expect(warmUpRuntimeMock).toHaveBeenCalledTimes(1);
+    await first;
 
     vi.advanceTimersByTime(59_999);
-    requestRuntimeWarmUp();
+    await requestRuntimeWarmUp();
 
     expect(warmUpRuntimeMock).toHaveBeenCalledTimes(1);
 
     vi.advanceTimersByTime(1);
-    requestRuntimeWarmUp();
+    await requestRuntimeWarmUp();
 
     expect(warmUpRuntimeMock).toHaveBeenCalledTimes(2);
   });

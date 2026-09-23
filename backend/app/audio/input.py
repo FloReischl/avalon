@@ -19,6 +19,6 @@ class AudioInputPreparer(Protocol):
     """Normalize and validate a push-to-talk recording."""
 
     async def prepare(self, source: Path) -> PreparedAudio:
-        """Prepare one recording with a maximum duration of 30 seconds."""
+        """Prepare one microphone recording for local audio input."""
         ...
 

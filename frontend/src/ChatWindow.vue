@@ -36,6 +36,7 @@ import {
   listenToAudioCallChanged,
   publishAudioCallChanged,
 } from "./services/audioCallEvents";
+import { boundCallChatToSelect } from "./services/audioCallBinding";
 
 
 const uiConfig = ref<UiConfig>();
@@ -92,6 +93,14 @@ const isBoundCallTurnActive = computed(() => callTurnActive.value);
 async function refreshCallStatus() {
   try {
     const status = await getAudioCallStatus();
+    const chatIdToSelect = boundCallChatToSelect(
+      status,
+      selectedChatId.value,
+    );
+    if (chatIdToSelect !== undefined) {
+      await selectChat(chatIdToSelect);
+    }
+
     const wasBoundCall = boundCallActive.value;
     const isBoundCall = status.active
       && status.chat_id === selectedChatId.value;

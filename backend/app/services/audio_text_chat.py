@@ -172,7 +172,7 @@ class AudioTextChatService:
             transcript = await transcription.finish()
         except BaseException:
             if captured is not None:
-                self._schedule_capture_cleanup(captured)
+                await self._cleanup_capture(captured)
             await transcription.cancel()
             raise
 
@@ -204,7 +204,7 @@ class AudioTextChatService:
             transcript = await transcription.finish()
         except BaseException:
             if captured is not None:
-                self._schedule_capture_cleanup(captured)
+                await self._cleanup_capture(captured)
             await transcription.cancel()
             raise
 
@@ -256,18 +256,16 @@ class AudioTextChatService:
         except TimeoutError as exc:
             raise AudioTurnError("Sprachverarbeitung abgelaufen") from exc
         finally:
-            self._schedule_capture_cleanup(captured)
+            await self._cleanup_capture(captured)
 
     @staticmethod
-    def _schedule_capture_cleanup(captured: CapturedAudio) -> None:
+    async def _cleanup_capture(captured: CapturedAudio) -> None:
         captured.path.unlink(missing_ok=True)
         if captured.chunk_directory is not None:
-            asyncio.create_task(
-                asyncio.to_thread(
-                    shutil.rmtree,
-                    captured.chunk_directory,
-                    ignore_errors=True,
-                )
+            await asyncio.to_thread(
+                shutil.rmtree,
+                captured.chunk_directory,
+                ignore_errors=True,
             )
 
     def _persist_and_build_context(

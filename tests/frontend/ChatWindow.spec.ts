@@ -479,7 +479,7 @@ describe("ChatWindow", () => {
     await flushPromises();
 
     expect(getAudioCallStatusMock).toHaveBeenCalledTimes(callsAfterMount);
-    expect(wrapper.findAll(".message")).toHaveLength(0);
+    expect(wrapper.findAll(".message")).toHaveLength(2);
 
     onAudioCallChanged?.();
     await flushPromises();
