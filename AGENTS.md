@@ -6,6 +6,7 @@ Avalo ist zugleich ein reales Softwareprojekt und ein Lernprojekt für AI Augmen
 
 ## Arbeitsweise
 
+- Nutze immer die Datei `docs/repomap.md` um Token-effizient einen Gesamtüberblick über die Projektsturktur zu bekommen. Erst danach scane/suche selbständig in betroffenen Dateien. Regel: Die RepoMap ist Hilfsmittel und optional, nicht die einzige Source-of-Truth.
 - Vor der Implementierung werden Anforderungen, Akzeptanzkriterien und relevante Architekturentscheidungen geklärt.
 - Bei offenen wesentlichen Fragen führt Codex ein fokussiertes Interview und stellt immer nur eine Frage gleichzeitig.
 - Die Zahl der Fragen richtet sich nach Komplexität und Risiko. Triviale Themen werden nicht künstlich aufgeblasen.
@@ -26,4 +27,4 @@ Avalo ist zugleich ein reales Softwareprojekt und ein Lernprojekt für AI Augmen
 4. Dev Lead: Arbeitspakete schneiden und den geeigneten Implementierungsweg festlegen.
 5. Review: Implementierung und Testergebnisse kritisch gegen die vereinbarten Grundlagen prüfen.
 
-Ausführlicher Prozess: `docs/way-of-working.md`.
+Ausführlicher Prozess: `docs/pm/way-of-working.md`.
