@@ -4,7 +4,7 @@ Arbeitsindex für Frieda: Impact-Analyse, Implementierungsplanung, Abhängigkeit
 
 ## System
 
-- **Ziel:** lokaler Desktop-Companion mit Text-Chat, nativem Gemma-Audioeingang und lokalem TTS.
+- **Ziel:** lokaler Desktop-Companion mit Text-Chat, lokalem Speech-to-Text und lokalem TTS.
 - **Desktop:** Tauri; transparente Avatar-Shell plus normale Chat-Window; Vue in Tauri-Webviews, Python-Backend als eigener, von Tauri gestarteter/überwachter/beendeter Prozess.
 - **Frontend:** Vue 3, TypeScript, Vite in `frontend`; Roots: Avatar `frontend/src/App.vue`, Chat `frontend/src/ChatWindow.vue`; HTTP zum Backend.
 - **Backend:** Python, FastAPI, MCP Python SDK v2 in `backend/app`; API, MCP, Application, SQLite-Persistenz, Runtime-Adapter, Audio, TTS, Konfiguration.
@@ -25,10 +25,10 @@ Arbeitsindex für Frieda: Impact-Analyse, Implementierungsplanung, Abhängigkeit
 - Start immer mit transientem New Chat; Persistenz beim ersten Senden. Persistierte Chats listen/öffnen vollständige Historie.
 - Aktiver Kontext: Avatar-Systeminstruktionen + komprimierte Historie + Nachrichten nach `compressed_through_seq`; Audio mit persistierter `chat_id` rekonstruiert denselben Kontext serverseitig.
 - Nach vollständigen Text- und Audioturns best-effort asynchrone Komprimierung. Terminales `chat_context_compression_failed` blockiert Text/Audioturns mit HTTP 409.
-- Aktueller Zeitpunkt/Lokation sowie Persona/Instruktionen des effektiven Standardavatars sind eine Systemmessage für Assistenten-Text und -Audio, nie für Transkription oder automatische Titel.
+- Aktueller Zeitpunkt/Lokation sowie Persona/Instruktionen des effektiven Standardavatars sind eine Systemmessage für Assistenten-Text, nie für STT oder automatische Titel.
 - Assistant-Text nur komplett erfolgreich persistieren; Abbruch/Fehler-Teilausgabe nie. Nach exakt zwei kompletten Textrunden ein Titelversuch; manuelle Titel unterdrücken ihn dauerhaft.
 - Chats: Pin, Umbenennen, physisch löschen, Markdown exportieren. Reihenfolge im Backend nach Aktivität; UI separiert angeheftete Chats. Löschen des sichtbaren Chats => leeres New Chat.
-- Audio-UI: Placeholder `🎤 Sprachnachricht`; erfolgreiche Transkription ersetzt ihn, wird normale User-Nachricht und Kontext; Fehler/Abbruch behält Placeholder. Assistant und Transkript streamen/persistieren unabhängig. WAV löschen erst nach Abschluss/Abbruch beider Verbraucher.
+- Audio-UI: Placeholder `🎤 Sprachnachricht` bleibt transient; erst das vollständige STT-Ergebnis wird normale persistierte User-Nachricht und Kontext. STT-Fehler/Timeout/leeres Ergebnis starten kein LLM und hinterlassen keine partielle User-Nachricht. Assistant-Generierung startet danach über den normalen Text-LLM-Pfad.
 - Mehrere persistierte Chats können parallele Textstreams haben; Stop betrifft nur den sichtbaren laufenden Chat.
 
 ## Kernflüsse
@@ -46,14 +46,16 @@ Arbeitsindex für Frieda: Impact-Analyse, Implementierungsplanung, Abhängigkeit
 
 ### Audio
 
-- Capture Python-Backend via `PipeWireRecorder`/`pw-record`; PTT und Dialog teilen Recorder und laufen nicht parallel.
-- PTT: Chatfenster gedrückt → `POST /audio/recording/start` → release `POST /audio/recording/stop` mit Client-Kontext/optional `chat_id`; 30-Sekunden-Limit verwirft Fragment.
-- Dialog: Avatar Call besitzt den kontinuierlichen Modus; Chat Call delegiert mit selektierter `chat_id`. `POST /audio/dialog/turn`; wartet vor Sprache unbegrenzt, RMS startet Aufnahme, konfigurierter Stillezeitraum oder 30 s ab Sprechbeginn beendet. Danach SSE `processing` vor Modellverbrauchern.
-- Avatar-Call ohne Chat bindet beim ersten Sprachturn einen neu erstellten Chat; Bindung bleibt bis Call-Ende. Nach Read-Aloud startet Listener erneut, Ende nur explizit am Avatar.
-- Statisches `greeting_audio`: nach Runtime-Readiness einmal je Call, nie Historie/Persistenz/LLM-Kontext; Fehler nur loggen.
-- Eine WAV für Assistant-Generierung (Kontext) und Transkription (Audio allein); beide parallel, unabhängig. Während Modell/TTS keine Audio-Barge-in. Stop von Antwort-Audio bricht Modell nicht ab; Stop vor TTS überspringt TTS.
-- Call-State umfasst Aufnahme, Modellverarbeitung und Playback als aktiven Turn. Textantworten im gebundenen Call-Chat werden für Avatar-TTS eingereiht.
-- Vorgaben: max. 30 s, `audio_wait_exceed_seconds`, RMS `0.015`, 16 kHz mono, initial `de`, kein separates STT. MediaRecorder wurde nach WebKitGTK-Nullchunks verworfen.
+- Capture Python-Backend via `PipeWireRecorder`/`pw-record`; PTT und Dialog teilen Recorder und laufen nicht parallel. Kein hartes Aufnahmelimit.
+- PTT: Chatfenster gedrückt → `POST /audio/recording/start` → release `POST /audio/recording/stop` mit Client-Kontext/optional `chat_id`; Capture startet sofort, Whisper-Warm-up parallel.
+- Dialog: Avatar Call besitzt den kontinuierlichen Modus; Chat Call delegiert mit selektierter `chat_id`. `POST /audio/dialog/turn`; wartet vor Sprache unbegrenzt, RMS startet den Turn, konfigurierter Stillezeitraum beendet ihn.
+- STT ist unabhängig vom `ModelRuntime`: `faster-whisper` `small`, CPU-only/int8, fest `de`, `beam_size=5`. PCM wird während Capture in 10-s-Fenstern mit 2-s-Overlap/8-s-Step transkribiert; nur ein Whisper-Inference gleichzeitig. Finaler Tail nur für noch nicht vollständig abgedecktes Audio; Transkripte deterministisch über exakten normalisierten Wort-Overlap zusammenführen.
+- Nach Recording-Ende dürfen ausstehende STT-Arbeiten maximal 30 s den Turn aufhalten. STT-Fehler, Timeout oder leeres Endtranskript beenden den Turn ohne LLM-Aufruf. Bereits laufende blockierende Whisper-Inference darf im Worker auslaufen und hält bis dahin Single-Flight, ohne den fehlgeschlagenen Turn weiter zu blockieren.
+- Erfolgsfluss: Capture → vollständiges STT → finale User-Nachricht persistieren → normalen Textkontext aufbauen → `ModelRuntime.generate_text_stream` → Assistant persistieren/TTS. Kein Audio wird an den LLM-Runtime-Adapter gesendet.
+- Whisper lazy-load; Idle-Unload nach 10 min ohne STT-Nutzung, solange kein Audio-Call aktiv ist. Aktiver Audio-Call hält Whisper resident. Call-Readiness verlangt LLM- und Whisper-Warm-up; erst danach `greeting_audio`.
+- Avatar-Call ohne Chat bindet beim ersten erfolgreichen Sprachturn einen Chat; Bindung bleibt bis Call-Ende. Nach Read-Aloud startet Listener erneut, Ende nur explizit am Avatar.
+- Während Modell/TTS keine Audio-Barge-in. Stop von Antwort-Audio bricht Modell nicht ab; Stop vor TTS überspringt TTS. Call-State umfasst Aufnahme, Modellverarbeitung und Playback als aktiven Turn; Textantworten im gebundenen Call-Chat werden für Avatar-TTS eingereiht.
+- Capture-Vorgaben: `audio_wait_exceed_seconds`, RMS `0.015`, 16 kHz mono S16. MediaRecorder wurde nach WebKitGTK-Nullchunks verworfen.
 
 ### TTS
 
@@ -75,7 +77,7 @@ Arbeitsindex für Frieda: Impact-Analyse, Implementierungsplanung, Abhängigkeit
 
 ### Backend: Komposition, API und Konfiguration
 
-- `backend/app/config.py`: eingefrorene `LlmConfig(key, model)`, `Settings`-Singleton. Relevante Felder: Netz/DB/CORS/Sprache, Audio-Limits, Kontextkompressions-Parameter, Ollama, `llm_models`, TTS-Engine/Device/Revision/Idle. Für Start, Health, Runtime, Audio, TTS.
+- `backend/app/config.py`: eingefrorene `LlmConfig(key, model)`, `Settings`-Singleton. Relevante Felder: Netz/DB/CORS/Sprache, Audio-Silence, Kontextkompressions-Parameter, Ollama, `llm_models`, TTS-Engine/Device/Revision/Idle. Für Start, Health, Runtime, Audio, TTS.
 - `backend/app/state.py`: prozesslokaler Avatar, aktives LLM, Inferenzzähler, Switch-Guard; Standard-LLM beim Start, nicht persistent; Modellwechsel während Inferenz blockieren.
 - `backend/app/commands`: async `/ <group> <command> [payload]`; `/avatar set <key>`, `/llm set <key>`. LLM: unbekannt/nicht verfügbar ablehnen, gleiches Modell No-op, altes unloaden, Ziel aufwärmen, erst dann publizieren; bei Warm-up-Fehler altes wiederherstellen, bei Fehlschlag terminieren.
 - `backend/app/main.py`: `create_app() -> FastAPI`, `StderrExceptionMiddleware`, `app`; validiert Konfiguration, initialisiert State, verlangt Standard-LLM in Ollama, warnt bei anderen, Alembic + MCP-Session-Lifespan, mountet `/mcp`.
@@ -97,18 +99,18 @@ Arbeitsindex für Frieda: Impact-Analyse, Implementierungsplanung, Abhängigkeit
 - `services/context_compression.py`: `ContextCompressionService`, `CompressedContext`, `build_active_context`; char-basierte Schätzung, aktuelle Runden schützen, falls nötig einbeziehen, konkretes Outputbudget bei jedem Versuch neu berechnen, geringwertige Summaries deterministisch entfernen, versioniertes CAS, terminaler Fehler nur wenn Stars allein nicht passen.
 - `persistence/chat_repository.py`: atomarer Erstturn, monoton steigende Nachrichten-`seq`, Aktivitätsliste, CRUD/Pin/Auto-Titel-Claim, atomarer Kompressionszustand per erwarteter Version.
 - `persistence/models.py`: SQLAlchemy `Chat` (Titel, manuell, Pin, komprimierter Kontext, Seq/Version/Fehler) und `Message` (Chat, Rolle, Inhalt, Seq, Zeit).
-- `services/audio_chat.py:AudioChatService`: PTT/Dialog, WAV dual nutzen, `processing`, unabhängige Streams/Persistenz/Fehler, Avatar lazy, Placeholder erst bei Transkript/Assistant-Ausgabe sichtbar, Cleanup nach beiden Konsumenten.
+- `services/audio_text_chat.py:AudioTextChatService`: orchestriert PTT/Dialog als STT-first-Pipeline; Streaming-Chunks seriell transkribieren/mergen, finalen Usertext vor normalem Text-LLM persistieren, Post-Recording-STT-Timeout/Fehler/Empty behandeln, temporäre Audioartefakte bereinigen. PTT startet Capture vor parallelem Whisper-Warm-up.
 - `services/audio_call.py:AudioCallState`: genau ein globaler Call, gebundene Chat-ID, `turn_active`, eine pending Assistant-Speech; Ende leert Assoziation/Pending.
 - `services/tts.py`: `TtsBusyError`, `TtsResult(playback_id,audio)`, single-flight inkl. Cancellation, Playback-ID, Idle-Unload.
 - `mcp/server.py`: MCP Streamable-HTTP-Komposition und Tool-Registrierung; `mcp/music.py`: Musik-Grenze über `MusicService`; `mcp/web.py`: Websuch-Grenze über `WebSearchService`.
 
 ### Backend: Runtime, Audio und TTS-Adapter
 
-- `runtime/base.py:ModelRuntime` Protocol: async `health`, `warm_up`, `generate_text`, `generate_from_audio`; async Generatoren `generate_text_stream(messages)`, `generate_from_audio_stream(audio_file,messages)`, `transcribe_audio_stream(audio_file)`.
-- `runtime/ollama.py:OllamaRuntime`: Prozess-State-LLM je Inferenz lazy auflösen; aktive Text/Audio/Transkript/Titel-Inferenz zählen, während Switch blockieren, Zähler bei Erfolg/Fehler/Cancel freigeben. `/api/show` Modell/Health, `/api/generate` unload/warm-up/kompletter Text (120 s), `/v1/chat/completions` Streaming und Audio (Base64-WAV, 120 s). Streaming gibt nichtleere `choices[0].delta.content`; Audio komplett `choices[0].message.content`, Transkription Audio allein. Remote/ungültige Antwort `RuntimeError`, lokale Dateifehler/Cancel propagieren. Implementierter Spike, Architektur bleibt austauschbar.
-- `runtime/llama_cpp.py:LlamaCppRuntime`: geplanter Stub; bevorzugter ADR-Zielruntime, Gemma-4-native-Audio-Spike offen.
-- `audio/capture.py`: `CaptureError`, `CapturedAudio(path,duration,sample_rate,channels)`, `_DialogTurnBuffer`, `PipeWireRecorder`, `inspect_wav`. PTT-WAV, Dialog PCM stdout (16k mono S16); Stille vor Sprache ignorieren, 3 s Nachsprechstille entfernen, Limit exakt; Abort löscht; Shutdown SIGINT→kill nach 2 s.
-- `audio/input.py`: Contract `PreparedAudio`, `AudioInputPreparer.prepare(source)`, noch contract-only; erwartbar max. 30 s/16 kHz/mono.
+- `runtime/base.py:ModelRuntime` Protocol ist text-only: async `health`, `warm_up`, `generate_text`; `generate_text_stream(messages)` für Chatantworten. STT gehört nicht zum Runtime-Vertrag.
+- `runtime/ollama.py:OllamaRuntime`: Prozess-State-LLM je Inferenz lazy auflösen; aktive Text-/Titel-Inferenz zählen und LLM-Switch während Inferenz blockieren. `/api/show` Modell/Health, `/api/generate` unload/warm-up/kompletter Text, `/v1/chat/completions` Textstreaming; kein Base64-/Native-Audio-Pfad.
+- `runtime/llama_cpp.py:LlamaCppRuntime`: geplanter text-only Stub.
+- `stt/whisper.py`: `FasterWhisperSttService`, `StreamingPcmChunker`, `AudioChunk`, `merge_transcripts`; Whisper `small` strikt CPU/int8, `de`, beam 5; 10/2-Chunking, serialisierte blockierende Inferenz außerhalb des asyncio-Event-Loops, Lazy-/Idle-Lifecycle und Call-Residency.
+- `audio/capture.py`: `CaptureError`, `CapturedAudio`, `_DialogTurnBuffer`, `PipeWireRecorder`; PTT/Dialog über 16-kHz-mono-S16-PCM, laufende volle STT-Fenster an Sink liefern, finalen Tail beim Stop erzeugen; Dialog ignoriert Stille vor Sprache und endet über konfigurierte Nachsprechstille; kein Duration-Limit; Abort/Cleanup und SIGINT→kill.
 - `tts/base.py:TextToSpeech.synthesize(text)->bytes`, `unload()`; `tts/factory.py:create_tts_engine(engine_name?)` wählt Kokoro/Chatterbox oder lehnt ab.
 - `tts/kokoro.py`: lazy Modell/Pipeline/Victoria, prüft lokale Artefakte, 24-kHz-WAV, unload gibt CUDA-Cache frei.
 - `tts/chatterbox.py`: gepinnter Snapshot lazy, konfiguriertes Referenzaudio/deutsch, CPU-Chunks zusammenführen, unload/CUDA-Cache.
@@ -144,12 +146,12 @@ Arbeitsindex für Frieda: Impact-Analyse, Implementierungsplanung, Abhängigkeit
 
 - Chat: `tests/backend/test_chat_contract.py`, `test_chat_service.py`; Persistenz `test_chat_repository.py`, `test_chats_contract.py`; Kontext `test_context_compression_service.py`.
 - Runtime/LLM: `test_runtime_blueprint.py`, `test_ollama_runtime.py`, `test_llm_command.py`; reale Ollama-Integration `tests/integration/test_ollama_integration.py` (Marker, aktive lokale Gemma; Cancel bewusst nicht real).
-- Audio: `test_audio_capture.py`, `test_audio_chat_contract.py`, `test_audio_dialog.py`; Mikrofonintegration `tests/integration/test_audio_capture_integration.py` mit `AVALO_TEST_MICROPHONE=1`.
+- Audio/STT: `test_audio_capture.py`, `test_audio_chat_contract.py`, `test_audio_dialog.py`, `test_audio_text_chat.py`, `test_whisper_stt.py`; reale faster-whisper-Transkription von `tests/data/german-transcription.wav` läuft im normalen Pytest-Lauf; Mikrofonintegration `tests/integration/test_audio_capture_integration.py` mit `AVALO_TEST_MICROPHONE=1`.
 - TTS: `test_tts_contract.py`, `test_tts_service.py`, `test_tts_factory.py`, `test_tts_kokoro.py`, `test_tts_blueprint.py`; Kokoro-Integration `tests/integration/test_kokoro_tts_integration.py` mit `AVALO_RUN_TTS_INTEGRATION=1` und Marker.
 - UI/User-Konfiguration: `test_ui_config_contract.py`, `test_user_config.py`, `test_config.py`, `test_health.py`.
 - Commands/MCP/Musik/Web: `test_commands.py`, `test_mcp_music.py`, `test_mcp_web.py`, `test_web_search_service.py`, `test_music_service.py`, `test_music_repository.py`, `test_music_adapters.py`, Integration `tests/integration/test_music_mcp.py`.
 - Frontend: `tests/frontend/App.spec.ts`, `ChatWindow.spec.ts`, `useTransientChat.spec.ts`; bei konkreten Flows ggf. auch `backend.spec.ts`, `backend.dialog.spec.ts`, `useTransientChat.dialog.spec.ts`, `MarkdownMessage.spec.ts`, `externalLinks.spec.ts` prüfen.
-- Fixture `tests/data/german-transcription.wav`: reale Native-Audio-Integration; erwartete Antwort enthält derzeit `diagnostizierte`.
+- Fixture `tests/data/german-transcription.wav`: kleine reale faster-whisper-Integration für den CPU/int8-Produktions-STT-Pfad.
 
 ## Änderungsnavigation
 
@@ -158,9 +160,9 @@ Arbeitsindex für Frieda: Impact-Analyse, Implementierungsplanung, Abhängigkeit
 | Öffentlicher Chatvertrag | `api/schemas.py`, `routes/chat.py`, `services/chat.py`, `frontend/src/types/chat.ts`, `services/backend.ts`, `useTransientChat.ts`, Chat-Backend/Frontend-Tests |
 | Chatpersistenz | `main.py`, Chat-Schemas/Route/Service, `persistence/database.py`, `models.py`, Alembic `0001`–`0004`, Frontend Backend/Hook/Window und Tests |
 | Kontextkompression | `services/context_compression.py`, Chat/Audio-Service, Modelle/Repository/Config, Chat/Audio-Routen und -Schemas, ChatWindow/Hook/backend/types, Kompressions-/Chat-/Audio-Tests |
-| Runtime-Vertrag | `runtime/base.py`, `ollama.py`, `llama_cpp.py`, `services/chat.py`, Runtime/Ollama/Integrationstests |
+| Runtime-Vertrag | `runtime/base.py`, `ollama.py`, `llama_cpp.py`, `services/chat.py`, Runtime/Ollama/Integrationstests; Runtime bleibt text-only |
 | Ollama oder LLM-Auswahl | `ollama.py`, `config.py`, `state.py`, Commands Factory/Registry/`llm_set.py`, Chat/Main und LLM/State/Ollama/Main-Tests |
-| Audio-Chat/Dialog | Capture, Audio-Chat/Call/State, Runtime, Audio-Route/Router/Schemas, ChatWindow/Hook/backend/types, Audio-/Ollama-/Dialog-/Frontendtests |
+| Audio-Chat/Dialog/STT | `audio/capture.py`, `stt/whisper.py`, `services/audio_text_chat.py`, Audio-Call/State, Audio-Route/Router/Schemas, ChatWindow/Hook/backend/types, Audio-/STT-/Dialog-/Frontendtests; bei LLM-Grenze `runtime/base.py`/`ollama.py` |
 | Avatar-Feedback | Audio-Service/Route, Frontend Backend/Hook/ChatWindow/AvatarState/CallEvents/Warmup/App/Styles/UIConfig, Audio- und Dialog-/App-Tests |
 | TTS | `tts/base.py`, Factory, Kokoro/Chatterbox, TtsService/Route, Config und TTS-Tests; optional reale Integrationen |
 | Netzwerk/CORS | `config.py`, `main.py`, Startscript, Frontend `backend.ts`, Config/Health-Tests |
@@ -174,10 +176,10 @@ Arbeitsindex für Frieda: Impact-Analyse, Implementierungsplanung, Abhängigkeit
 - Anwendung hängt an `ModelRuntime`, nicht an konkreten Runtimes — `docs/adrs/04-local-llm-runtime.md`.
 - Modell, Audio und TTS bleiben im Python-Backend — `docs/adrs/03-backend-fastapi.md`.
 - Feste Loopback-Bindung — `docs/adrs/05-loopback-http-communication.md`.
-- Initial native Gemma-Audio ohne separates STT; PTT maximal 30 s — `docs/adrs/06-native-gemma-audio.md`.
+- Nativer Gemma-Audiopfad ist abgelöst: Audio wird lokal mit faster-whisper transkribiert und danach ausschließlich über den text-only `ModelRuntime` verarbeitet. `docs/adrs/06-native-gemma-audio.md` beschreibt damit eine überholte frühere Entscheidung.
 - TTS hinter austauschbarem Python-Adapter — `docs/adrs/07-tts-output.md`.
 - Dieser Index ist kompakt, nicht autoritativ — `docs/adrs/08-incremental-repo-map-as-ai-working-index.md`.
 - Kleine lokale Patches erst nach genauer Quellprüfung, dann Finaldiff/Testreview — `docs/adrs/09-prompt2code-source-patching.md`.
-- Implementiert: FastAPI/Health/Streaming-Chat, persistierte Chats/Kompression, Ollama-Spikes, Tauri-Shell/Backend-Lifecycle/Avatar-Interaktion/X11-Input-Shape, Chat-UI/Markdown, PTT/Dialog/Call, MCP-Musik/Websuche, lokales TTS inkl. Avatar Call read-aloud.
-- Verträge/Stubs: `AudioInputPreparer`, llama.cpp-Runtime. Nicht vorhanden: Memory, Production Packaging.
-- Offen: finale lokale LLM-Runtime und Gemma-4-Audiofeasibility, Chatterbox Ressourcen/Qualität, Audio-Chunking/inkrementelle Ollama-Verarbeitung.
+- Implementiert: FastAPI/Health/Streaming-Chat, persistierte Chats/Kompression, text-only Ollama-Runtime, Tauri-Shell/Backend-Lifecycle/Avatar-Interaktion/X11-Input-Shape, Chat-UI/Markdown, PTT/Dialog/Call mit CPU-faster-whisper-STT, MCP-Musik/Websuche, lokales TTS inkl. Avatar Call read-aloud.
+- Verträge/Stubs: llama.cpp-Runtime. Nicht vorhanden: Memory, Production Packaging.
+- Offen: finale lokale LLM-Runtime und Chatterbox Ressourcen/Qualität.

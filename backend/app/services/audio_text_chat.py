@@ -108,6 +108,7 @@ class AudioTextChatService:
         self._stt = stt or FasterWhisperSttService()
         self._compression_tasks: set[asyncio.Task[object]] = set()
         self._recording_transcription: _StreamingTranscription | None = None
+        self._recording_warmup_task: asyncio.Task[None] | None = None
 
     async def start_recording(self) -> None:
         if self._recording_transcription is not None:
@@ -120,17 +121,46 @@ class AudioTextChatService:
         transcription.start()
         self._recording_transcription = transcription
         try:
+            # Capture must become active immediately. Whisper loading starts
+            # independently afterwards and must not delay microphone startup.
             await self._recorder.start(transcription.enqueue)
+            warmup_task = asyncio.create_task(
+                self._warm_up_ptt(transcription),
+                name="avalo-ptt-whisper-warmup",
+            )
+            warmup_task.add_done_callback(self._consume_background_task_result)
+            self._recording_warmup_task = warmup_task
         except BaseException:
             self._recording_transcription = None
             await transcription.cancel()
             raise
+
+    async def _warm_up_ptt(
+        self,
+        transcription: _StreamingTranscription,
+    ) -> None:
+        try:
+            await self._stt.warm_up()
+        except BaseException as exc:
+            if self._recording_transcription is transcription:
+                await self._recorder.abort()
+            raise AudioTurnError(
+                "Sprachverarbeitung konnte nicht gestartet werden",
+            ) from exc
+
+    @staticmethod
+    def _consume_background_task_result(task: asyncio.Task[None]) -> None:
+        try:
+            task.result()
+        except BaseException:
+            pass
 
     async def abort_recording(self) -> None:
         transcription, self._recording_transcription = (
             self._recording_transcription,
             None,
         )
+        self._recording_warmup_task = None
         try:
             await self._recorder.abort()
         finally:
@@ -163,12 +193,28 @@ class AudioTextChatService:
             self._recording_transcription,
             None,
         )
+        warmup_task, self._recording_warmup_task = (
+            self._recording_warmup_task,
+            None,
+        )
         if transcription is None:
             raise AudioTurnError("Keine aktive Sprachaufnahme.")
 
         captured: CapturedAudio | None = None
         try:
+            # A warm-up failure may already have aborted capture. Surface that
+            # failure before asking the recorder to stop a no-longer-active
+            # recording.
+            if warmup_task is not None and warmup_task.done():
+                await warmup_task
+
             captured = await self._recorder.stop()
+
+            # Recording stops immediately when requested; only afterwards may
+            # we wait for a still-running model load.
+            if warmup_task is not None:
+                await warmup_task
+
             transcript = await transcription.finish()
         except BaseException:
             if captured is not None:

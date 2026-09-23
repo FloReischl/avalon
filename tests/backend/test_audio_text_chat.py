@@ -21,6 +21,10 @@ class FakeStt:
         self.error = error
         self.calls: list[Path] = []
         self.active = self.maximum_active = 0
+        self.warmed = False
+
+    async def warm_up(self) -> None:
+        self.warmed = True
 
     async def transcribe(self, path: Path) -> str:
         self.calls.append(path)
@@ -46,6 +50,17 @@ class BlockingStt(FakeStt):
         self.entered.set()
         await self.release.wait()
         return "Text"
+
+
+class BlockingWarmupStt(FakeStt):
+    def __init__(self) -> None:
+        super().__init__()
+        self.warmup_started = asyncio.Event()
+        self.release_warmup = asyncio.Event()
+
+    async def warm_up(self) -> None:
+        self.warmup_started.set()
+        await self.release_warmup.wait()
 
 
 class FakeRecorder:
@@ -163,14 +178,21 @@ async def test_finish_times_out_when_the_queue_cannot_drain(monkeypatch) -> None
 
 
 @pytest.mark.asyncio
-async def test_ptt_starts_capture_without_waiting_for_whisper() -> None:
+async def test_ptt_starts_capture_and_warms_whisper_without_waiting() -> None:
     recorder = FakeRecorder()
-    service = AudioTextChatService(recorder, object(), stt=BlockingStt())
+    stt = BlockingWarmupStt()
+    service = AudioTextChatService(recorder, object(), stt=stt)
 
     await service.start_recording()
+    await asyncio.wait_for(stt.warmup_started.wait(), timeout=0.1)
 
     assert recorder.started is True
     assert recorder.chunk_sink is not None
+
+    # start_recording returned although Whisper warm-up is still blocked.
+    assert stt.release_warmup.is_set() is False
+
+    stt.release_warmup.set()
     await service.abort_recording()
     assert recorder.aborted is True
 
