@@ -1,11 +1,10 @@
 """Sequential faster-whisper to text-LLM audio orchestration."""
 
 import asyncio
-import tempfile
+import shutil
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
 from datetime import datetime
-from pathlib import Path
 from typing import Literal
 
 from app.audio.capture import CapturedAudio, PipeWireRecorder
@@ -17,8 +16,8 @@ from app.services.context_compression import (
     parse_compressed_context,
 )
 from app.stt.whisper import (
+    AudioChunk,
     FasterWhisperSttService,
-    create_audio_chunks,
     merge_transcripts,
 )
 from app.user_config import AvatarConfig
@@ -34,6 +33,59 @@ class AudioTurnError(RuntimeError):
 class AudioStreamEvent:
     kind: Literal["chat", "assistant", "transcript", "assistant_done", "processing"]
     text: str = ""
+
+
+@dataclass(slots=True)
+class _StreamingTranscription:
+    """One capture-local, serial Whisper work queue."""
+
+    stt: FasterWhisperSttService
+    queue: asyncio.Queue[AudioChunk | None]
+    transcript: str = ""
+    task: asyncio.Task[None] | None = None
+
+    def start(self) -> None:
+        self.task = asyncio.create_task(
+            self._consume(),
+            name="avalo-streaming-whisper",
+        )
+
+    async def enqueue(self, chunk: AudioChunk) -> None:
+        self.queue.put_nowait(chunk)
+
+    async def finish(self) -> str:
+        self.queue.put_nowait(None)
+        if self.task is None:
+            raise RuntimeError("Streaming transcription was not started.")
+        try:
+            await asyncio.wait_for(
+                asyncio.shield(self.task),
+                timeout=STT_COMPLETION_TIMEOUT_SECONDS,
+            )
+        except TimeoutError as exc:
+            raise AudioTurnError("Sprachverarbeitung abgelaufen") from exc
+        return self.transcript.strip()
+
+    async def cancel(self) -> None:
+        if self.task is None:
+            return
+        self.task.cancel()
+        await asyncio.gather(self.task, return_exceptions=True)
+
+    async def _consume(self) -> None:
+        while True:
+            chunk = await self.queue.get()
+            if chunk is None:
+                return
+            try:
+                self.transcript = merge_transcripts(
+                    self.transcript,
+                    await self.stt.transcribe(chunk.path),
+                )
+            except Exception as exc:
+                raise AudioTurnError(
+                    "Sprachverarbeitung fehlgeschlagen",
+                ) from exc
 
 
 class AudioTextChatService:
@@ -55,12 +107,35 @@ class AudioTextChatService:
         self._compression_service = compression_service
         self._stt = stt or FasterWhisperSttService()
         self._compression_tasks: set[asyncio.Task[object]] = set()
+        self._recording_transcription: _StreamingTranscription | None = None
 
     async def start_recording(self) -> None:
-        await self._recorder.start()
+        if self._recording_transcription is not None:
+            raise AudioTurnError("Eine Sprachaufnahme läuft bereits.")
+
+        transcription = _StreamingTranscription(
+            stt=self._stt,
+            queue=asyncio.Queue(),
+        )
+        transcription.start()
+        self._recording_transcription = transcription
+        try:
+            await self._recorder.start(transcription.enqueue)
+        except BaseException:
+            self._recording_transcription = None
+            await transcription.cancel()
+            raise
 
     async def abort_recording(self) -> None:
-        await self._recorder.abort()
+        transcription, self._recording_transcription = (
+            self._recording_transcription,
+            None,
+        )
+        try:
+            await self._recorder.abort()
+        finally:
+            if transcription is not None:
+                await transcription.cancel()
 
     async def warm_up_stt(self) -> None:
         """Load Whisper before an audio call becomes active."""
@@ -84,8 +159,26 @@ class AudioTextChatService:
         messages: list[dict[str, str]],
         chat_id: int | None = None,
     ) -> AsyncIterator[AudioStreamEvent]:
-        captured = await self._recorder.stop()
-        async for event in self._stream_turn(captured, messages, chat_id):
+        transcription, self._recording_transcription = (
+            self._recording_transcription,
+            None,
+        )
+        if transcription is None:
+            raise AudioTurnError("Keine aktive Sprachaufnahme.")
+
+        try:
+            captured = await self._recorder.stop()
+            transcript = await transcription.finish()
+        except BaseException:
+            await transcription.cancel()
+            raise
+
+        async for event in self._stream_turn(
+            captured,
+            messages,
+            chat_id,
+            transcript=transcript,
+        ):
             yield event
 
     async def stream_dialog_response_with_transcription(
@@ -93,9 +186,28 @@ class AudioTextChatService:
         messages: list[dict[str, str]],
         chat_id: int | None = None,
     ) -> AsyncIterator[AudioStreamEvent]:
-        captured = await self._recorder.capture_dialog_turn()
-        yield AudioStreamEvent(kind="processing")
-        async for event in self._stream_turn(captured, messages, chat_id):
+        transcription = _StreamingTranscription(
+            stt=self._stt,
+            queue=asyncio.Queue(),
+        )
+        transcription.start()
+
+        try:
+            captured = await self._recorder.capture_dialog_turn(
+                transcription.enqueue,
+            )
+            yield AudioStreamEvent(kind="processing")
+            transcript = await transcription.finish()
+        except BaseException:
+            await transcription.cancel()
+            raise
+
+        async for event in self._stream_turn(
+            captured,
+            messages,
+            chat_id,
+            transcript=transcript,
+        ):
             yield event
 
     async def _stream_turn(
@@ -103,12 +215,10 @@ class AudioTextChatService:
         captured: CapturedAudio,
         messages: list[dict[str, str]],
         chat_id: int | None,
+        *,
+        transcript: str,
     ) -> AsyncIterator[AudioStreamEvent]:
         try:
-            transcript = await asyncio.wait_for(
-                self._transcribe(captured.path),
-                timeout=STT_COMPLETION_TIMEOUT_SECONDS,
-            )
             if not transcript.strip():
                 raise AudioTurnError("Keine Sprache erkannt")
 
@@ -141,16 +251,14 @@ class AudioTextChatService:
             raise AudioTurnError("Sprachverarbeitung abgelaufen") from exc
         finally:
             captured.path.unlink(missing_ok=True)
-
-    async def _transcribe(self, path: Path) -> str:
-        transcript = ""
-        with tempfile.TemporaryDirectory(prefix="avalo-whisper-") as directory:
-            for chunk in create_audio_chunks(path, Path(directory)):
-                transcript = merge_transcripts(
-                    transcript,
-                    await self._stt.transcribe(chunk.path),
+            if captured.chunk_directory is not None:
+                asyncio.create_task(
+                    asyncio.to_thread(
+                        shutil.rmtree,
+                        captured.chunk_directory,
+                        ignore_errors=True,
+                    )
                 )
-        return transcript.strip()
 
     def _persist_and_build_context(
         self,

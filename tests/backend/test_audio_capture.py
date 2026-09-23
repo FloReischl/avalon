@@ -1,8 +1,8 @@
 """Tests for backend-local audio capture process control."""
 
 import asyncio
-import shutil
 import signal
+import wave
 from pathlib import Path
 
 import pytest
@@ -11,16 +11,27 @@ from app.audio.capture import CaptureError, PipeWireRecorder
 from app.config import settings
 
 
+class FakePcmStream:
+    def __init__(self, pcm: bytes) -> None:
+        self._pcm = pcm
+
+    async def read(self, size: int) -> bytes:
+        await asyncio.sleep(0)
+        chunk, self._pcm = self._pcm[:size], self._pcm[size:]
+        return chunk
+
+
 class FakeCaptureProcess:
-    def __init__(self, output: Path, source: Path) -> None:
+    def __init__(self, source: Path) -> None:
         self.returncode: int | None = None
-        self._output = output
-        self._source = source
         self.signals: list[int] = []
+        with wave.open(str(source), "rb") as recording:
+            self.stdout = FakePcmStream(recording.readframes(
+                recording.getnframes(),
+            ))
 
     def send_signal(self, signal_number: int) -> None:
         self.signals.append(signal_number)
-        shutil.copyfile(self._source, self._output)
         self.returncode = -signal_number
 
     def kill(self) -> None:
@@ -38,7 +49,6 @@ def fake_pw_record(monkeypatch: pytest.MonkeyPatch):
     async def create_subprocess_exec(*command, **kwargs):
         commands.append(command)
         process = FakeCaptureProcess(
-            Path(command[-1]),
             Path("tests/data/german-transcription.wav"),
         )
         processes.append(process)
@@ -68,8 +78,71 @@ async def test_stop_returns_unnormalized_wav_metadata(
     await recorder.start()
     capture = await recorder.stop()
 
-    assert commands[0][:1] == ("pw-record",)
+    assert commands[0] == (
+        "pw-record",
+        "--rate=16000",
+        "--channels=1",
+        "--channel-map=mono",
+        "--format=s16",
+        "-",
+    )
     assert capture.path.is_file()
+    assert capture.chunk_directory is not None
+    assert capture.chunk_directory.is_dir()
+
+
+@pytest.mark.asyncio
+async def test_full_pcm_window_is_streamed_before_stop(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class LongPcmProcess:
+        def __init__(self) -> None:
+            self.returncode: int | None = None
+            self.signals: list[int] = []
+            self.stdout = FakePcmStream(b"\1\0" * 160_000)
+
+        def send_signal(self, signal_number: int) -> None:
+            self.signals.append(signal_number)
+            self.returncode = -signal_number
+
+        def kill(self) -> None:
+            self.returncode = -signal.SIGKILL
+
+        async def communicate(self) -> tuple[bytes, bytes]:
+            return b"", b""
+
+    async def create_subprocess_exec(*command, **kwargs):
+        del command, kwargs
+        return LongPcmProcess()
+
+    chunks = []
+
+    async def chunk_sink(chunk) -> None:
+        chunks.append(chunk)
+
+    monkeypatch.setattr(
+        "app.audio.capture.asyncio.create_subprocess_exec",
+        create_subprocess_exec,
+    )
+    recorder = PipeWireRecorder(output_directory=tmp_path)
+
+    await recorder.start(chunk_sink)
+    await asyncio.sleep(0.02)
+
+    assert [(chunk.start_seconds, chunk.end_seconds) for chunk in chunks] == [
+        (0.0, 10.0),
+    ]
+    assert recorder.is_recording is True
+
+    captured = await recorder.stop()
+
+    assert [
+        (chunk.start_seconds, chunk.end_seconds) for chunk in chunks
+    ] == [
+        (0.0, 10.0),
+    ]
+    assert captured.duration_seconds == pytest.approx(10.0)
     assert capture.duration_seconds == pytest.approx(4.6248125)
     assert capture.sample_rate_hz == 16_000
     assert capture.channels == 1
@@ -89,7 +162,6 @@ async def test_stop_accepts_pw_record_sigint_exit_code_one(
 
     async def create_subprocess_exec(*command, **kwargs):
         return PipeWireSigintProcess(
-            Path(command[-1]),
             Path("tests/data/german-transcription.wav"),
         )
 
@@ -179,21 +251,19 @@ async def test_missing_pw_record_is_reported_and_temp_file_is_removed(
 
 
 @pytest.mark.asyncio
-async def test_invalid_wav_is_rejected_and_removed(
+async def test_incomplete_pcm_is_rejected_and_removed(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    class InvalidWavProcess(FakeCaptureProcess):
-        def send_signal(self, signal_number: int) -> None:
-            self.signals.append(signal_number)
-            self._output.write_bytes(b"not a wav")
-            self.returncode = -signal_number
+    class IncompletePcmProcess(FakeCaptureProcess):
+        def __init__(self) -> None:
+            self.returncode: int | None = None
+            self.signals: list[int] = []
+            self.stdout = FakePcmStream(b"\0")
 
     async def create_subprocess_exec(*command, **kwargs):
-        return InvalidWavProcess(
-            Path(command[-1]),
-            Path("tests/data/german-transcription.wav"),
-        )
+        del command, kwargs
+        return IncompletePcmProcess()
 
     monkeypatch.setattr(
         "app.audio.capture.asyncio.create_subprocess_exec",
@@ -202,7 +272,7 @@ async def test_invalid_wav_is_rejected_and_removed(
     recorder = PipeWireRecorder(output_directory=tmp_path)
     await recorder.start()
 
-    with pytest.raises(CaptureError, match="valid WAV"):
+    with pytest.raises(CaptureError, match="incomplete PCM"):
         await recorder.stop()
 
     assert list(tmp_path.iterdir()) == []
