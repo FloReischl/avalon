@@ -6,7 +6,7 @@ from httpx import ASGITransport, AsyncClient
 from app.api.routes.audio import get_audio_chat_service
 from app.audio.capture import CaptureError
 from app.main import create_app
-from app.services.audio_chat import AudioStreamEvent
+from app.services.audio_text_chat import AudioStreamEvent
 
 
 class FakeAudioChatService:

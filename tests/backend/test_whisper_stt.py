@@ -153,3 +153,4 @@ def test_streaming_chunker_emits_full_windows_before_finish(
         (16.0, 26.0),
         (24.0, 27.0),
     ]
+    assert chunker.finish() == []

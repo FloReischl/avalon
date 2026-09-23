@@ -144,8 +144,6 @@ async def stream_audio_response(
     chat_id: int | None = None,
 ) -> AsyncIterator[str]:
     """Translate audio chat output into Avalo's SSE protocol."""
-    assistant_failed = False
-
     try:
         async for event in service.stream_response_with_transcription(
             messages,
@@ -160,20 +158,8 @@ async def stream_audio_response(
                     "transcript_chunk",
                     {"text": event.text},
                 )
-            elif event.kind == "transcript":
-                yield format_sse_event("transcript_chunk", {"text": event.text})
-
-
     except Exception:
         logger.exception("[audio] response stream failed")
-        yield format_sse_event("error", {})
-        return
-
-    if assistant_failed:
-        yield format_sse_event("error", {})
-        return
-
-    if assistant_failed:
         yield format_sse_event("error", {})
         return
 
@@ -204,8 +190,6 @@ async def stream_dialog_response(
     chat_id: int | None = None,
 ) -> AsyncIterator[str]:
     """Translate one automatic dialog turn into Avalo's SSE protocol."""
-    assistant_failed = False
-
     try:
         async for event in service.stream_dialog_response_with_transcription(
             messages,
@@ -227,10 +211,6 @@ async def stream_dialog_response(
                     "transcript_chunk",
                     {"text": event.text},
                 )
-            elif event.kind == "transcript":
-                yield format_sse_event("transcript_chunk", {"text": event.text})
-
-
     except Exception as exc:
         logger.exception("[audio-dialog] response stream failed")
         yield format_sse_event("error", {"message": str(exc)})

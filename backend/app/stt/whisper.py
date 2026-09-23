@@ -167,11 +167,14 @@ class StreamingPcmChunker:
         return self._complete_chunks()
 
     def finish(self) -> list[AudioChunk]:
-        """Return the remaining final tail, if it was not emitted already."""
+        """Return exactly one un-emitted final tail, if any."""
         total_frames = len(self._pcm) // 2
         if self._next_start_frame >= total_frames:
             return []
-        return [self._write_chunk(self._next_start_frame, total_frames)]
+
+        chunk = self._write_chunk(self._next_start_frame, total_frames)
+        self._next_start_frame = total_frames
+        return [chunk]
 
     def _complete_chunks(self) -> list[AudioChunk]:
         total_frames = len(self._pcm) // 2
