@@ -5,8 +5,10 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass
+from datetime import datetime
 from math import ceil
 from typing import Any, Protocol
+from zoneinfo import ZoneInfo
 
 from app.config import settings
 from app.persistence.chat_repository import ChatRepository
@@ -138,9 +140,20 @@ def build_active_context(
     compressed_context: CompressedContext,
     compressed_through_seq: int,
     avatar: AvatarLike | None,
+    now: datetime | None = None,
 ) -> list[dict[str, str]]:
     """Build the complete normal-model input from persisted state."""
     result: list[dict[str, str]] = []
+    result.append(
+        {
+            "role": "system",
+            "content": (
+                "Aktuelles Datum und Uhrzeit: "
+                f"{(now or datetime.now(ZoneInfo('Europe/Berlin'))).strftime('%Y-%m-%d %H:%M')} "
+                "(Europe/Berlin)\nAktueller Ort: München, Deutschland"
+            ),
+        }
+    )
     if avatar is not None:
         result.append(
             {

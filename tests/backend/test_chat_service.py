@@ -37,6 +37,15 @@ class FakeRuntime:
             yield chunk
 
 
+def assert_runtime_context(
+    messages: list[dict[str, str]], expected_context: list[dict[str, str]]
+) -> None:
+    assert messages[0]["role"] == "system"
+    assert messages[0]["content"].startswith("Aktuelles Datum und Uhrzeit: ")
+    assert "Aktueller Ort: München, Deutschland" in messages[0]["content"]
+    assert messages[1:] == expected_context
+
+
 @pytest.fixture
 def service(tmp_path: Path):
     path = tmp_path / "avalo.sqlite"
@@ -59,7 +68,10 @@ async def test_new_turn_persists_user_and_complete_assistant(service) -> None:
     chunks = [chunk async for chunk in chat_service.stream_response(turn)]
 
     assert chunks == ["Hallo ", "Flo"]
-    assert runtime.messages == [{"role": "user", "content": "Hallo"}]
+    assert runtime.messages is not None
+    assert_runtime_context(
+        runtime.messages, [{"role": "user", "content": "Hallo"}]
+    )
 
     messages = repository.get_messages(turn.chat_id)
     assert [(message.role, message.content) for message in messages] == [
@@ -109,8 +121,13 @@ async def test_unknown_slash_command_is_processed_by_runtime(service) -> None:
     chunks = [chunk async for chunk in chat_service.stream_response(turn)]
 
     assert chunks == ["Hallo ", "Flo"]
-    assert runtime.calls == [
-        [{"role": "user", "content": "/avatar foo test"}]
+    assert len(runtime.calls) == 1
+    assert runtime.calls[0][0]["role"] == "system"
+    assert runtime.calls[0][0]["content"].startswith(
+        "Aktuelles Datum und Uhrzeit: "
+    )
+    assert runtime.calls[0][1:] == [
+        {"role": "user", "content": "/avatar foo test"}
     ]
 
     messages = repository.get_messages(turn.chat_id)
@@ -128,8 +145,13 @@ async def test_incomplete_slash_command_is_processed_by_runtime(service) -> None
     chunks = [chunk async for chunk in chat_service.stream_response(turn)]
 
     assert chunks == ["Hallo ", "Flo"]
-    assert runtime.calls == [
-        [{"role": "user", "content": "/avatar"}]
+    assert len(runtime.calls) == 1
+    assert runtime.calls[0][0]["role"] == "system"
+    assert runtime.calls[0][0]["content"].startswith(
+        "Aktuelles Datum und Uhrzeit: "
+    )
+    assert runtime.calls[0][1:] == [
+        {"role": "user", "content": "/avatar"}
     ]
 
     messages = repository.get_messages(turn.chat_id)
@@ -155,14 +177,14 @@ async def test_avatar_system_prompt_precedes_persisted_context(service) -> None:
     turn = chat_service.start_turn(None, "Hallo")
     _ = [chunk async for chunk in chat_service.stream_response(turn)]
 
-    assert runtime.messages == [
-        {
-            "role": "system",
-            "content": "Du bist Frieda.\n\nAntworte kurz.",
-        },
-        {"role": "user", "content": "Hallo"},
-    ]
-
+    assert runtime.messages is not None
+    assert_runtime_context(
+        runtime.messages,
+        [
+            {"role": "system", "content": "Du bist Frieda.\n\nAntworte kurz."},
+            {"role": "user", "content": "Hallo"},
+        ],
+    )
 
 @pytest.mark.asyncio
 async def test_existing_chat_is_continued_with_persisted_context(service) -> None:
@@ -174,11 +196,14 @@ async def test_existing_chat_is_continued_with_persisted_context(service) -> Non
     chunks = [chunk async for chunk in chat_service.stream_response(turn)]
 
     assert chunks == ["Hallo ", "Flo"]
-    assert runtime.calls[0] == [
-        {"role": "user", "content": "Erste Frage"},
-        {"role": "assistant", "content": "Erste Antwort"},
-        {"role": "user", "content": "Zweite Frage"},
-    ]
+    assert_runtime_context(
+        runtime.calls[0],
+        [
+            {"role": "user", "content": "Erste Frage"},
+            {"role": "assistant", "content": "Erste Antwort"},
+            {"role": "user", "content": "Zweite Frage"},
+        ],
+    )
 
 
 @pytest.mark.asyncio
@@ -341,6 +366,12 @@ async def test_model_context_contains_all_uncompressed_messages(service) -> None
     _ = [chunk async for chunk in chat_service.stream_response(turn)]
 
     assert runtime.messages is not None
-    assert len(runtime.messages) == 101
-    assert runtime.messages[0]["content"] == "Message 0"
+    assert len(runtime.messages) == 102
+    assert runtime.messages[0]["content"].startswith("Aktuelles Datum und Uhrzeit: ")
+    assert runtime.messages[1]["content"] == "Message 0"
     assert runtime.messages[-1]["content"] == "Message 100"
+
+
+if __name__ == "__main__":
+    # Führt alle Tests in genau dieser Datei aus (__file__)
+    pytest.main([__file__, "-v", "-s"])

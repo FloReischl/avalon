@@ -511,7 +511,9 @@ async def test_existing_audio_chat_uses_server_context_and_schedules_compression
     ]
     await asyncio.wait_for(compressor.called.wait(), timeout=0.1)
 
-    assert runtime.messages == [
+    assert runtime.messages[0]["role"] == "system"
+    assert runtime.messages[0]["content"].startswith("Aktuelles Datum und Uhrzeit: ")
+    assert runtime.messages[1:] == [
         {
             "role": "system",
             "content": (
@@ -523,3 +525,7 @@ async def test_existing_audio_chat_uses_server_context_and_schedules_compression
         {"role": "user", "content": "Neu"},
     ]
     assert compressor.chat_ids == [42]
+
+if __name__ == "__main__":
+    # Führt alle Tests in genau dieser Datei aus (__file__)
+    pytest.main([__file__, "-v", "-s"])

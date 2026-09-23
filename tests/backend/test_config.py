@@ -1,5 +1,5 @@
 from app.config import settings
-
+import pytest
 
 def test_local_api_address_is_fixed() -> None:
     assert settings.api_host == "127.0.0.1"
@@ -13,7 +13,7 @@ def test_gemma_audio_limit_is_recorded() -> None:
 
 def test_ollama_runtime_settings_are_recorded() -> None:
     assert settings.ollama_host == "127.0.0.1:11434"
-    assert settings.ollama_model == "gemma4:e4b-it-q4_K_M-ctx16k"
+    assert settings.ollama_model == "qwen2.5-coder:7b-instruct"
 
 
 def test_chatterbox_tts_settings_are_recorded() -> None:
@@ -25,3 +25,7 @@ def test_chatterbox_tts_settings_are_recorded() -> None:
     )
     assert settings.tts_idle_unload_seconds == 300.0
 
+
+if __name__ == "__main__":
+    # Führt alle Tests in genau dieser Datei aus (__file__)
+    pytest.main([__file__, "-v", "-s"])

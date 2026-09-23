@@ -18,12 +18,12 @@ class FakeMusicService:
         self.track_ids = track_ids
 
 
-def test_mcp_server_exposes_music_play_tracks():
+def test_mcp_server_exposes_music_play_tracks_and_web_search():
     mcp = create_mcp_server(FakeMusicService())  # type: ignore[arg-type]
 
     tools = asyncio.run(mcp.list_tools())
 
-    assert [tool.name for tool in tools] == ["music.play_tracks"]
+    assert [tool.name for tool in tools] == ["music.play_tracks", "web.search"]
 
 
 def test_music_tool_logs_request_and_delegates_to_service(caplog):

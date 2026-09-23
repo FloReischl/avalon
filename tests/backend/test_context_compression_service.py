@@ -2,6 +2,7 @@
 
 from collections.abc import AsyncIterator
 from dataclasses import replace
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -225,11 +226,17 @@ def test_active_context_keeps_compressed_context_and_newer_original_messages(
         '{"summaries":["alte Information"],"stars":[]}'
     )
 
-    context = build_active_context(messages, compressed, 2, None)
+    context = build_active_context(
+        messages, compressed, 2, None, now=datetime(2026, 9, 23, 14, 35)
+    )
 
-    assert context[0]["role"] == "system"
-    assert context[0]["content"].startswith(COMPRESSED_CONTEXT_PREFIX)
-    assert [(message["role"], message["content"]) for message in context[1:]] == [
+    assert context[0] == {
+        "role": "system",
+        "content": "Aktuelles Datum und Uhrzeit: 2026-09-23 14:35 (Europe/Berlin)\nAktueller Ort: München, Deutschland",
+    }
+    assert context[1]["role"] == "system"
+    assert context[1]["content"].startswith(COMPRESSED_CONTEXT_PREFIX)
+    assert [(message["role"], message["content"]) for message in context[2:]] == [
         ("user", "Frage 1"),
         ("assistant", "Antwort 1"),
     ]
