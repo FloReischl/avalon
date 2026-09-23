@@ -79,6 +79,49 @@ async def test_inference_is_single_flight() -> None:
 
 
 @pytest.mark.asyncio
+async def test_cancelled_inference_returns_immediately_but_keeps_single_flight() -> None:
+    entered = threading.Event()
+    release = threading.Event()
+
+    class Segment:
+        text = " text"
+
+    class Model:
+        def transcribe(self, path, **kwargs):
+            del path, kwargs
+            entered.set()
+            release.wait()
+            return iter([Segment()]), object()
+
+    service = FasterWhisperSttService(
+        model_factory=lambda *args, **kwargs: Model(),
+    )
+
+    first = asyncio.create_task(service.transcribe(Path("one.wav")))
+
+    for _ in range(100):
+        if entered.is_set():
+            break
+        await asyncio.sleep(0.001)
+    assert entered.is_set()
+
+    first.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(first, timeout=0.05)
+
+    second = asyncio.create_task(service.transcribe(Path("two.wav")))
+    await asyncio.sleep(0.01)
+
+    # The cancelled caller is already gone, but its worker thread still owns
+    # the single-flight lock until the real Whisper inference returns.
+    assert second.done() is False
+
+    release.set()
+    assert await second == "text"
+    await service.unload()
+
+
+@pytest.mark.asyncio
 async def test_idle_unload_is_reset_by_activity_and_call_residency() -> None:
     class Model:
         def transcribe(self, path, **kwargs): return iter(()), object()

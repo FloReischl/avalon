@@ -73,19 +73,36 @@ class FasterWhisperSttService:
 
     async def transcribe(self, audio_path: Path) -> str:
         """Run one chunk, never concurrently with another Whisper inference."""
+        work = asyncio.create_task(
+            self._transcribe_locked(audio_path),
+            name="avalo-whisper-inference",
+        )
+        try:
+            return await asyncio.shield(work)
+        except asyncio.CancelledError:
+            # asyncio cannot stop the worker thread. Let it finish while it
+            # continues to own the single-flight lock, but do not make the
+            # cancelled audio turn wait for it.
+            work.add_done_callback(self._consume_background_result)
+            raise
+
+    async def _transcribe_locked(self, audio_path: Path) -> str:
         async with self._lock:
             self._cancel_idle()
-            work = asyncio.create_task(asyncio.to_thread(self._transcribe_sync, audio_path))
             try:
-                return await asyncio.shield(work)
-            except asyncio.CancelledError:
-                try:
-                    await asyncio.shield(work)
-                except Exception:
-                    pass
-                raise
+                return await asyncio.to_thread(
+                    self._transcribe_sync,
+                    audio_path,
+                )
             finally:
                 self._schedule_idle()
+
+    @staticmethod
+    def _consume_background_result(task: asyncio.Task[str]) -> None:
+        try:
+            task.result()
+        except BaseException:
+            pass
 
     async def set_audio_call_active(self, active: bool) -> None:
         async with self._lock:
