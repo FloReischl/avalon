@@ -2,6 +2,8 @@ import sys
 from pathlib import Path
 import wave
 
+import pytest
+
 SPIKE_ROOT = Path(__file__).resolve().parents[2] / "spikes" / "tts_comparison"
 sys.path.insert(0, str(SPIKE_ROOT.parent))
 
@@ -13,10 +15,10 @@ def test_fixed_matrix_has_each_engine_for_each_text():
     texts = load_json(SPIKE_ROOT / "texts.json")
 
     assert {(engine, text["id"]) for engine, text in matrix(config, texts)} == {
-        ("piper", "news"), ("piper", "suspense"), ("piper", "erotic"), ("piper", "greeting"), 
-        ("kokoro_victoria", "news"), ("kokoro_victoria", "suspense"), ("kokoro_victoria", "erotic"), ("kokoro_victoria", "greeting"),
-        ("kokoro_kerstin", "news"), ("kokoro_kerstin", "suspense"), ("kokoro_kerstin", "erotic"), ("kokoro_kerstin", "greeting"),
-        ("chatterbox", "news"), ("chatterbox", "suspense"), ("chatterbox", "erotic"), ("chatterbox", "greeting"),
+        ("piper", "news"), ("piper", "suspense"), ("piper", "erotic"), ("piper", "greeting"), ("piper", "longtext"), 
+        ("kokoro_victoria", "news"), ("kokoro_victoria", "suspense"), ("kokoro_victoria", "erotic"), ("kokoro_victoria", "greeting"), ("kokoro_victoria", "longtext"), 
+        ("kokoro_kerstin", "news"), ("kokoro_kerstin", "suspense"), ("kokoro_kerstin", "erotic"), ("kokoro_kerstin", "greeting"), ("kokoro_kerstin", "longtext"),
+        # ("chatterbox", "news"), ("chatterbox", "suspense"), ("chatterbox", "erotic"), ("chatterbox", "greeting"),
     }
 
 
@@ -33,3 +35,7 @@ def test_validate_wav_accepts_non_empty_mono_audio(tmp_path: Path):
     assert info.channels == 1
     assert info.sample_rate_hz == 16000
     assert info.duration_seconds > 0
+
+if __name__ == "__main__":
+    # Führt alle Tests in genau dieser Datei aus (__file__)
+    pytest.main([__file__, "-v", "-s"])
