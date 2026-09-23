@@ -157,6 +157,7 @@ class StreamingPcmChunker:
         self._step_frames = int(STEP_SECONDS * sample_rate_hz)
         self._pcm = bytearray()
         self._next_start_frame = 0
+        self._covered_through_frame = 0
         self._index = 0
 
     def add_pcm(self, pcm: bytes) -> list[AudioChunk]:
@@ -167,25 +168,30 @@ class StreamingPcmChunker:
         return self._complete_chunks()
 
     def finish(self) -> list[AudioChunk]:
-        """Return exactly one un-emitted final tail, if any."""
+        """Return one final tail only for audio not covered by a full window."""
         total_frames = len(self._pcm) // 2
+        if total_frames <= self._covered_through_frame:
+            return []
         if self._next_start_frame >= total_frames:
             return []
 
         chunk = self._write_chunk(self._next_start_frame, total_frames)
         self._next_start_frame = total_frames
+        self._covered_through_frame = total_frames
         return [chunk]
 
     def _complete_chunks(self) -> list[AudioChunk]:
         total_frames = len(self._pcm) // 2
         chunks: list[AudioChunk] = []
         while self._next_start_frame + self._window_frames <= total_frames:
+            end_frame = self._next_start_frame + self._window_frames
             chunks.append(
                 self._write_chunk(
                     self._next_start_frame,
-                    self._next_start_frame + self._window_frames,
+                    end_frame,
                 )
             )
+            self._covered_through_frame = end_frame
             self._next_start_frame += self._step_frames
         return chunks
 

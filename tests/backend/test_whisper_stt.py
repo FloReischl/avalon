@@ -154,3 +154,38 @@ def test_streaming_chunker_emits_full_windows_before_finish(
         (24.0, 27.0),
     ]
     assert chunker.finish() == []
+
+
+@pytest.mark.parametrize(
+    ("seconds", "expected"),
+    [
+        (10, [(0.0, 10.0)]),
+        (18, [(0.0, 10.0), (8.0, 18.0)]),
+        (
+            27,
+            [
+                (0.0, 10.0),
+                (8.0, 18.0),
+                (16.0, 26.0),
+                (24.0, 27.0),
+            ],
+        ),
+    ],
+)
+def test_streaming_chunker_only_emits_uncovered_final_tail(
+    tmp_path: Path,
+    seconds: int,
+    expected: list[tuple[float, float]],
+) -> None:
+    chunker = StreamingPcmChunker(
+        sample_rate_hz=10,
+        output_directory=tmp_path,
+    )
+
+    chunks = chunker.add_pcm(b"\0\0" * (seconds * 10))
+    chunks.extend(chunker.finish())
+
+    assert [
+        (item.start_seconds, item.end_seconds)
+        for item in chunks
+    ] == expected

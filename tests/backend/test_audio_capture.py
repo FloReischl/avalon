@@ -141,7 +141,6 @@ async def test_full_pcm_window_is_streamed_before_stop(
         (chunk.start_seconds, chunk.end_seconds) for chunk in chunks
     ] == [
         (0.0, 10.0),
-        (8.0, 10.0),
     ]
     assert captured.duration_seconds == pytest.approx(10.0)
 
