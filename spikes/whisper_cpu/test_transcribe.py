@@ -85,7 +85,7 @@ def test_long_audio_chunked(tmp_path):
     chunks = create_audio_chunks(
         LONG_AUDIO,
         tmp_path,
-        chunk_seconds=5.0,
+        chunk_seconds=10.0,
         overlap_seconds=2.0,
     )
 
