@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from app.audio.capture import CapturedAudio
 from app.services.audio_text_chat import (
     AudioTextChatService,
     AudioTurnError,
@@ -52,17 +53,37 @@ class BlockingStt(FakeStt):
 
 
 class FakeRecorder:
-    def __init__(self) -> None:
+    def __init__(self, captured: CapturedAudio | None = None) -> None:
         self.started = False
         self.aborted = False
         self.chunk_sink = None
+        self._captured = captured
 
     async def start(self, chunk_sink) -> None:
         self.started = True
         self.chunk_sink = chunk_sink
 
+    async def stop(self) -> CapturedAudio:
+        if self._captured is None:
+            raise AssertionError("The test did not configure captured audio.")
+        return self._captured
+
     async def abort(self) -> None:
         self.aborted = True
+
+
+class FakeRuntime:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def generate_text_stream(self, messages):
+        del messages
+        self.calls += 1
+
+        async def generate():
+            yield "Antwort"
+
+        return generate()
 
 
 def chunk(name: str) -> AudioChunk:
@@ -157,3 +178,32 @@ async def test_ptt_starts_capture_without_waiting_for_whisper() -> None:
     await service.abort_recording()
 
     assert recorder.aborted is True
+
+
+@pytest.mark.asyncio
+async def test_chunk_failure_never_calls_the_llm(
+    tmp_path: Path,
+) -> None:
+    captured = CapturedAudio(
+        path=tmp_path / "recording.wav",
+        duration_seconds=10.0,
+        sample_rate_hz=16_000,
+        channels=1,
+    )
+    recorder = FakeRecorder(captured)
+    runtime = FakeRuntime()
+    service = AudioTextChatService(
+        recorder=recorder,
+        runtime=runtime,
+        stt=FakeStt(error=RuntimeError("Whisper unavailable")),
+    )
+
+    await service.start_recording()
+    assert recorder.chunk_sink is not None
+    await recorder.chunk_sink(chunk("failed.wav"))
+
+    with pytest.raises(AudioTurnError, match="fehlgeschlagen"):
+        async for _event in service.stream_response_with_transcription([]):
+            pass
+
+    assert runtime.calls == 0
