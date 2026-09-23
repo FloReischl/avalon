@@ -9,7 +9,7 @@ Arbeitsindex für Frieda: Impact-Analyse, Implementierungsplanung, Abhängigkeit
 - **Frontend:** Vue 3, TypeScript, Vite in `frontend`; Roots: Avatar `frontend/src/App.vue`, Chat `frontend/src/ChatWindow.vue`; HTTP zum Backend.
 - **Backend:** Python, FastAPI, MCP Python SDK v2 in `backend/app`; API, MCP, Application, SQLite-Persistenz, Runtime-Adapter, Audio, TTS, Konfiguration.
 - **Transport:** loopback-only `127.0.0.1:8095`, JSON, SSE mit JSON-`data`, keine Authentisierung; API `/api/v1`, MCP `/mcp`.
-- **MCP-Fähigkeit:** `music.play_tracks`.
+- **MCP-Fähigkeiten:** `music.play_tracks`, `web.search`.
 
 ### Desktop- und Fensterverhalten
 
@@ -25,7 +25,7 @@ Arbeitsindex für Frieda: Impact-Analyse, Implementierungsplanung, Abhängigkeit
 - Start immer mit transientem New Chat; Persistenz beim ersten Senden. Persistierte Chats listen/öffnen vollständige Historie.
 - Aktiver Kontext: Avatar-Systeminstruktionen + komprimierte Historie + Nachrichten nach `compressed_through_seq`; Audio mit persistierter `chat_id` rekonstruiert denselben Kontext serverseitig.
 - Nach vollständigen Text- und Audioturns best-effort asynchrone Komprimierung. Terminales `chat_context_compression_failed` blockiert Text/Audioturns mit HTTP 409.
-- Persona/Instruktionen des effektiven Standardavatars sind eine Systemmessage für Assistenten-Text und -Audio, nie für Transkription oder automatische Titel.
+- Aktueller Zeitpunkt/Lokation sowie Persona/Instruktionen des effektiven Standardavatars sind eine Systemmessage für Assistenten-Text und -Audio, nie für Transkription oder automatische Titel.
 - Assistant-Text nur komplett erfolgreich persistieren; Abbruch/Fehler-Teilausgabe nie. Nach exakt zwei kompletten Textrunden ein Titelversuch; manuelle Titel unterdrücken ihn dauerhaft.
 - Chats: Pin, Umbenennen, physisch löschen, Markdown exportieren. Reihenfolge im Backend nach Aktivität; UI separiert angeheftete Chats. Löschen des sichtbaren Chats => leeres New Chat.
 - Audio-UI: Placeholder `🎤 Sprachnachricht`; erfolgreiche Transkription ersetzt ihn, wird normale User-Nachricht und Kontext; Fehler/Abbruch behält Placeholder. Assistant und Transkript streamen/persistieren unabhängig. WAV löschen erst nach Abschluss/Abbruch beider Verbraucher.
@@ -64,10 +64,12 @@ Arbeitsindex für Frieda: Impact-Analyse, Implementierungsplanung, Abhängigkeit
 - Chatterbox: `ChatterboxTextToSpeech`, Multilingual V2, 4-bit bitsandbytes; satzorientierte Chunks. V3 gewann Qualitätsvergleich, verfügbarer Adapter bleibt V2.
 - Gemma bleibt GPU-resident; Kokoro ist wegen Ressourcen/Interaktion Default, Chatterbox bei gerechtfertigtem Qualitätsgewinn.
 
-### Musik
+### MCP-Fähigkeiten
 
 - `music.play_tracks` (`backend/app/mcp/music.py:register_music_tools`) über MCP Streamable HTTP `/mcp`.
 - `track_ids: list[int]` wird vollständig geloggt; `MusicService` löst `tracks.id → file_path` aus externer Musik-SQLite auf. Reihenfolge/Duplikate erhalten, unbekannte IDs auslassen; Playlist `/tmp/avalo_music.m3u`, Celluloid starten.
+- `web.search(query)` (`backend/app/mcp/web.py:register_web_tools`) delegiert an `WebSearchService`; vollständige Query vor Ausführung loggen.
+- `WebSearchService` nutzt `ddgs`/DuckDuckGo außerhalb des asyncio-Event-Loops: Region `de-de`, SafeSearch off, max. 5 Treffer, 10-s Timeout, keine Retries. Ergebnis `title`, `url`, `snippet`; keine Treffer `[]`, Provider-/Formatfehler propagieren.
 
 ## Module
 
@@ -98,7 +100,7 @@ Arbeitsindex für Frieda: Impact-Analyse, Implementierungsplanung, Abhängigkeit
 - `services/audio_chat.py:AudioChatService`: PTT/Dialog, WAV dual nutzen, `processing`, unabhängige Streams/Persistenz/Fehler, Avatar lazy, Placeholder erst bei Transkript/Assistant-Ausgabe sichtbar, Cleanup nach beiden Konsumenten.
 - `services/audio_call.py:AudioCallState`: genau ein globaler Call, gebundene Chat-ID, `turn_active`, eine pending Assistant-Speech; Ende leert Assoziation/Pending.
 - `services/tts.py`: `TtsBusyError`, `TtsResult(playback_id,audio)`, single-flight inkl. Cancellation, Playback-ID, Idle-Unload.
-- `mcp/server.py`: MCP Streamable-HTTP-Komposition; `mcp/music.py`: Musik-Grenze über `MusicService`.
+- `mcp/server.py`: MCP Streamable-HTTP-Komposition und Tool-Registrierung; `mcp/music.py`: Musik-Grenze über `MusicService`; `mcp/web.py`: Websuch-Grenze über `WebSearchService`.
 
 ### Backend: Runtime, Audio und TTS-Adapter
 
@@ -145,7 +147,7 @@ Arbeitsindex für Frieda: Impact-Analyse, Implementierungsplanung, Abhängigkeit
 - Audio: `test_audio_capture.py`, `test_audio_chat_contract.py`, `test_audio_dialog.py`; Mikrofonintegration `tests/integration/test_audio_capture_integration.py` mit `AVALO_TEST_MICROPHONE=1`.
 - TTS: `test_tts_contract.py`, `test_tts_service.py`, `test_tts_factory.py`, `test_tts_kokoro.py`, `test_tts_blueprint.py`; Kokoro-Integration `tests/integration/test_kokoro_tts_integration.py` mit `AVALO_RUN_TTS_INTEGRATION=1` und Marker.
 - UI/User-Konfiguration: `test_ui_config_contract.py`, `test_user_config.py`, `test_config.py`, `test_health.py`.
-- Commands/MCP/Musik: `test_commands.py`, `test_mcp_music.py`, `test_music_service.py`, `test_music_repository.py`, `test_music_adapters.py`, Integration `tests/integration/test_music_mcp.py`.
+- Commands/MCP/Musik/Web: `test_commands.py`, `test_mcp_music.py`, `test_mcp_web.py`, `test_web_search_service.py`, `test_music_service.py`, `test_music_repository.py`, `test_music_adapters.py`, Integration `tests/integration/test_music_mcp.py`.
 - Frontend: `tests/frontend/App.spec.ts`, `ChatWindow.spec.ts`, `useTransientChat.spec.ts`; bei konkreten Flows ggf. auch `backend.spec.ts`, `backend.dialog.spec.ts`, `useTransientChat.dialog.spec.ts`, `MarkdownMessage.spec.ts`, `externalLinks.spec.ts` prüfen.
 - Fixture `tests/data/german-transcription.wav`: reale Native-Audio-Integration; erwartete Antwort enthält derzeit `diagnostizierte`.
 
@@ -165,7 +167,7 @@ Arbeitsindex für Frieda: Impact-Analyse, Implementierungsplanung, Abhängigkeit
 | Frontend-Chat | ChatWindow, Hook, Backend, Types, Markdown-Komponenten, Links, ChatWindow-Service/Main, Frontendtests, Chat-Schemas/Route |
 | Desktop-Shell | Tauri Main/Backend/Config/Icon, Desktop Entry/Installer, Frontend Main/App/ChatWindow/Window-Services/Styles, App-Tests |
 | Native Inputregionen | `input_shape.rs`, Tauri Main, Frontend InputShape/App/Styles, App-Tests; Alpha-Regionen/CORS und post-resize Geometrie erhalten |
-| MCP/Musik | `main.py`, MCP Server/Musik, MusicService/Repository/Playlist/Player, MCP/Musik-Tests, optional Config/Integration |
+| MCP/Capabilities | `main.py`, `mcp/server.py`, `mcp/music.py`, `mcp/web.py`, `services/web_search.py`, MusicService/Repository/Playlist/Player, `pyproject.toml`, MCP-/Web-/Musik-Tests, optional Musik-Integration |
 
 ## Architekturgrenzen und Status
 
@@ -176,6 +178,6 @@ Arbeitsindex für Frieda: Impact-Analyse, Implementierungsplanung, Abhängigkeit
 - TTS hinter austauschbarem Python-Adapter — `docs/adrs/07-tts-output.md`.
 - Dieser Index ist kompakt, nicht autoritativ — `docs/adrs/08-incremental-repo-map-as-ai-working-index.md`.
 - Kleine lokale Patches erst nach genauer Quellprüfung, dann Finaldiff/Testreview — `docs/adrs/09-prompt2code-source-patching.md`.
-- Implementiert: FastAPI/Health/Streaming-Chat, persistierte Chats/Kompression, Ollama-Spikes, Tauri-Shell/Backend-Lifecycle/Avatar-Interaktion/X11-Input-Shape, Chat-UI/Markdown, PTT/Dialog/Call, MCP-Musik, lokales TTS inkl. Avatar Call read-aloud.
+- Implementiert: FastAPI/Health/Streaming-Chat, persistierte Chats/Kompression, Ollama-Spikes, Tauri-Shell/Backend-Lifecycle/Avatar-Interaktion/X11-Input-Shape, Chat-UI/Markdown, PTT/Dialog/Call, MCP-Musik/Websuche, lokales TTS inkl. Avatar Call read-aloud.
 - Verträge/Stubs: `AudioInputPreparer`, llama.cpp-Runtime. Nicht vorhanden: Memory, Production Packaging.
 - Offen: finale lokale LLM-Runtime und Gemma-4-Audiofeasibility, Chatterbox Ressourcen/Qualität, Audio-Chunking/inkrementelle Ollama-Verarbeitung.
