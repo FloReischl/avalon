@@ -166,10 +166,13 @@ class AudioTextChatService:
         if transcription is None:
             raise AudioTurnError("Keine aktive Sprachaufnahme.")
 
+        captured: CapturedAudio | None = None
         try:
             captured = await self._recorder.stop()
             transcript = await transcription.finish()
         except BaseException:
+            if captured is not None:
+                self._schedule_capture_cleanup(captured)
             await transcription.cancel()
             raise
 
@@ -192,6 +195,7 @@ class AudioTextChatService:
         )
         transcription.start()
 
+        captured: CapturedAudio | None = None
         try:
             captured = await self._recorder.capture_dialog_turn(
                 transcription.enqueue,
@@ -199,6 +203,8 @@ class AudioTextChatService:
             yield AudioStreamEvent(kind="processing")
             transcript = await transcription.finish()
         except BaseException:
+            if captured is not None:
+                self._schedule_capture_cleanup(captured)
             await transcription.cancel()
             raise
 
@@ -250,15 +256,19 @@ class AudioTextChatService:
         except TimeoutError as exc:
             raise AudioTurnError("Sprachverarbeitung abgelaufen") from exc
         finally:
-            captured.path.unlink(missing_ok=True)
-            if captured.chunk_directory is not None:
-                asyncio.create_task(
-                    asyncio.to_thread(
-                        shutil.rmtree,
-                        captured.chunk_directory,
-                        ignore_errors=True,
-                    )
+            self._schedule_capture_cleanup(captured)
+
+    @staticmethod
+    def _schedule_capture_cleanup(captured: CapturedAudio) -> None:
+        captured.path.unlink(missing_ok=True)
+        if captured.chunk_directory is not None:
+            asyncio.create_task(
+                asyncio.to_thread(
+                    shutil.rmtree,
+                    captured.chunk_directory,
+                    ignore_errors=True,
                 )
+            )
 
     def _persist_and_build_context(
         self,

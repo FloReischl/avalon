@@ -50,3 +50,39 @@ def test_dialog_turn_does_not_end_during_long_speech() -> None:
 
     assert not buffer.add_chunk(pcm(1000, 40))
     assert buffer.pcm == pcm(1000, 40)
+
+
+def test_dialog_streams_only_accepted_pcm_once() -> None:
+    buffer = _DialogTurnBuffer(
+        sample_rate_hz=10,
+        silence_seconds=3,
+        speech_threshold=0.01,
+    )
+
+    assert not buffer.add_chunk(pcm(0, 20))
+    assert buffer.take_new_pcm() == b""
+
+    assert not buffer.add_chunk(pcm(1000, 10))
+    assert buffer.take_new_pcm() == pcm(1000, 10)
+    assert buffer.take_new_pcm() == b""
+
+    assert buffer.add_chunk(pcm(0, 30))
+    assert buffer.take_new_pcm() == b""
+    assert buffer.pcm == pcm(1000, 10)
+
+
+def test_dialog_streams_a_short_pause_only_when_speech_resumes() -> None:
+    buffer = _DialogTurnBuffer(
+        sample_rate_hz=10,
+        silence_seconds=3,
+        speech_threshold=0.01,
+    )
+
+    assert not buffer.add_chunk(pcm(1000, 10))
+    assert buffer.take_new_pcm() == pcm(1000, 10)
+
+    assert not buffer.add_chunk(pcm(0, 20))
+    assert buffer.take_new_pcm() == b""
+
+    assert not buffer.add_chunk(pcm(1000, 10))
+    assert buffer.take_new_pcm() == pcm(0, 20) + pcm(1000, 10)

@@ -39,9 +39,8 @@ class FakeAudioChatService:
         self.received_chat_id = chat_id
         if self.error:
             raise self.error
-        yield AudioStreamEvent(kind="transcript", text="Mein ")
+        yield AudioStreamEvent(kind="transcript", text="Mein Text")
         yield AudioStreamEvent(kind="assistant", text="Hallo ")
-        yield AudioStreamEvent(kind="transcript", text="Text")
         yield AudioStreamEvent(kind="assistant", text="Flo")
 
     async def stream_dialog_response_with_transcription(
@@ -102,9 +101,8 @@ def test_audio_stop_streams_response_with_conversation_context() -> None:
     assert service.received_messages == messages
     assert service.received_chat_id == 42
     assert response.text == (
-        'event: transcript_chunk\ndata: {"text": "Mein "}\n\n'
+        'event: transcript_chunk\ndata: {"text": "Mein Text"}\n\n'
         'event: chunk\ndata: {"text": "Hallo "}\n\n'
-        'event: transcript_chunk\ndata: {"text": "Text"}\n\n'
         'event: chunk\ndata: {"text": "Flo"}\n\n'
         "event: done\ndata: {}\n\n"
     )
