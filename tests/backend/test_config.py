@@ -7,9 +7,6 @@ def test_local_api_address_is_fixed() -> None:
     assert settings.music_db_path == "/media/flo/2TB_SSD/music/mp3db.sqlite3"
 
 
-def test_gemma_audio_limit_is_recorded() -> None:
-    assert settings.audio_max_seconds == 30
-
 
 def test_ollama_runtime_settings_are_recorded() -> None:
     assert settings.ollama_host == "127.0.0.1:11434"

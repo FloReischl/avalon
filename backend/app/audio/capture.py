@@ -34,30 +34,23 @@ class _DialogTurnBuffer:
         self,
         *,
         sample_rate_hz: int,
-        max_duration_seconds: float,
         silence_seconds: float,
+
         speech_threshold: float,
     ) -> None:
         if sample_rate_hz <= 0:
             raise ValueError("sample_rate_hz must be positive")
-        if max_duration_seconds <= 0:
-            raise ValueError("max_duration_seconds must be positive")
         if silence_seconds <= 0:
             raise ValueError("silence_seconds must be positive")
         if not 0 < speech_threshold <= 1:
             raise ValueError("speech_threshold must be between 0 and 1")
 
-        self._max_samples = max(
-            1,
-            round(sample_rate_hz * max_duration_seconds),
-        )
         self._silence_limit_samples = max(
             1,
             round(sample_rate_hz * silence_seconds),
         )
         self._speech_threshold = speech_threshold
         self._speech_started = False
-        self._total_samples = 0
         self._silence_samples = 0
         self._pcm = bytearray()
 
@@ -86,7 +79,7 @@ class _DialogTurnBuffer:
 
         sample_count = len(samples)
         self._pcm.extend(pcm)
-        self._total_samples += sample_count
+
 
         if is_speech:
             self._silence_samples = 0
@@ -97,9 +90,6 @@ class _DialogTurnBuffer:
             del self._pcm[-self._silence_samples * 2 :]
             return True
 
-        if self._total_samples >= self._max_samples:
-            del self._pcm[self._max_samples * 2 :]
-            return True
 
         return False
 
@@ -122,14 +112,12 @@ class PipeWireRecorder:
     def __init__(
         self,
         *,
-        max_duration_seconds: float = settings.audio_max_seconds,
         output_directory: Path | None = None,
+
         dialog_silence_seconds: float = settings.audio_wait_exceed_seconds,
         dialog_speech_threshold: float = 0.015,
         dialog_sample_rate_hz: int = 16000,
     ) -> None:
-        if max_duration_seconds <= 0:
-            raise ValueError("max_duration_seconds must be positive")
         if dialog_silence_seconds <= 0:
             raise ValueError("dialog_silence_seconds must be positive")
         if not 0 < dialog_speech_threshold <= 1:
@@ -139,15 +127,14 @@ class PipeWireRecorder:
         if dialog_sample_rate_hz <= 0:
             raise ValueError("dialog_sample_rate_hz must be positive")
 
-        self._max_duration_seconds = max_duration_seconds
         self._output_directory = output_directory
+
         self._dialog_silence_seconds = dialog_silence_seconds
         self._dialog_speech_threshold = dialog_speech_threshold
         self._dialog_sample_rate_hz = dialog_sample_rate_hz
         self._process: CaptureProcess | None = None
         self._path: Path | None = None
         self._mode: str | None = None
-        self._timeout_task: asyncio.Task[None] | None = None
         self._lock = asyncio.Lock()
 
     @property
@@ -184,7 +171,6 @@ class PipeWireRecorder:
             self._process = process
             self._path = path
             self._mode = "ptt"
-            self._timeout_task = asyncio.create_task(self._abort_after_limit())
 
     async def stop(self) -> CapturedAudio:
         """Stop and return a valid, still unnormalized WAV recording."""
@@ -194,7 +180,6 @@ class PipeWireRecorder:
                     "The active recording is not push-to-talk.",
                 )
             process, path = self._take_active_recording()
-            self._cancel_timeout()
 
         was_running = process.returncode is None
         _, stderr = await self._finish_process(process)
@@ -213,7 +198,8 @@ class PipeWireRecorder:
             raise
 
     async def capture_dialog_turn(self) -> CapturedAudio:
-        """Wait for speech and return one silence- or limit-terminated turn."""
+        """Wait for speech and return one silence-terminated turn."""
+
         file_descriptor, temporary_name = tempfile.mkstemp(
             prefix="avalo-dialog-",
             suffix=".wav",
@@ -225,7 +211,6 @@ class PipeWireRecorder:
 
         detector = _DialogTurnBuffer(
             sample_rate_hz=self._dialog_sample_rate_hz,
-            max_duration_seconds=self._max_duration_seconds,
             silence_seconds=self._dialog_silence_seconds,
             speech_threshold=self._dialog_speech_threshold,
         )
@@ -278,8 +263,8 @@ class PipeWireRecorder:
                     async with self._lock:
                         if self._process is not process:
                             raise CaptureError("Dialog recording was aborted.")
+
                         active_process, active_path = self._take_active_recording()
-                        self._cancel_timeout()
                         process_owned = False
 
                     _, stderr = await active_process.communicate()
@@ -307,8 +292,8 @@ class PipeWireRecorder:
             async with self._lock:
                 if self._process is not process:
                     raise CaptureError("Dialog recording was aborted.")
+
                 active_process, active_path = self._take_active_recording()
-                self._cancel_timeout()
                 process_owned = False
 
             was_running = active_process.returncode is None
@@ -353,7 +338,6 @@ class PipeWireRecorder:
             if self._process is None or self._path is None:
                 return
             process, path = self._take_active_recording()
-            self._cancel_timeout()
 
         await self._finish_process(process)
         path.unlink(missing_ok=True)
@@ -379,23 +363,9 @@ class PipeWireRecorder:
                 return
 
             active_process, active_path = self._take_active_recording()
-            self._cancel_timeout()
 
         await self._finish_process(active_process)
         active_path.unlink(missing_ok=True)
-
-    def _cancel_timeout(self) -> None:
-        timeout_task = self._timeout_task
-        self._timeout_task = None
-        if timeout_task is not None and timeout_task is not asyncio.current_task():
-            timeout_task.cancel()
-
-    async def _abort_after_limit(self) -> None:
-        try:
-            await asyncio.sleep(self._max_duration_seconds)
-            await self.abort()
-        except asyncio.CancelledError:
-            pass
 
     @staticmethod
     async def _finish_process(

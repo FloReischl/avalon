@@ -1,4 +1,3 @@
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -39,6 +38,4 @@ async def test_ollama_runtime_integration():
     )
     assert streamed_response.strip(), "The streamed response from Ollama is empty or only contains whitespace."
 
-    # Generate from audio
-    response = await runtime.generate_from_audio(Path("tests/data/german-transcription.wav"))
-    assert "diagnostizierte" in response, "The response from Ollama does not contain the expected transcript content."
+

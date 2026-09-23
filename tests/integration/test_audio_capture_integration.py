@@ -15,7 +15,7 @@ from app.audio.capture import PipeWireRecorder
     reason="requires explicit microphone test opt-in",
 )
 async def test_pipewire_records_nonempty_wav() -> None:
-    recorder = PipeWireRecorder(max_duration_seconds=7)
+    recorder = PipeWireRecorder()
 
     await recorder.start()
     await asyncio.sleep(5)

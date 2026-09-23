@@ -120,20 +120,19 @@ async def test_abort_discards_recording(
 
 
 @pytest.mark.asyncio
-async def test_duration_limit_aborts_and_discards_recording(
+async def test_recording_does_not_auto_abort(
     tmp_path: Path,
     fake_pw_record,
 ) -> None:
-    recorder = PipeWireRecorder(
-        max_duration_seconds=0.01,
-        output_directory=tmp_path,
-    )
+    recorder = PipeWireRecorder(output_directory=tmp_path)
 
     await recorder.start()
     await asyncio.sleep(0.03)
 
+    assert recorder.is_recording is True
+    await recorder.abort()
     assert list(tmp_path.iterdir()) == []
-    assert recorder.is_recording is False
+
 
 
 @pytest.mark.asyncio

@@ -11,7 +11,20 @@ from app.api.schemas import AudioCallStartRequest
 from app.services.audio_call import AudioCallAlreadyActiveError, AudioCallState
 
 
+class FakeAudioCallService:
+    def __init__(self) -> None:
+        self.warmed = False
+        self.active_values: list[bool] = []
+
+    async def warm_up_stt(self) -> None:
+        self.warmed = True
+
+    async def set_audio_call_active(self, active: bool) -> None:
+        self.active_values.append(active)
+
+
 def test_audio_call_starts_unbound_and_can_bind_its_first_chat() -> None:
+
     state = AudioCallState()
 
     assert state.start() == state.get_status().__class__(True, None, False)
@@ -66,16 +79,32 @@ def test_second_audio_call_is_rejected() -> None:
 
 def test_call_routes_expose_and_clear_the_singleton_status(monkeypatch) -> None:
     state = AudioCallState()
+    service = FakeAudioCallService()
     monkeypatch.setattr(state_module, "_audio_call_state", state)
 
+    async def warm_up(self) -> None:
+        del self
+
+    monkeypatch.setattr(audio_routes.OllamaRuntime, "warm_up", warm_up)
+
     initial = asyncio.run(audio_routes.get_audio_call_status())
-    started = audio_routes.start_audio_call(AudioCallStartRequest(chat_id=42))
+    started = asyncio.run(
+        audio_routes.start_audio_call(
+            AudioCallStartRequest(chat_id=42),
+            service,
+        )
+    )
     active = asyncio.run(audio_routes.get_audio_call_status())
 
     with pytest.raises(HTTPException) as exc_info:
-        audio_routes.start_audio_call(AudioCallStartRequest())
+        asyncio.run(
+            audio_routes.start_audio_call(
+                AudioCallStartRequest(),
+                service,
+            )
+        )
 
-    ended = audio_routes.end_audio_call()
+    ended = asyncio.run(audio_routes.end_audio_call(service))
 
     assert initial.model_dump() == {
         "active": False,
@@ -92,3 +121,5 @@ def test_call_routes_expose_and_clear_the_singleton_status(monkeypatch) -> None:
     assert active == started
     assert exc_info.value.status_code == 409
     assert ended == initial
+    assert service.warmed is True
+    assert service.active_values == [True, False]

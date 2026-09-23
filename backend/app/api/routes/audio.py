@@ -1,7 +1,9 @@
 """Backend-local push-to-talk control and response streaming."""
 
+import asyncio
 from collections.abc import AsyncIterator
 import logging
+
 import sys
 import traceback
 from fastapi import APIRouter, Depends, HTTPException, Response, status
@@ -17,7 +19,8 @@ from app.audio.capture import CaptureError, PipeWireRecorder
 from app.persistence.chat_repository import ChatRepository
 from app.persistence.database import create_database_engine, create_session_factory
 from app.runtime.ollama import OllamaRuntime
-from app.services.audio_chat import AudioChatService
+from app.services.audio_text_chat import AudioTextChatService as AudioChatService
+
 from app.services.audio_call import (
     AudioCallAlreadyActiveError,
     AudioCallState,
@@ -50,22 +53,40 @@ async def get_audio_call_status() -> AudioCallStatusResponse:
 
 
 @router.post("/call/start", response_model=AudioCallStatusResponse)
-def start_audio_call(
+async def start_audio_call(
     request: AudioCallStartRequest,
+    service: AudioChatService = Depends(get_audio_chat_service),
 ) -> AudioCallStatusResponse:
-    """Start Avalo's one global avatar audio call."""
+    """Warm LLM and Whisper before publishing an active audio call."""
+    if get_audio_call_state().get_status().active:
+        raise HTTPException(status_code=409, detail="An audio call is already active.")
+
     try:
+        await asyncio.gather(
+            OllamaRuntime().warm_up(),
+            service.warm_up_stt(),
+        )
         status_value = get_audio_call_state().start(request.chat_id)
+        await service.set_audio_call_active(True)
     except AudioCallAlreadyActiveError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Audio call unavailable.",
+        ) from exc
 
     return AudioCallStatusResponse(**status_value.__dict__)
 
 
 @router.post("/call/end", response_model=AudioCallStatusResponse)
-def end_audio_call() -> AudioCallStatusResponse:
-    """End Avalo's global avatar audio call and clear its association."""
-    return AudioCallStatusResponse(**get_audio_call_state().end().__dict__)
+async def end_audio_call(
+    service: AudioChatService = Depends(get_audio_chat_service),
+) -> AudioCallStatusResponse:
+    """End the call and re-enable Whisper's idle lifecycle."""
+    status_value = get_audio_call_state().end()
+    await service.set_audio_call_active(False)
+    return AudioCallStatusResponse(**status_value.__dict__)
 
 
 @router.post("/call/turn/complete", response_model=AudioCallStatusResponse)
@@ -139,10 +160,10 @@ async def stream_audio_response(
                     "transcript_chunk",
                     {"text": event.text},
                 )
-            elif event.kind == "transcript_error":
-                yield format_sse_event("transcript_error", {})
-            elif event.kind == "assistant_error":
-                assistant_failed = True
+            elif event.kind == "transcript":
+                yield format_sse_event("transcript_chunk", {"text": event.text})
+
+
     except Exception:
         logger.exception("[audio] response stream failed")
         yield format_sse_event("error", {})
@@ -206,10 +227,10 @@ async def stream_dialog_response(
                     "transcript_chunk",
                     {"text": event.text},
                 )
-            elif event.kind == "transcript_error":
-                yield format_sse_event("transcript_error", {})
-            elif event.kind == "assistant_error":
-                assistant_failed = True
+            elif event.kind == "transcript":
+                yield format_sse_event("transcript_chunk", {"text": event.text})
+
+
     except Exception as exc:
         logger.exception("[audio-dialog] response stream failed")
         yield format_sse_event("error", {"message": str(exc)})
