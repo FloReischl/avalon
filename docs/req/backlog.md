@@ -1,6 +1,10 @@
 todo
 
-- search
+- web access
+  - web search
+  - permission! agent -> permission model?
+  - load content
+  - 
 - agents/mcp monitor
 - internet suchen
 - log window
