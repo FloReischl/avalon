@@ -31,7 +31,8 @@ class Settings:
     llm_models: tuple[LlmConfig, ...] = (
         LlmConfig(
             key="standard",
-            model="qwen2.5-coder:7b-instruct-ctx16k",
+            model="qwen2.5-coder:14b-instruct-ctx16k",
+            # model="qwen2.5-coder:7b-instruct-ctx16k",
             # model="qwen2.5-coder:7b-instruct",
         ),
         LlmConfig(
