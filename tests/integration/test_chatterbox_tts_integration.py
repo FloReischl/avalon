@@ -10,8 +10,8 @@ from app.tts.chatterbox import ChatterboxTextToSpeech
 pytestmark = [
     pytest.mark.integration,
     pytest.mark.skipif(
-        os.environ.get("AVALO_RUN_TTS_INTEGRATION") != "1",
-        reason="Set AVALO_RUN_TTS_INTEGRATION=1 to run local Chatterbox TTS.",
+        os.environ.get("AVALON_RUN_TTS_INTEGRATION") != "1",
+        reason="Set AVALON_RUN_TTS_INTEGRATION=1 to run local Chatterbox TTS.",
     ),
 ]
 

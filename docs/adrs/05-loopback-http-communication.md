@@ -21,7 +21,7 @@ Vue/Tauri und das Python-Backend laufen in getrennten Prozessen. Die Schnittstel
 - Backend-Endpunkte lassen sich unabhängig von Tauri testen.
 - Der bekannte Port vereinfacht Entwicklungsstart und Frontend-Konfiguration.
 - Loopback begrenzt den Netzwerkzugriff, ist aber keine Authentifizierung.
-- Bevor Avalo zustandsändernde Werkzeuge erhält, muss der Schutz der lokalen API neu bewertet werden.
+- Bevor Avalon zustandsändernde Werkzeuge erhält, muss der Schutz der lokalen API neu bewertet werden.
 
 ## Verworfene Alternativen
 

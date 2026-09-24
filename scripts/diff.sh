@@ -1,3 +1,3 @@
 #!/bin/bash
 
-git diff --staged > ~/dev/avalo/data/diff.patch
+git diff --staged > ~/dev/avalon/data/diff.patch

@@ -75,7 +75,7 @@ class FasterWhisperSttService:
         """Run one chunk, never concurrently with another Whisper inference."""
         work = asyncio.create_task(
             self._transcribe_locked(audio_path),
-            name="avalo-whisper-inference",
+            name="avalon-whisper-inference",
         )
         try:
             return await asyncio.shield(work)

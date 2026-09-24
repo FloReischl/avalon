@@ -1,4 +1,4 @@
-# Avalo RepoMap
+# Avalon RepoMap
 
 Arbeitsindex für Frieda: Impact-Analyse, Implementierungsplanung, Abhängigkeitsnavigation und Auswahl der vor einer Änderung zu prüfenden Dateien. Keine autoritative Dokumentation: Vor jeder Umsetzung Quellcode prüfen. Nur aus akzeptiertem Endstand inkrementell aktualisieren; bei strukturellem Drift Repository neu analysieren.
 
@@ -17,11 +17,11 @@ Arbeitsindex für Frieda: Impact-Analyse, Implementierungsplanung, Abhängigkeit
 - `chat`: initial verborgen, resizable, mit Dekoration; Schließen versteckt Webview-State nur.
 - Avatar-Doppelklick zeigt/fokussiert vorhandenes Chatfenster. Geometrie-Persistenz nicht implementiert.
 - Chat-Laufzeitstatus geht über Tauri-Events an Avatar-Webview.
-- X11: native SHAPE-Inputregionen aus PNG-Alpha; beide Fenster erhalten das Avalo-Icon. Cinnamon/X11-Identität über Desktop-Entry mit `StartupWMClass=Avalo`.
+- X11: native SHAPE-Inputregionen aus PNG-Alpha; beide Fenster erhalten das Avalon-Icon. Cinnamon/X11-Identität über Desktop-Entry mit `StartupWMClass=Avalon`.
 
 ## Gespräche und Kontext
 
-- SQLite `~/.avalo/avalo.sqlite`, Alembic, SSE-Antworten.
+- SQLite `~/.avalon/avalon.sqlite`, Alembic, SSE-Antworten.
 - Start immer mit transientem New Chat; Persistenz beim ersten Senden. Persistierte Chats listen/öffnen vollständige Historie.
 - Aktiver Kontext: Avatar-Systeminstruktionen + komprimierte Historie + Nachrichten nach `compressed_through_seq`; Audio mit persistierter `chat_id` rekonstruiert denselben Kontext serverseitig.
 - Nach vollständigen Text- und Audioturns best-effort asynchrone Komprimierung. Terminales `chat_context_compression_failed` blockiert Text/Audioturns mit HTTP 409.
@@ -69,7 +69,7 @@ Arbeitsindex für Frieda: Impact-Analyse, Implementierungsplanung, Abhängigkeit
 ### MCP-Fähigkeiten
 
 - `music.play_tracks` (`backend/app/mcp/music.py:register_music_tools`) über MCP Streamable HTTP `/mcp`.
-- `track_ids: list[int]` wird vollständig geloggt; `MusicService` löst `tracks.id → file_path` aus externer Musik-SQLite auf. Reihenfolge/Duplikate erhalten, unbekannte IDs auslassen; Playlist `/tmp/avalo_music.m3u`, Celluloid starten.
+- `track_ids: list[int]` wird vollständig geloggt; `MusicService` löst `tracks.id → file_path` aus externer Musik-SQLite auf. Reihenfolge/Duplikate erhalten, unbekannte IDs auslassen; Playlist `/tmp/avalon_music.m3u`, Celluloid starten.
 - `web.search(query)` (`backend/app/mcp/web.py:register_web_tools`) delegiert an `WebSearchService`; vollständige Query vor Ausführung loggen.
 - `WebSearchService` nutzt `ddgs`/DuckDuckGo außerhalb des asyncio-Event-Loops: Region `de-de`, SafeSearch off, max. 5 Treffer, 10-s Timeout, keine Retries. Ergebnis `title`, `url`, `snippet`; keine Treffer `[]`, Provider-/Formatfehler propagieren.
 
@@ -91,7 +91,7 @@ Arbeitsindex für Frieda: Impact-Analyse, Implementierungsplanung, Abhängigkeit
 - `routes/tts.py`: Synthese und Playback-Lifecycle; `TtsService`, Factory.
 - `routes/ui.py`: `GET /ui/config`, nur frontend-sichere effektive Standardavatar-Daten; fertige absolute Asset-URLs mit Prozess-Cache-Token, keine Persona/Instruktionen/Pfade/TTS.
 - `routes/assets.py`: Bilder `GET /assets/avatar/images/{key}`, Greeting `GET /assets/avatar/greeting`; nur validierter effektiver Avatar, keine Client-Pfade; fehlendes Greeting protokollieren/404.
-- `backend/app/user_config.py`: `~/.avalo/config.yaml` einmal laden, immutable; unbekannte Felder ablehnen, eindeutige Avatar-Keys/Standardavatar/Animationen/Sprite-Regionen, Asset-Pfadgrenzen und Bilddateien validieren. Persona/Instruktionen pro Avatar; Greeting lazy/fehlend erlaubt. Relative Artefakte relativ zum Projekt; aktive Kokoro-Artefakte beim Start prüfen, inaktives Chatterbox-Referenzaudio nicht.
+- `backend/app/user_config.py`: `~/.avalon/config.yaml` einmal laden, immutable; unbekannte Felder ablehnen, eindeutige Avatar-Keys/Standardavatar/Animationen/Sprite-Regionen, Asset-Pfadgrenzen und Bilddateien validieren. Persona/Instruktionen pro Avatar; Greeting lazy/fehlend erlaubt. Relative Artefakte relativ zum Projekt; aktive Kokoro-Artefakte beim Start prüfen, inaktives Chatterbox-Referenzaudio nicht.
 
 ### Backend: Dienste und Persistenz
 
@@ -139,15 +139,15 @@ Arbeitsindex für Frieda: Impact-Analyse, Implementierungsplanung, Abhängigkeit
 - `src-tauri/src/backend.rs`: `scripts/others/start-backend.sh`, kein Uvicorn-Reload, stdout/stderr, Health-Poll, Status/Logs puffern, technische Fehler stderr, compensated Retries ruhig, Prozess stoppen.
 - `src-tauri/src/input_shape.rs`: X11 SHAPE, Frontend-Rechtecke, native Window-ID; Alpha-Masken, Controls künftig unionieren.
 - `src-tauri/tauri.conf.json`: Window-Definitionen, Chat min `700x500`, initial `1100x800`.
-- `data/blueprints/desktop/avalo.desktop`: Launcher/Icon via `AVALO_ROOT`, Dev-Tauri, `StartupWMClass`; `deploy/install-desktop-entry.sh` substituiert/installiert nach `~/.local/share/applications`.
+- `data/blueprints/desktop/avalon.desktop`: Launcher/Icon via `AVALON_ROOT`, Dev-Tauri, `StartupWMClass`; `deploy/install-desktop-entry.sh` substituiert/installiert nach `~/.local/share/applications`.
 - `src-tauri/icons/icon.png`: App- und Window-Icon.
 
 ## Tests und Fixtures
 
 - Chat: `tests/backend/test_chat_contract.py`, `test_chat_service.py`; Persistenz `test_chat_repository.py`, `test_chats_contract.py`; Kontext `test_context_compression_service.py`.
 - Runtime/LLM: `test_runtime_blueprint.py`, `test_ollama_runtime.py`, `test_llm_command.py`; reale Ollama-Integration `tests/integration/test_ollama_integration.py` (Marker, aktive lokale Gemma; Cancel bewusst nicht real).
-- Audio/STT: `test_audio_capture.py`, `test_audio_chat_contract.py`, `test_audio_dialog.py`, `test_audio_text_chat.py`, `test_whisper_stt.py`; reale faster-whisper-Transkription von `tests/data/german-transcription.wav` läuft im normalen Pytest-Lauf; Mikrofonintegration `tests/integration/test_audio_capture_integration.py` mit `AVALO_TEST_MICROPHONE=1`.
-- TTS: `test_tts_contract.py`, `test_tts_service.py`, `test_tts_factory.py`, `test_tts_kokoro.py`, `test_tts_blueprint.py`; Kokoro-Integration `tests/integration/test_kokoro_tts_integration.py` mit `AVALO_RUN_TTS_INTEGRATION=1` und Marker.
+- Audio/STT: `test_audio_capture.py`, `test_audio_chat_contract.py`, `test_audio_dialog.py`, `test_audio_text_chat.py`, `test_whisper_stt.py`; reale faster-whisper-Transkription von `tests/data/german-transcription.wav` läuft im normalen Pytest-Lauf; Mikrofonintegration `tests/integration/test_audio_capture_integration.py` mit `AVALON_TEST_MICROPHONE=1`.
+- TTS: `test_tts_contract.py`, `test_tts_service.py`, `test_tts_factory.py`, `test_tts_kokoro.py`, `test_tts_blueprint.py`; Kokoro-Integration `tests/integration/test_kokoro_tts_integration.py` mit `AVALON_RUN_TTS_INTEGRATION=1` und Marker.
 - UI/User-Konfiguration: `test_ui_config_contract.py`, `test_user_config.py`, `test_config.py`, `test_health.py`.
 - Commands/MCP/Musik/Web: `test_commands.py`, `test_mcp_music.py`, `test_mcp_web.py`, `test_web_search_service.py`, `test_music_service.py`, `test_music_repository.py`, `test_music_adapters.py`, Integration `tests/integration/test_music_mcp.py`.
 - Frontend: `tests/frontend/App.spec.ts`, `ChatWindow.spec.ts`, `useTransientChat.spec.ts`; bei konkreten Flows ggf. auch `backend.spec.ts`, `backend.dialog.spec.ts`, `useTransientChat.dialog.spec.ts`, `MarkdownMessage.spec.ts`, `externalLinks.spec.ts` prüfen.

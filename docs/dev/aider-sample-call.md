@@ -7,7 +7,7 @@
 
 
 ``` shell
-cd ~/dev/avalo
+cd ~/dev/avalon
 
 aider \
   --model ollama_chat/qwen2.5-coder:14b-instruct \

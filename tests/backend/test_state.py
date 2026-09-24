@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 from app.config import settings
-from app.state import AvaloState
+from app.state import AvalonState
 from app.user_config import load_user_config
 
 
@@ -12,7 +12,7 @@ BLUEPRINT_CONFIG = (
     PROJECT_ROOT
     / "data"
     / "blueprints"
-    / "user.avalo"
+    / "user.avalon"
     / "config.yaml"
 )
 
@@ -34,18 +34,18 @@ def config_with_second_avatar():
     )
 
 
-def test_avalo_state_starts_with_standard_avatar() -> None:
+def test_avalon_state_starts_with_standard_avatar() -> None:
     config = load_user_config(BLUEPRINT_CONFIG)
 
-    state = AvaloState(config)
+    state = AvalonState(config)
 
     assert state.user_config is config
     assert state.current_avatar is config.standard_avatar
 
 
-def test_avalo_state_starts_with_standard_llm() -> None:
+def test_avalon_state_starts_with_standard_llm() -> None:
     config = load_user_config(BLUEPRINT_CONFIG)
-    state = AvaloState(config)
+    state = AvalonState(config)
 
     standard = next(llm for llm in settings.llm_models if llm.key == "standard")
 
@@ -53,9 +53,9 @@ def test_avalo_state_starts_with_standard_llm() -> None:
     assert state.llm_inference_active is False
 
 
-def test_avalo_state_switches_current_llm() -> None:
+def test_avalon_state_switches_current_llm() -> None:
     config = load_user_config(BLUEPRINT_CONFIG)
-    state = AvaloState(config)
+    state = AvalonState(config)
 
     changed = state.set_current_llm("uncensored")
 
@@ -63,9 +63,9 @@ def test_avalo_state_switches_current_llm() -> None:
     assert state.current_llm.key == "uncensored"
 
 
-def test_avalo_state_rejects_unknown_llm_without_state_change() -> None:
+def test_avalon_state_rejects_unknown_llm_without_state_change() -> None:
     config = load_user_config(BLUEPRINT_CONFIG)
-    state = AvaloState(config)
+    state = AvalonState(config)
     selected = state.current_llm
 
     changed = state.set_current_llm("missing")
@@ -76,7 +76,7 @@ def test_avalo_state_rejects_unknown_llm_without_state_change() -> None:
 
 def test_llm_lookup_is_case_sensitive() -> None:
     config = load_user_config(BLUEPRINT_CONFIG)
-    state = AvaloState(config)
+    state = AvalonState(config)
 
     changed = state.set_current_llm("UNCENSORED")
 
@@ -84,9 +84,9 @@ def test_llm_lookup_is_case_sensitive() -> None:
     assert state.current_llm.key == "standard"
 
 
-def test_avalo_state_guards_llm_switch_state() -> None:
+def test_avalon_state_guards_llm_switch_state() -> None:
     config = load_user_config(BLUEPRINT_CONFIG)
-    state = AvaloState(config)
+    state = AvalonState(config)
 
     state.begin_llm_switch()
 
@@ -97,9 +97,9 @@ def test_avalo_state_guards_llm_switch_state() -> None:
     assert state.llm_switch_active is False
 
 
-def test_avalo_state_rejects_llm_switch_during_inference() -> None:
+def test_avalon_state_rejects_llm_switch_during_inference() -> None:
     config = load_user_config(BLUEPRINT_CONFIG)
-    state = AvaloState(config)
+    state = AvalonState(config)
 
     state.begin_llm_inference()
 
@@ -109,9 +109,9 @@ def test_avalo_state_rejects_llm_switch_during_inference() -> None:
     state.end_llm_inference()
 
 
-def test_avalo_state_tracks_concurrent_llm_inferences() -> None:
+def test_avalon_state_tracks_concurrent_llm_inferences() -> None:
     config = load_user_config(BLUEPRINT_CONFIG)
-    state = AvaloState(config)
+    state = AvalonState(config)
 
     state.begin_llm_inference()
     state.begin_llm_inference()
@@ -125,17 +125,17 @@ def test_avalo_state_tracks_concurrent_llm_inferences() -> None:
     assert state.llm_inference_active is False
 
 
-def test_avalo_state_rejects_llm_inference_counter_underflow() -> None:
+def test_avalon_state_rejects_llm_inference_counter_underflow() -> None:
     config = load_user_config(BLUEPRINT_CONFIG)
-    state = AvaloState(config)
+    state = AvalonState(config)
 
     with pytest.raises(RuntimeError, match="LLM inference counter underflow"):
         state.end_llm_inference()
 
 
-def test_avalo_state_switches_current_avatar() -> None:
+def test_avalon_state_switches_current_avatar() -> None:
     config = config_with_second_avatar()
-    state = AvaloState(config)
+    state = AvalonState(config)
 
     changed = state.set_current_avatar("second")
 
@@ -143,9 +143,9 @@ def test_avalo_state_switches_current_avatar() -> None:
     assert state.current_avatar.key == "second"
 
 
-def test_avalo_state_rejects_unknown_avatar_without_state_change() -> None:
+def test_avalon_state_rejects_unknown_avatar_without_state_change() -> None:
     config = config_with_second_avatar()
-    state = AvaloState(config)
+    state = AvalonState(config)
 
     assert state.set_current_avatar("second") is True
     selected = state.current_avatar
@@ -158,7 +158,7 @@ def test_avalo_state_rejects_unknown_avatar_without_state_change() -> None:
 
 def test_avatar_lookup_is_case_sensitive() -> None:
     config = config_with_second_avatar()
-    state = AvaloState(config)
+    state = AvalonState(config)
 
     changed = state.set_current_avatar("SECOND")
 

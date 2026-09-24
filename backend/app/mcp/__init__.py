@@ -1,1 +1,1 @@
-"""MCP interface exposed by the Avalo backend."""
+"""MCP interface exposed by the Avalon backend."""

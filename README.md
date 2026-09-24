@@ -1,6 +1,6 @@
-# Avalo
+# Avalon
 
-Lokales Entwicklungsgerüst für Avalo. Produktidee, Arbeitsweise und Architekturentscheidungen stehen unter [`docs/`](docs/).
+Lokales Entwicklungsgerüst für Avalon. Produktidee, Arbeitsweise und Architekturentscheidungen stehen unter [`docs/`](docs/).
 
 ## Voraussetzungen
 

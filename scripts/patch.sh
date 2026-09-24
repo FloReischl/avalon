@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# cd ~/dev/avalo
+# cd ~/dev/avalon
 # source .venv/bin/activate
 # cd ~/dev
 
-source ~/dev/avalo/.venv/bin/activate
+source ~/dev/avalon/.venv/bin/activate
 
-python ~/dev/avalo/scripts/base/prompt2code.py \
-  --input-script ~/dev/avalo/data/patch.p2c \
-  --target-dir ~/dev/avalo
+python ~/dev/avalon/scripts/base/prompt2code.py \
+  --input-script ~/dev/avalon/data/patch.p2c \
+  --target-dir ~/dev/avalon

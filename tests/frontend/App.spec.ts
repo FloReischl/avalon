@@ -2,7 +2,7 @@ import { flushPromises, mount } from "@vue/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
-  exitAvaloMock,
+  exitAvalonMock,
   getBackendSnapshotMock,
   listenToBackendLifecycleMock,
   showChatWindowMock,
@@ -22,7 +22,7 @@ const {
 
 
 
-  exitAvaloMock: vi.fn(),
+  exitAvalonMock: vi.fn(),
   getBackendSnapshotMock: vi.fn(),
   listenToBackendLifecycleMock: vi.fn(),
   showChatWindowMock: vi.fn(),
@@ -82,7 +82,7 @@ vi.mock("../../frontend/src/services/chatWindow", () => ({
 }));
 
 vi.mock("../../frontend/src/services/appLifecycle", () => ({
-  exitAvalo: exitAvaloMock,
+  exitAvalon: exitAvalonMock,
 }));
 
 vi.mock("../../frontend/src/services/windowDrag", () => ({
@@ -103,9 +103,9 @@ import App from "../../frontend/src/App.vue";
 
 describe("App", () => {
   beforeEach(() => {
-    exitAvaloMock.mockReset();
+    exitAvalonMock.mockReset();
     getBackendSnapshotMock.mockReset();
-    listenToBackendLifecycleMock.mockReset();
+    exitAvalonMock.mockResolvedValue(undefined);
     showChatWindowMock.mockReset();
     startDraggingMock.mockReset();
     resizeAvatarWindowMock.mockReset();
@@ -119,7 +119,7 @@ describe("App", () => {
     requestRuntimeWarmUpMock.mockReset();
     listenToAudioCallChangedMock.mockReset();
     publishAudioCallChangedMock.mockReset();
-    exitAvaloMock.mockResolvedValue(undefined);
+    exitAvalonMock.mockResolvedValue(undefined);
     setAvatarWindowTitleMock.mockResolvedValue(undefined);
     listenToAvatarRuntimeStateMock.mockResolvedValue(() => {});
     getAudioCallStatusMock.mockResolvedValue({
@@ -679,7 +679,7 @@ describe("App", () => {
     ).toContain("36rem");
   });
 
-  it("exits Avalo from the exit button", async () => {
+  it("exits Avalon from the exit button", async () => {
     getBackendSnapshotMock.mockResolvedValue({
       status: "ready",
       logs: ["Backend ready"],
@@ -695,7 +695,7 @@ describe("App", () => {
 
     await exitButton.trigger("click");
 
-    expect(exitAvaloMock).toHaveBeenCalledTimes(1);
+    expect(exitAvalonMock).toHaveBeenCalledTimes(1);
   });
 
   it("renders the avatar-owned call button", async () => {

@@ -7,7 +7,7 @@ from app.persistence.models import Chat, Message
 
 
 class ChatRepository:
-    """Store and retrieve persistent Avalo conversations."""
+    """Store and retrieve persistent Avalon conversations."""
 
     def __init__(self, session_factory: sessionmaker[Session]) -> None:
         self._session_factory = session_factory

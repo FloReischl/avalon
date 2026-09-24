@@ -22,7 +22,7 @@ src-tauri/target/debug/
 .DS_Store
 
 # Local runtime data
-.avalo/
+.avalon/
 *.log
 .aider*
 

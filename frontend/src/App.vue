@@ -22,7 +22,7 @@ import {
   setWindowInputRegions,
   type InputRegionRect,
 } from "./services/inputShape";
-import { exitAvalo } from "./services/appLifecycle";
+import { exitAvalon } from "./services/appLifecycle";
 import { showChatWindow } from "./services/chatWindow";
 import { startAvatarWindowDrag } from "./services/windowDrag";
 import { setAvatarWindowTitle } from "./services/windowTitle";
@@ -699,9 +699,9 @@ async function handleAvatarDoubleClick() {
 
 async function handleExit() {
   try {
-    await exitAvalo();
+    await exitAvalon();
   } catch (error) {
-    console.error("[app] failed to exit Avalo", error);
+    console.error("[app] failed to exit Avalon", error);
   }
 }
 
@@ -795,7 +795,7 @@ onBeforeUnmount(() => {
       data-testid="startup-panel"
     >
       <header class="startup-header">
-        <span>AVALO // LOCAL COMPANION</span>
+        <span>AVALON // LOCAL COMPANION</span>
         <span data-testid="backend-status">{{ backendStatus }}</span>
       </header>
 
@@ -804,7 +804,7 @@ onBeforeUnmount(() => {
           <span class="prompt">&gt;</span> {{ line }}
         </p>
         <p v-if="backendLogs.length === 0">
-          <span class="prompt">&gt;</span> Initializing Avalo …
+          <span class="prompt">&gt;</span> Initializing Avalon …
         </p>
       </div>
     </section>

@@ -1,4 +1,4 @@
-"""Tests for the Avalo persistence foundation."""
+"""Tests for the Avalon persistence foundation."""
 
 from pathlib import Path
 
@@ -17,11 +17,11 @@ from app.persistence.migrations import migration_script_location, run_migrations
 def test_database_path_is_per_user(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("HOME", str(tmp_path))
 
-    assert database_path() == tmp_path / ".avalo" / "avalo.sqlite"
+    assert database_path() == tmp_path / ".avalon" / "avalon.sqlite"
 
 
 def test_migrations_create_initial_schema(tmp_path: Path) -> None:
-    path = tmp_path / ".avalo" / "avalo.sqlite"
+    path = tmp_path / ".avalon" / "avalon.sqlite"
 
     run_migrations(path)
 
@@ -55,7 +55,7 @@ def test_migrations_create_initial_schema(tmp_path: Path) -> None:
 
 
 def test_migrations_are_idempotent(tmp_path: Path) -> None:
-    path = tmp_path / ".avalo" / "avalo.sqlite"
+    path = tmp_path / ".avalon" / "avalon.sqlite"
 
     run_migrations(path)
     run_migrations(path)
@@ -73,7 +73,7 @@ def test_migrations_are_idempotent(tmp_path: Path) -> None:
 
 
 def test_sqlite_foreign_keys_are_enabled(tmp_path: Path) -> None:
-    engine = create_database_engine(tmp_path / "avalo.sqlite")
+    engine = create_database_engine(tmp_path / "avalon.sqlite")
     try:
         with engine.connect() as connection:
             enabled = connection.execute(
@@ -88,7 +88,7 @@ def test_sqlite_foreign_keys_are_enabled(tmp_path: Path) -> None:
 def test_compression_migration_backfills_existing_message_sequences(
     tmp_path: Path,
 ) -> None:
-    path = tmp_path / "avalo.sqlite"
+    path = tmp_path / "avalon.sqlite"
     config = Config()
     config.set_main_option("script_location", str(migration_script_location()))
     config.set_main_option("sqlalchemy.url", database_url(path))

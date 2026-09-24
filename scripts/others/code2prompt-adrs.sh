@@ -1,7 +1,7 @@
 #!/bin/bash
 
-code2prompt ~/dev/avalo/docs/adrs \
-  -O ~/dev/avalo/data/code2prompt-adrs.md \
+code2prompt ~/dev/avalon/docs/adrs \
+  -O ~/dev/avalon/data/code2prompt-adrs.md \
   -F markdown \
   --exclude="**/node_modules/**" \
   --exclude="**/__pycache__/**" \

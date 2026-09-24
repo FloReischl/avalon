@@ -14,7 +14,7 @@ from app.services.tts import TtsBusyError, TtsService
 from app.tts.factory import create_tts_engine
 
 
-PLAYBACK_ID_HEADER = "X-Avalo-TTS-Playback-ID"
+PLAYBACK_ID_HEADER = "X-Avalon-TTS-Playback-ID"
 
 router = APIRouter(prefix="/tts", tags=["tts"])
 

@@ -25,7 +25,7 @@ from app.services.audio_call import (
     AudioCallAlreadyActiveError,
     AudioCallState,
 )
-from app.state import get_audio_call_state, get_avalo_state
+from app.state import get_audio_call_state, get_avalon_state
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +37,7 @@ _audio_chat_service = AudioChatService(
     PipeWireRecorder(),
     OllamaRuntime(),
     _audio_repository,
-    lambda: get_avalo_state().current_avatar,
+    lambda: get_avalon_state().current_avatar,
 )
 
 
@@ -143,7 +143,7 @@ async def stream_audio_response(
     messages: list[dict[str, str]],
     chat_id: int | None = None,
 ) -> AsyncIterator[str]:
-    """Translate audio chat output into Avalo's SSE protocol."""
+    """Translate audio chat output into Avalon's SSE protocol."""
     try:
         async for event in service.stream_response_with_transcription(
             messages,
@@ -189,7 +189,7 @@ async def stream_dialog_response(
     messages: list[dict[str, str]],
     chat_id: int | None = None,
 ) -> AsyncIterator[str]:
-    """Translate one automatic dialog turn into Avalo's SSE protocol."""
+    """Translate one automatic dialog turn into Avalon's SSE protocol."""
     try:
         async for event in service.stream_dialog_response_with_transcription(
             messages,

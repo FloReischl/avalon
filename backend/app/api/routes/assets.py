@@ -5,7 +5,7 @@ import logging
 from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import FileResponse
 
-from app.state import get_avalo_state
+from app.state import get_avalon_state
 from app.user_config import resolve_avatar_asset_path
 
 
@@ -17,7 +17,7 @@ router = APIRouter(prefix="/assets/avatar", tags=["assets"])
 @router.get("/images/{key}")
 async def avatar_image(key: str) -> FileResponse:
     """Return one configured image of the effective avatar by logical key."""
-    avatar = get_avalo_state().current_avatar
+    avatar = get_avalon_state().current_avatar
     images = avatar.images
 
     if key == "standard":
@@ -45,7 +45,7 @@ async def avatar_image(key: str) -> FileResponse:
 @router.get("/greeting")
 async def avatar_greeting_audio() -> FileResponse:
     """Return the configured greeting audio of the effective avatar."""
-    avatar = get_avalo_state().current_avatar
+    avatar = get_avalon_state().current_avatar
 
     try:
         path = resolve_avatar_asset_path(

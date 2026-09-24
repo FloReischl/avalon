@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Default capability for Avalo",
+  "description": "Default capability for Avalon",
   "windows": ["main", "chat"],
   "permissions": [
     "core:default",

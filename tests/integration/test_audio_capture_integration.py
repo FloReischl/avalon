@@ -11,7 +11,7 @@ from app.audio.capture import PipeWireRecorder
 @pytest.mark.integration
 @pytest.mark.asyncio
 @pytest.mark.skipif(
-    os.environ.get("AVALO_TEST_MICROPHONE") != "1",
+    os.environ.get("AVALON_TEST_MICROPHONE") != "1",
     reason="requires explicit microphone test opt-in",
 )
 async def test_pipewire_records_nonempty_wav() -> None:

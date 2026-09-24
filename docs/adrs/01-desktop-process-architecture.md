@@ -5,15 +5,15 @@
 
 ## Kontext
 
-Avalo ist zunächst eine lokale Linux-Desktop-Anwendung. UI, native Desktop-Funktionen und das Python-basierte KI-/Audio-Backend haben unterschiedliche technische Anforderungen.
+Avalon ist zunächst eine lokale Linux-Desktop-Anwendung. UI, native Desktop-Funktionen und das Python-basierte KI-/Audio-Backend haben unterschiedliche technische Anforderungen.
 
 ## Entscheidung
 
 - Tauri bildet die Desktop-Hülle.
 - Das Vue-Frontend läuft im Tauri-Webview.
 - Das Python-Backend läuft als eigener lokaler Prozess.
-- Tauri startet, überwacht und beendet den von Avalo gestarteten Backend-Prozess.
-- Eine nicht von Avalo gestartete externe Modell-Runtime wird nicht beendet.
+- Tauri startet, überwacht und beendet den von Avalon gestarteten Backend-Prozess.
+- Eine nicht von Avalon gestartete externe Modell-Runtime wird nicht beendet.
 - Zunächst wird nur der Entwicklungsstart aus dem Repository unterstützt.
 
 ## Konsequenzen

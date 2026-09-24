@@ -32,7 +32,7 @@ Entscheidungen, Absichten und offene Aufgaben. Füge keine Erklärungen hinzu.""
 
 
 class CompressionValidationError(ValueError):
-    """Raised when a compressor response does not satisfy Avalo's schema."""
+    """Raised when a compressor response does not satisfy Avalon's schema."""
 
 
 class CompressionBudgetError(ValueError):
@@ -65,7 +65,7 @@ EMPTY_COMPRESSED_CONTEXT = CompressedContext((), ())
 
 
 def estimate_tokens(serialized_input: str, chars_per_token: int = 3) -> int:
-    """Estimate tokens using Avalo's model-independent character rule."""
+    """Estimate tokens using Avalon's model-independent character rule."""
     if chars_per_token < 1:
         raise ValueError("chars_per_token must be positive.")
     return ceil(len(serialized_input) / chars_per_token)

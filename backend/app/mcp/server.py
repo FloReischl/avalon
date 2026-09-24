@@ -1,4 +1,4 @@
-"""MCP server construction for the integrated Avalo backend."""
+"""MCP server construction for the integrated Avalon backend."""
 
 from mcp.server import MCPServer
 
@@ -15,7 +15,7 @@ def create_mcp_server(
     web_search_service: WebSearchService | None = None,
 ) -> MCPServer:
     """Create the MCP server mounted by the FastAPI backend."""
-    mcp = MCPServer("Avalo Backend")
+    mcp = MCPServer("Avalon Backend")
     register_music_tools(
         mcp,
         service or MusicService(MusicRepository(settings.music_db_path)),

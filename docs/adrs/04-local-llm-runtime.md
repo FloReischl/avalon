@@ -1,15 +1,15 @@
-# ADR 04: Lokale LLM-Runtime für Avalo
+# ADR 04: Lokale LLM-Runtime für Avalon
 
 - Status: Vorgeschlagen; durch Runtime-Spike zu bestätigen
 - Datum: 2026-08-26
 
 ## Kontext
 
-Avalos primäres Chatmodell ist Gemma 4 E4B. Text und nativer Audioinput sollen nach Möglichkeit über dieselbe lokale Runtime laufen. Ollama unterstützt den Textbetrieb, weist den gewählten Modell-Tag derzeit jedoch nicht verlässlich als Audioeingabe aus.
+Avalons primäres Chatmodell ist Gemma 4 E4B. Text und nativer Audioinput sollen nach Möglichkeit über dieselbe lokale Runtime laufen. Ollama unterstützt den Textbetrieb, weist den gewählten Modell-Tag derzeit jedoch nicht verlässlich als Audioeingabe aus.
 
 ## Entscheidung
 
-- Bevorzugter Kandidat für Avalo ist aktuelles `llama.cpp` mit CUDA, `llama-server`, Gemma-4-E4B-GGUF und zugehörigem multimodalem Projektor.
+- Bevorzugter Kandidat für Avalon ist aktuelles `llama.cpp` mit CUDA, `llama-server`, Gemma-4-E4B-GGUF und zugehörigem multimodalem Projektor.
 - Die Python-Anwendung greift über einen `ModelRuntime`-Adapter zu und kennt keine `llama.cpp`-Details.
 - Die Entscheidung wird erst nach einem reproduzierbaren Spike auf der RTX 4060 Laptop GPU mit 8 GB VRAM endgültig angenommen.
 

@@ -10,8 +10,8 @@ def get_audio_call_state() -> AudioCallState:
     return _audio_call_state
 
 
-class AvaloState:
-    """Process-local mutable runtime state for Avalo."""
+class AvalonState:
+    """Process-local mutable runtime state for Avalon."""
 
     def __init__(self, user_config: UserConfig) -> None:
         self._user_config = user_config
@@ -99,22 +99,22 @@ class AvaloState:
         return True
 
 
-_avalo_state: AvaloState | None = None
+_avalon_state: AvalonState | None = None
 
 
-def initialize_avalo_state(user_config: UserConfig) -> AvaloState:
-    """Initialize process-local Avalo runtime state exactly once."""
-    global _avalo_state
+def initialize_avalon_state(user_config: UserConfig) -> AvalonState:
+    """Initialize process-local Avalon runtime state exactly once."""
+    global _avalon_state
 
-    if _avalo_state is None:
-        _avalo_state = AvaloState(user_config)
+    if _avalon_state is None:
+        _avalon_state = AvalonState(user_config)
 
-    return _avalo_state
+    return _avalon_state
 
 
-def get_avalo_state() -> AvaloState:
-    """Return initialized process-local Avalo runtime state."""
-    if _avalo_state is None:
-        raise RuntimeError("Avalo state has not been initialized.")
+def get_avalon_state() -> AvalonState:
+    """Return initialized process-local Avalon runtime state."""
+    if _avalon_state is None:
+        raise RuntimeError("Avalon state has not been initialized.")
 
-    return _avalo_state
+    return _avalon_state

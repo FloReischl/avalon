@@ -23,7 +23,7 @@ class FakeWebSearchService:
         self.queries.append(query)
         if self.error:
             raise self.error
-        return [{"title": "Avalo", "url": "https://example.test", "snippet": "Local AI"}]
+        return [{"title": "Avalon", "url": "https://example.test", "snippet": "Local AI"}]
 
 
 def test_mcp_server_exposes_music_and_web_tools():
@@ -41,11 +41,11 @@ def test_web_tool_logs_full_query_and_delegates(caplog):
     register_web_tools(mcp, service)  # type: ignore[arg-type]
 
     with caplog.at_level(logging.INFO, logger="app.mcp.web"):
-        asyncio.run(mcp.call_tool("web.search", {"query": "Avalo local AI"}))
+        asyncio.run(mcp.call_tool("web.search", {"query": "Avalon local AI"}))
 
-    assert service.queries == ["Avalo local AI"]
+    assert service.queries == ["Avalon local AI"]
     record = next(record for record in caplog.records if "tool=web.search" in record.message)
-    assert json.loads(record.message.split("request=", 1)[1]) == {"query": "Avalo local AI"}
+    assert json.loads(record.message.split("request=", 1)[1]) == {"query": "Avalon local AI"}
 
 
 def test_web_tool_logs_query_before_provider_error(caplog):
@@ -55,7 +55,7 @@ def test_web_tool_logs_query_before_provider_error(caplog):
 
     with caplog.at_level(logging.INFO, logger="app.mcp.web"):
         with pytest.raises(Exception, match="Error executing tool web.search"):
-            asyncio.run(mcp.call_tool("web.search", {"query": "Avalo local AI"}))
+            asyncio.run(mcp.call_tool("web.search", {"query": "Avalon local AI"}))
 
-    assert service.queries == ["Avalo local AI"]
+    assert service.queries == ["Avalon local AI"]
     assert any("tool=web.search" in record.message for record in caplog.records)

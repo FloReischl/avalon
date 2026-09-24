@@ -1,0 +1,10 @@
+#!/usr/bin/env xdg-open
+[Desktop Entry]
+Type=Application
+Name=Avalon
+Comment=AI Virtual Assistant, Local Only
+Icon=@AVALON_ROOT@/src-tauri/icons/icon.png
+Exec=sh -c 'cd @AVALON_ROOT@/frontend && npm run tauri:dev'
+Terminal=true
+StartupWMClass=Avalon
+Categories=Development;

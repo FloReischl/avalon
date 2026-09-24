@@ -23,7 +23,7 @@ def _music_mcp_infrastructure_available() -> bool:
 
 @pytest.mark.skipif(
     not _music_mcp_infrastructure_available(),
-    reason="requires a running Avalo backend and music database",
+    reason="requires a running Avalon backend and music database",
 )
 @pytest.mark.integration
 def test_music_play_tracks_over_real_mcp_backend():

@@ -18,7 +18,7 @@ from app.persistence.models import Chat, Message
 @pytest.fixture
 def repository(tmp_path: Path):
     """Provide a repository backed by a migrated temporary database."""
-    path = tmp_path / "avalo.sqlite"
+    path = tmp_path / "avalon.sqlite"
     run_migrations(path)
 
     engine = create_database_engine(path)

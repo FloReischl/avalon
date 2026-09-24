@@ -1,4 +1,4 @@
-from app.state import AvaloState
+from app.state import AvalonState
 
 
 class AvatarCommand:
@@ -6,7 +6,7 @@ class AvatarCommand:
 
     key = "avatar_set"
 
-    def __init__(self, state: AvaloState) -> None:
+    def __init__(self, state: AvalonState) -> None:
         self._state = state
 
     async def execute(self, payload: str) -> str:

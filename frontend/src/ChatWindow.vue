@@ -833,7 +833,7 @@ function handleInputKeydown(event: KeyboardEvent) {
       :style="{ width: `${sidebarWidth}px` }"
     >
       <header class="sidebar-header">
-        <h1>Avalo</h1>
+        <h1>Avalon</h1>
       </header>
 
       <button

@@ -32,7 +32,7 @@ def runtime_state(
 ) -> FakeRuntimeState:
     state = FakeRuntimeState()
     monkeypatch.setattr(
-        "app.runtime.ollama.get_avalo_state",
+        "app.runtime.ollama.get_avalon_state",
         lambda: state,
     )
     return state

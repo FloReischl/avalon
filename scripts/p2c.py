@@ -7,14 +7,14 @@ import subprocess
 # # Gesamten Inhalt aus stdin lesen
 content = sys.stdin.read()
 
-patch_file = Path("~/dev/avalo/data/patch.p2c").expanduser()
+patch_file = Path("~/dev/avalon/data/patch.p2c").expanduser()
 patch_file.write_text(content)
 
 result = subprocess.run(
             [
-                "python3", str(Path("~/dev/avalo/scripts/base/prompt2code.py").expanduser()), 
+                "python3", str(Path("~/dev/avalon/scripts/base/prompt2code.py").expanduser()), 
                 "--input-script", str(patch_file),
-                "--target-dir", "~/dev/avalo",
+                "--target-dir", "~/dev/avalon",
             ],
 capture_output=True,
 text=True

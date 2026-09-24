@@ -1,4 +1,4 @@
-"""Editable per-user Avalo configuration."""
+"""Editable per-user Avalon configuration."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_vali
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-USER_CONFIG_PATH = Path("~/.avalo/config.yaml").expanduser()
+USER_CONFIG_PATH = Path("~/.avalon/config.yaml").expanduser()
 
 NonEmptyStr = Annotated[
     str,
@@ -177,7 +177,7 @@ class TtsUserConfig(StrictConfigModel):
 
 
 class UserConfig(StrictConfigModel):
-    """Validated editable Avalo configuration."""
+    """Validated editable Avalon configuration."""
 
     name: NonEmptyStr
     tts: TtsUserConfig

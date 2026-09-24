@@ -8,7 +8,7 @@ import httpx
 
 from app.config import settings
 from app.runtime.base import ModelRuntime
-from app.state import AvaloState, get_avalo_state
+from app.state import AvalonState, get_avalon_state
 
 
 class OllamaRuntime(ModelRuntime):
@@ -16,15 +16,15 @@ class OllamaRuntime(ModelRuntime):
 
     def __init__(
         self,
-        state_provider: Callable[[], AvaloState] | None = None,
+        state_provider: Callable[[], AvalonState] | None = None,
     ) -> None:
         self._state_provider = state_provider
 
-    def _state(self) -> AvaloState:
+    def _state(self) -> AvalonState:
         return (
             self._state_provider()
             if self._state_provider is not None
-            else get_avalo_state()
+            else get_avalon_state()
         )
 
     @asynccontextmanager

@@ -7,11 +7,11 @@
 
 ## Kontext
 
-Avalo benötigt eine lokale, möglichst natürliche deutsche Sprachausgabe. Niedrigste Latenz ist weniger wichtig als Natürlichkeit. Die erste produktnahe Nutzung ist das explizite Vorlesen einer abgeschlossenen Assistant-Nachricht; automatische Sprachausgabe im Dialog kann später denselben TTS-Pfad verwenden.
+Avalon benötigt eine lokale, möglichst natürliche deutsche Sprachausgabe. Niedrigste Latenz ist weniger wichtig als Natürlichkeit. Die erste produktnahe Nutzung ist das explizite Vorlesen einer abgeschlossenen Assistant-Nachricht; automatische Sprachausgabe im Dialog kann später denselben TTS-Pfad verwenden.
 
 Der TTS-Spike verglich unter anderem Piper, Kikiri/Kokoro und Chatterbox Multilingual. Chatterbox Multilingual V3 lieferte dabei die bevorzugte Sprachqualität. Die integrierte 4-Bit-V2-Variante konnte diese Qualität mit geringerem Speicherbedarf verfügbar machen, blieb im praktischen Read-Aloud-Betrieb jedoch deutlich schwergewichtiger und langsamer als Kokoro.
 
-Avalos primäre Funktion bleibt das lokale LLM. Auf der Zielhardware mit 8 GB VRAM soll Gemma vollständig auf der GPU resident bleiben. TTS soll deshalb möglichst wenig zusätzliche Ressourcen binden und darf keine LLM-Unload- oder reduzierte LLM-Offload-Strategie voraussetzen. Da Sprachqualität und Interaktionsgeschwindigkeit je nach Anwendungsfall unterschiedlich gewichtet werden können, bleibt die konkrete TTS-Engine konfigurierbar.
+Avalons primäre Funktion bleibt das lokale LLM. Auf der Zielhardware mit 8 GB VRAM soll Gemma vollständig auf der GPU resident bleiben. TTS soll deshalb möglichst wenig zusätzliche Ressourcen binden und darf keine LLM-Unload- oder reduzierte LLM-Offload-Strategie voraussetzen. Da Sprachqualität und Interaktionsgeschwindigkeit je nach Anwendungsfall unterschiedlich gewichtet werden können, bleibt die konkrete TTS-Engine konfigurierbar.
 
 ## Entscheidung
 
@@ -33,7 +33,7 @@ Avalos primäre Funktion bleibt das lokale LLM. Auf der Zielhardware mit 8 GB VR
 
 ## Begründung
 
-Chatterbox lieferte im Hörvergleich die für Avalo bevorzugte natürliche deutsche Stimme. Die zunächst bevorzugte V3-Variante benötigt in der verfügbaren Vollpräzisionsimplementierung zusammen mit dem vollständig auf der GPU residenten Gemma jedoch zu viel VRAM. Die verfügbare 4-Bit-Quantisierung auf Basis von Multilingual V2 reduzierte den Speicherbedarf ausreichend, blieb aber vergleichsweise rechenintensiv. CPU-Synthese war für die gewünschte Interaktion deutlich zu langsam.
+Chatterbox lieferte im Hörvergleich die für Avalon bevorzugte natürliche deutsche Stimme. Die zunächst bevorzugte V3-Variante benötigt in der verfügbaren Vollpräzisionsimplementierung zusammen mit dem vollständig auf der GPU residenten Gemma jedoch zu viel VRAM. Die verfügbare 4-Bit-Quantisierung auf Basis von Multilingual V2 reduzierte den Speicherbedarf ausreichend, blieb aber vergleichsweise rechenintensiv. CPU-Synthese war für die gewünschte Interaktion deutlich zu langsam.
 
 Kokoro erreicht nicht die bevorzugte Chatterbox-Sprachqualität, benötigt mit dem 82M-Basismodell aber erheblich weniger Ressourcen. Die reale Integration mit der deutschen Victoria-Stimme läuft auf der Zielhardware über CUDA wesentlich flüssiger als Chatterbox und kann neben dem vollständig GPU-residenten Gemma betrieben werden. Für häufige interaktive Sprachausgabe wie Read Aloud überwiegt dieser Laufzeitvorteil den Qualitätsvorsprung von Chatterbox.
 
@@ -45,13 +45,13 @@ Bei längeren monolithischen Chatterbox-Aufrufen trat trotz Quantisierung GPU-Ou
 
 Spike, Integrationstests und manuelle Read-Aloud-Nutzung haben bestätigt:
 
-- Chatterbox Multilingual besitzt für Avalo die bevorzugte deutsche Sprachqualität;
+- Chatterbox Multilingual besitzt für Avalon die bevorzugte deutsche Sprachqualität;
 - Chatterbox V2 mit 4-Bit-Quantisierung kann neben dem vollständig GPU-residenten Gemma betrieben werden;
 - längere Chatterbox-Texte funktionieren mit satzorientiertem Chunking ohne den zuvor beobachteten VRAM-Fehler;
 - Kokoro Victoria erzeugt lokal gültige WAV-Ausgabe mit 24 kHz;
 - `auto` wählt auf der Zielhardware erfolgreich CUDA;
 - Kokoro kann lazy geladen, vollständig entladen und anschließend erneut geladen und verwendet werden;
-- Kokoro Read Aloud funktioniert im realen Avalo-UI wesentlich flüssiger als Chatterbox;
+- Kokoro Read Aloud funktioniert im realen Avalon-UI wesentlich flüssiger als Chatterbox;
 - reale TTS-Modelltests bleiben explizit aktivierte Integrationstests; reguläre Unit-Tests laden keine großen Modelle.
 
 ## Konsequenzen

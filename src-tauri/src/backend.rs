@@ -50,7 +50,7 @@ impl BackendProcess {
         );
 
         let mut child = Command::new(&script)
-            .env("AVALO_TAURI_MANAGED", "1")
+            .env("AVALON_TAURI_MANAGED", "1")
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()

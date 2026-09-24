@@ -5,7 +5,7 @@
 
 ## Kontext
 
-Avalo soll Sprache möglichst direkt durch Gemma 4 verarbeiten. Ein separates Speech-to-Text-Modell würde zusätzliche Latenz, Ressourcen und eine weitere Fehlerquelle einführen.
+Avalon soll Sprache möglichst direkt durch Gemma 4 verarbeiten. Ein separates Speech-to-Text-Modell würde zusätzliche Latenz, Ressourcen und eine weitere Fehlerquelle einführen.
 
 ## Entscheidung
 

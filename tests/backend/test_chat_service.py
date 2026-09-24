@@ -48,7 +48,7 @@ def assert_runtime_context(
 
 @pytest.fixture
 def service(tmp_path: Path):
-    path = tmp_path / "avalo.sqlite"
+    path = tmp_path / "avalon.sqlite"
     run_migrations(path)
     engine = create_database_engine(path)
     repository = ChatRepository(create_session_factory(engine))

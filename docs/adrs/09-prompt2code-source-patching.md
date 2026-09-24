@@ -5,7 +5,7 @@
 
 ## Context
 
-Avalo uses frontier-model-assisted planning and local implementation workflows.
+Avalon uses frontier-model-assisted planning and local implementation workflows.
 
 For some implementation tasks, the generated source changes are sufficiently small and deterministic that a coding agent is unnecessary. In these cases, the required operation is primarily the reliable transport of explicitly specified source changes into the local repository.
 

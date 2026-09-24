@@ -1,4 +1,4 @@
-# Avalo – grobe Architektur
+# Avalon – grobe Architektur
 
 ## 1. Ziel des ersten Ausbaus
 
@@ -48,7 +48,7 @@ Gesprächskontext bleibt im Arbeitsspeicher und endet mit der Anwendung.
 ## 5. Repository
 
 ´´´
-avalo/
+avalon/
 ├── backend/
 ├── frontend/
 ├── src-tauri/

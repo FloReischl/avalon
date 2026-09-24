@@ -1,4 +1,4 @@
-"""Persistent Avalo chat models."""
+"""Persistent Avalon chat models."""
 
 from datetime import datetime
 
@@ -7,7 +7,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
 class Base(DeclarativeBase):
-    """Base class for Avalo persistence models."""
+    """Base class for Avalon persistence models."""
 
 
 class Chat(Base):

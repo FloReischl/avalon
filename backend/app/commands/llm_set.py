@@ -2,7 +2,7 @@ import logging
 
 from app.config import settings
 from app.runtime.ollama import OllamaRuntime
-from app.state import AvaloState
+from app.state import AvalonState
 
 
 logger = logging.getLogger(__name__)
@@ -15,7 +15,7 @@ class LlmCommand:
 
     def __init__(
         self,
-        state: AvaloState,
+        state: AvalonState,
         runtime: OllamaRuntime,
     ) -> None:
         self._state = state

@@ -134,14 +134,14 @@ def test_empty_transcript_is_a_defined_audio_turn_error() -> None:
 async def test_streaming_transcription_merges_serially() -> None:
     stt = FakeStt({
         "first.wav": "Hallo Welt,",
-        "second.wav": "welt, das ist Avalo",
+        "second.wav": "welt, das ist Avalon",
     })
     transcription = _StreamingTranscription(stt, asyncio.Queue())
     transcription.start()
     await transcription.enqueue(chunk("first.wav"))
     await transcription.enqueue(chunk("second.wav"))
 
-    assert await transcription.finish() == "Hallo Welt, das ist Avalo"
+    assert await transcription.finish() == "Hallo Welt, das ist Avalon"
     assert [path.name for path in stt.calls] == ["first.wav", "second.wav"]
     assert stt.maximum_active == 1
 

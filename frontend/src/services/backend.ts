@@ -312,7 +312,7 @@ export async function synthesizeSpeech(
   }
 
   const playbackId = response.headers.get(
-    "X-Avalo-TTS-Playback-ID",
+    "X-Avalon-TTS-Playback-ID",
   );
   if (!playbackId) {
     throw new Error("TTS response has no playback ID");

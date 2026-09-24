@@ -1,4 +1,4 @@
-"""Process-local state for Avalo's single avatar audio call."""
+"""Process-local state for Avalon's single avatar audio call."""
 
 from dataclasses import dataclass
 
@@ -18,7 +18,7 @@ class AudioCallStatus:
 
 
 class AudioCallState:
-    """Own the state of Avalo's one process-local avatar call.
+    """Own the state of Avalon's one process-local avatar call.
 
     The avatar remains responsible for driving the call.  This object is only
     the backend source of truth that other frontend windows can query.

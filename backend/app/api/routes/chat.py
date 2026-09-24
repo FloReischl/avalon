@@ -21,7 +21,7 @@ from app.services.chat import (
     ChatService,
     ChatTurn,
 )
-from app.state import get_avalo_state
+from app.state import get_avalon_state
 from app.state import get_audio_call_state
 
 logger = logging.getLogger(__name__)
@@ -35,7 +35,7 @@ def get_chat_service():
     repository = ChatRepository(create_session_factory(engine))
 
     try:
-        state = get_avalo_state()
+        state = get_avalon_state()
 
         yield ChatService(
             OllamaRuntime(),
@@ -48,7 +48,7 @@ def get_chat_service():
 
 
 def format_sse_event(event: str, data: dict[str, str]) -> str:
-    """Format one Avalo server-sent event."""
+    """Format one Avalon server-sent event."""
     return f"event: {event}\ndata: {json.dumps(data)}\n\n"
 
 
@@ -56,7 +56,7 @@ async def stream_chat_response(
     service: ChatService,
     turn: ChatTurn,
 ) -> AsyncIterator[str]:
-    """Translate one persistent chat turn into the Avalo SSE protocol."""
+    """Translate one persistent chat turn into the Avalon SSE protocol."""
     yield format_sse_event("chat", {"id": str(turn.chat_id)})
 
     response_text = ""
@@ -82,7 +82,7 @@ async def create_chat_response(
     request: ChatRequest,
     service: ChatService = Depends(get_chat_service),
 ) -> StreamingResponse:
-    """Persist and stream one text-chat turn as Avalo SSE events."""
+    """Persist and stream one text-chat turn as Avalon SSE events."""
     try:
         message = request.message.strip()
         turn = service.start_turn(request.chat_id, message)

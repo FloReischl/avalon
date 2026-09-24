@@ -2,7 +2,7 @@
 
 ## Role
 
-You are the implementation agent for the Avalo project.
+You are the implementation agent for the Avalon project.
 
 Product decisions, architectural decisions, requirements refinement, and task scoping are performed outside Aider.
 

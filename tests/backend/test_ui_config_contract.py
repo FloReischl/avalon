@@ -9,7 +9,7 @@ from httpx import ASGITransport, AsyncClient
 import app.state as state_module
 import app.user_config as user_config_module
 from app.main import create_app
-from app.state import initialize_avalo_state
+from app.state import initialize_avalon_state
 from app.user_config import initialize_user_config
 
 
@@ -18,7 +18,7 @@ BLUEPRINT_CONFIG = (
     PROJECT_ROOT
     / "data"
     / "blueprints"
-    / "user.avalo"
+    / "user.avalon"
     / "config.yaml"
 )
 
@@ -38,9 +38,9 @@ def request(path: str):
 
 def initialize_blueprint_config() -> None:
     user_config_module._user_config = None
-    state_module._avalo_state = None
+    state_module._avalon_state = None
     config = initialize_user_config(BLUEPRINT_CONFIG)
-    initialize_avalo_state(config)
+    initialize_avalon_state(config)
 
 
 def assert_avatar_asset_url(
@@ -134,7 +134,7 @@ def test_ui_config_keeps_avatar_cache_token_stable() -> None:
 
 def test_ui_config_uses_current_avatar() -> None:
     initialize_blueprint_config()
-    standard = state_module.get_avalo_state().current_avatar
+    standard = state_module.get_avalon_state().current_avatar
     reversed_images = standard.images.model_copy(
         update={
             "animations": list(reversed(standard.images.animations)),
@@ -158,8 +158,8 @@ def test_ui_config_uses_current_avatar() -> None:
         deep=True,
     )
 
-    state_module._avalo_state = None
-    state = initialize_avalo_state(config)
+    state_module._avalon_state = None
+    state = initialize_avalon_state(config)
     assert state.set_current_avatar("second") is True
 
     response = request("/api/v1/ui/config")

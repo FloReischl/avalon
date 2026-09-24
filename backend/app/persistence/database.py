@@ -8,18 +8,18 @@ from sqlalchemy.orm import Session, sessionmaker
 
 
 def database_path() -> Path:
-    """Return the per-user Avalo SQLite database path."""
-    return Path.home() / ".avalo" / "avalo.sqlite"
+    """Return the per-user Avalon SQLite database path."""
+    return Path.home() / ".avalon" / "avalon.sqlite"
 
 
 def database_url(path: Path | None = None) -> str:
-    """Return a SQLAlchemy URL for the Avalo SQLite database."""
+    """Return a SQLAlchemy URL for the Avalon SQLite database."""
     target = path or database_path()
     return f"sqlite:///{target}"
 
 
 def create_database_engine(path: Path | None = None) -> Engine:
-    """Create an Avalo SQLite engine and enable foreign-key enforcement."""
+    """Create an Avalon SQLite engine and enable foreign-key enforcement."""
     target = path or database_path()
     target.parent.mkdir(parents=True, exist_ok=True)
 
@@ -36,7 +36,7 @@ def create_database_engine(path: Path | None = None) -> Engine:
 
 
 def create_session_factory(engine: Engine) -> sessionmaker[Session]:
-    """Create sessions bound to one Avalo database engine."""
+    """Create sessions bound to one Avalon database engine."""
     return sessionmaker(bind=engine, expire_on_commit=False)
 
 

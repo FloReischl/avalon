@@ -1,2 +1,2 @@
-"""Avalo backend package."""
+"""Avalon backend package."""
 

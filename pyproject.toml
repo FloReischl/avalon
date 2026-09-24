@@ -3,9 +3,9 @@ requires = ["setuptools>=75"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "avalo-backend"
+name = "avalon-backend"
 version = "0.1.0"
-description = "Local backend for Avalo"
+description = "Local backend for Avalon"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115,<1",

@@ -1,14 +1,14 @@
-# Avalo – Letter of Intent
+# Avalon – Letter of Intent
 
 ## Absicht
 
-Avalo soll eine lokal betriebene Companion- und Assistant-Anwendung werden, deren Kern ein lokales Large Language Model bildet. Ziel ist eine deutlich natürlichere und persönlichere Interaktion als bei einem klassischen textbasierten Chatbot, bei zugleich weitgehender Unabhängigkeit von Cloud-Diensten.
+Avalon soll eine lokal betriebene Companion- und Assistant-Anwendung werden, deren Kern ein lokales Large Language Model bildet. Ziel ist eine deutlich natürlichere und persönlichere Interaktion als bei einem klassischen textbasierten Chatbot, bei zugleich weitgehender Unabhängigkeit von Cloud-Diensten.
 
-Der Projektname **Avalo** leitete sich ursprünglich von „Avatar Local“ ab. Heute "Augmented Virtual Assistant, Local/Offline", wird aber nicht Capital Case.
+Der Projektname **Avalon** leitete sich ursprünglich von „Avatar Local“ ab. Heute "Augmented Virtual Assistant, Local/Offline", wird aber nicht Capital Case.
 
 ## Produktvision
 
-Avalo verbindet langfristig mehrere Formen der Interaktion zu einem zusammenhängenden lokalen Erlebnis:
+Avalon verbindet langfristig mehrere Formen der Interaktion zu einem zusammenhängenden lokalen Erlebnis:
 
 - klassischen Text-Chat;
 - kontinuierliche beziehungsweise möglichst natürliche Sprachinteraktion;
@@ -24,7 +24,7 @@ Die visuelle Darstellung soll langfristig auch als weitgehend rahmenloser Charac
 
 ## Grundsätze
 
-Avalo wird nach folgenden Leitgedanken entwickelt:
+Avalon wird nach folgenden Leitgedanken entwickelt:
 
 1. **Local First:** Verarbeitung und Modelle sollen nach Möglichkeit lokal betrieben werden.
 2. **Natürliche Interaktion:** Sprache, Text und visuelle Reaktionen sollen sich zu einer möglichst flüssigen Kommunikation ergänzen.

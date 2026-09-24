@@ -1,6 +1,6 @@
 #!/bin/bash
 
-cd ~/dev/avalo/scripts
+cd ~/dev/avalon/scripts
 
 echo "Paste file list (finish with an empty line / Enter):"
 
@@ -17,18 +17,18 @@ done
 
 file_list=$(IFS=,; echo "${lines[*]}")
 
-# code2prompt ~/dev/avalo \
+# code2prompt ~/dev/avalon \
 #    --include="$file_list" \
 #    -F markdown \
-#    --output-file=~/dev/avalo/data/frieda-files.md
-#    # --output-file=/home/flo/dev/avalo/data/frieda-files.md
+#    --output-file=~/dev/avalon/data/frieda-files.md
+#    # --output-file=/home/flo/dev/avalon/data/frieda-files.md
 
-code2prompt ~/dev/avalo --include="$file_list" -F markdown --output-file=../data/frieda-files.md
+code2prompt ~/dev/avalon --include="$file_list" -F markdown --output-file=../data/frieda-files.md
 
 
 # #!/bin/bash
 
-# cd ~/dev/avalo/scripts
+# cd ~/dev/avalon/scripts
 
 # echo "Paste file list (complete with ENTER CTRL+d):"
 
@@ -37,9 +37,9 @@ code2prompt ~/dev/avalo --include="$file_list" -F markdown --output-file=../data
 # file_list=$(echo "$file_list" | paste -sd, -)
 # #echo $file_list
 
-# code2prompt ~/dev/avalo \
+# code2prompt ~/dev/avalon \
 #   --include="$file_list" \
 #   -F markdown \
 #   --output-file=./data/code2prompt-file-list.md
-# #  --output-file=~/dev/avalo/scripts/data/code2prompt-file-list.md
+# #  --output-file=~/dev/avalon/scripts/data/code2prompt-file-list.md
 

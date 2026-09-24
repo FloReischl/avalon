@@ -47,7 +47,7 @@ class _StreamingTranscription:
     def start(self) -> None:
         self.task = asyncio.create_task(
             self._consume(),
-            name="avalo-streaming-whisper",
+            name="avalon-streaming-whisper",
         )
 
     async def enqueue(self, chunk: AudioChunk) -> None:
@@ -126,7 +126,7 @@ class AudioTextChatService:
             await self._recorder.start(transcription.enqueue)
             warmup_task = asyncio.create_task(
                 self._warm_up_ptt(transcription),
-                name="avalo-ptt-whisper-warmup",
+                name="avalon-ptt-whisper-warmup",
             )
             warmup_task.add_done_callback(self._consume_background_task_result)
             self._recording_warmup_task = warmup_task

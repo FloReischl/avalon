@@ -62,9 +62,9 @@ def test_tts_returns_wav_and_playback_id() -> None:
 
     assert response.status_code == 200
     assert response.headers["content-type"] == "audio/wav"
-    assert response.headers["x-avalo-tts-playback-id"] == "playback-123"
+    assert response.headers["x-avalon-tts-playback-id"] == "playback-123"
     assert (
-        "X-Avalo-TTS-Playback-ID"
+        "X-Avalon-TTS-Playback-ID"
         in response.headers["access-control-expose-headers"]
     )
     assert response.content == b"RIFFfake-WAVE"

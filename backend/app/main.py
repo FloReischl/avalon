@@ -14,7 +14,7 @@ from app.config import settings
 from app.mcp.server import create_mcp_server
 from app.persistence.migrations import run_migrations
 from app.runtime.ollama import OllamaRuntime
-from app.state import initialize_avalo_state
+from app.state import initialize_avalon_state
 from app.user_config import initialize_user_config
 
 
@@ -55,7 +55,7 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
     async with application.state.mcp.session_manager.run():
         try:
             user_config = initialize_user_config()
-            initialize_avalo_state(user_config)
+            initialize_avalon_state(user_config)
             await validate_configured_llms(OllamaRuntime())
             run_migrations()
         except Exception:
@@ -90,7 +90,7 @@ def create_app() -> FastAPI:
         allow_credentials=False,
         allow_methods=["GET", "POST", "PATCH", "DELETE"],
         allow_headers=["Content-Type"],
-        expose_headers=["X-Avalo-TTS-Playback-ID"],
+        expose_headers=["X-Avalon-TTS-Playback-ID"],
 
     )
     application.include_router(api_router)

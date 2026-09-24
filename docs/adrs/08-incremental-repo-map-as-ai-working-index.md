@@ -6,7 +6,7 @@ Accepted
 
 ## Context
 
-The Avalo development workflow deliberately separates refinement, implementation planning,
+The Avalon development workflow deliberately separates refinement, implementation planning,
 code modification, execution, and review.
 
 For small and medium-sized work packages, Frieda may prepare implementation changes without
@@ -40,7 +40,7 @@ Its level of detail is intentionally adaptive:
 
 ## Decision
 
-Avalo maintains a human-readable RepoMap as a persistent AI working index.
+Avalon maintains a human-readable RepoMap as a persistent AI working index.
 
 The concrete serialization format (Markdown, YAML, JSON, or similar) is chosen based on what
 works best for Frieda. Human readability is required primarily for transparency and operational
@@ -165,7 +165,7 @@ mechanism.
 
 ## Principle
 
-> The RepoMap is not a map for humans to understand Avalo.
+> The RepoMap is not a map for humans to understand Avalon.
 > It is Frieda's compact working memory for knowing where to look next.
 
 If it fails at that job, Frieda owns the virtual nose-pulling.

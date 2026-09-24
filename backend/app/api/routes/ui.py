@@ -11,7 +11,7 @@ from app.api.schemas import (
     UiSpriteRegionResponse,
     UiStandardImageResponse,
 )
-from app.state import get_avalo_state
+from app.state import get_avalon_state
 
 
 router = APIRouter(prefix="/ui", tags=["ui"])
@@ -37,7 +37,7 @@ def _avatar_asset_url(
 @router.get("/config", response_model=UiConfigResponse)
 async def ui_config(request: Request) -> UiConfigResponse:
     """Return only configuration intentionally exposed to the frontend."""
-    state = get_avalo_state()
+    state = get_avalon_state()
     avatar = state.current_avatar
 
     return UiConfigResponse(

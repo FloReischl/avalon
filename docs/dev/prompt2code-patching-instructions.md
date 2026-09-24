@@ -1,6 +1,6 @@
 ## Prompt2Code (P2C) – Patch Format
 
-P2C is Avalo's deterministic source-code transport layer. It does not interpret code and must not use fuzzy matching or implicit corrections.
+P2C is Avalon's deterministic source-code transport layer. It does not interpret code and must not use fuzzy matching or implicit corrections.
 
 Patch format:
 - UTF-8, LF only.

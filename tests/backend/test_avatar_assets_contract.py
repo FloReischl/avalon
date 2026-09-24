@@ -9,7 +9,7 @@ from httpx import ASGITransport, AsyncClient
 import app.state as state_module
 import app.user_config as user_config_module
 from app.main import create_app
-from app.state import initialize_avalo_state
+from app.state import initialize_avalon_state
 from app.user_config import initialize_user_config
 
 
@@ -18,7 +18,7 @@ BLUEPRINT_CONFIG = (
     PROJECT_ROOT
     / "data"
     / "blueprints"
-    / "user.avalo"
+    / "user.avalon"
     / "config.yaml"
 )
 
@@ -38,9 +38,9 @@ def request(path: str):
 
 def initialize_blueprint_config() -> None:
     user_config_module._user_config = None
-    state_module._avalo_state = None
+    state_module._avalon_state = None
     config = initialize_user_config(BLUEPRINT_CONFIG)
-    initialize_avalo_state(config)
+    initialize_avalon_state(config)
 
 
 def test_standard_avatar_image_is_served() -> None:
@@ -72,7 +72,7 @@ def test_configured_animation_image_is_served() -> None:
 
 def test_avatar_assets_use_current_avatar() -> None:
     initialize_blueprint_config()
-    standard = state_module.get_avalo_state().current_avatar
+    standard = state_module.get_avalon_state().current_avatar
     alternate_asset = standard.images.animations[0].sprite_set
     alternate_images = standard.images.model_copy(
         update={"standard": alternate_asset},
@@ -95,8 +95,8 @@ def test_avatar_assets_use_current_avatar() -> None:
         deep=True,
     )
 
-    state_module._avalo_state = None
-    state = initialize_avalo_state(config)
+    state_module._avalon_state = None
+    state = initialize_avalon_state(config)
     assert state.set_current_avatar("second") is True
 
     expected = (
@@ -111,7 +111,7 @@ def test_avatar_assets_use_current_avatar() -> None:
 
 def test_avatar_greeting_is_served_from_current_avatar() -> None:
     initialize_blueprint_config()
-    standard = state_module.get_avalo_state().current_avatar
+    standard = state_module.get_avalon_state().current_avatar
     second = standard.model_copy(
         update={
             "key": "second",
@@ -129,8 +129,8 @@ def test_avatar_greeting_is_served_from_current_avatar() -> None:
         deep=True,
     )
 
-    state_module._avalo_state = None
-    state = initialize_avalo_state(config)
+    state_module._avalon_state = None
+    state = initialize_avalon_state(config)
     assert state.set_current_avatar("second") is True
 
     expected = (
@@ -162,8 +162,8 @@ def test_missing_avatar_greeting_returns_not_found_and_logs(
         deep=True,
     )
 
-    state_module._avalo_state = None
-    initialize_avalo_state(updated)
+    state_module._avalon_state = None
+    initialize_avalon_state(updated)
 
     with caplog.at_level(logging.ERROR):
         response = request("/api/v1/assets/avatar/greeting")

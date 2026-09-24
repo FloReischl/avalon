@@ -18,7 +18,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _integration_enabled() -> bool:
-    return os.getenv("AVALO_RUN_TTS_INTEGRATION") == "1"
+    return os.getenv("AVALON_RUN_TTS_INTEGRATION") == "1"
 
 
 def _assert_valid_wav(audio: bytes) -> None:
@@ -35,7 +35,7 @@ def _assert_valid_wav(audio: bytes) -> None:
 @pytest.mark.asyncio
 async def test_kokoro_victoria_real_synthesis_load_unload_reload() -> None:
     if not _integration_enabled():
-        pytest.skip("Set AVALO_RUN_TTS_INTEGRATION=1 to run real TTS integration.")
+        pytest.skip("Set AVALON_RUN_TTS_INTEGRATION=1 to run real TTS integration.")
 
     expected_artifacts = [
         PROJECT_ROOT / settings.tts_kokoro_config,
@@ -56,7 +56,7 @@ async def test_kokoro_victoria_real_synthesis_load_unload_reload() -> None:
     engine = KokoroTextToSpeech(device="auto")
 
     first_audio = await engine.synthesize(
-        "Hallo Flo. Dies ist ein Integrationstest für Avalo."
+        "Hallo Flo. Dies ist ein Integrationstest für Avalon."
     )
 
     _assert_valid_wav(first_audio)

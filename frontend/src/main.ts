@@ -21,6 +21,6 @@ async function bootstrap() {
 }
 
 void bootstrap().catch((error) => {
-  console.error("[startup] failed to initialize Avalo", error);
+  console.error("[startup] failed to initialize Avalon", error);
 });
 

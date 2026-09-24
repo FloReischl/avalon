@@ -53,7 +53,7 @@ describe("MarkdownComposer", () => {
     expect(wrapper.get(".ProseMirror").text()).not.toContain("Prompt A");
   });
 
-  it("clears Milkdown when Avalo clears the model", async () => {
+  it("clears Milkdown when Avalon clears the model", async () => {
     const wrapper = mount(MarkdownComposer, {
       props: {
         modelValue: "Prompt A",

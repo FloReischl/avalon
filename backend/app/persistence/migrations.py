@@ -1,4 +1,4 @@
-"""Alembic migration bootstrap for the local Avalo database."""
+"""Alembic migration bootstrap for the local Avalon database."""
 
 from pathlib import Path
 
@@ -14,7 +14,7 @@ def migration_script_location() -> Path:
 
 
 def run_migrations(path: Path | None = None) -> None:
-    """Upgrade the Avalo database to the current schema revision."""
+    """Upgrade the Avalon database to the current schema revision."""
     target = path or database_path()
     target.parent.mkdir(parents=True, exist_ok=True)
 

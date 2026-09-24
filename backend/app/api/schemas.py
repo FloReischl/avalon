@@ -115,13 +115,13 @@ class AudioResponseRequest(BaseModel):
 
 
 class AudioCallStartRequest(BaseModel):
-    """Start Avalo's one avatar audio call, optionally bound to a chat."""
+    """Start Avalon's one avatar audio call, optionally bound to a chat."""
 
     chat_id: int | None = Field(default=None, gt=0)
 
 
 class AudioCallStatusResponse(BaseModel):
-    """Frontend-visible state of Avalo's one avatar audio call."""
+    """Frontend-visible state of Avalon's one avatar audio call."""
 
     active: bool
     chat_id: int | None

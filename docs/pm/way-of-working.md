@@ -2,12 +2,12 @@
 
 ## 1. Zweck
 
-Avalo verfolgt zwei gleichwertige Ziele:
+Avalon verfolgt zwei gleichwertige Ziele:
 
 1. Entwicklung einer nutzbaren Anwendung.
 2. Praktischer Kompetenzaufbau in AI Augmented Engineering.
 
-Avalo wird genutzt, um einen AI-unterstützten Engineering-Prozess praktisch zu erproben und weiterzuentwickeln. Requirements Engineering, Architektur, Testkonzept, Implementierung und Review werden dabei bewusst getrennt und je nach Arbeitspaket mit dem dafür geeigneten Werkzeug unterstützt.
+Avalon wird genutzt, um einen AI-unterstützten Engineering-Prozess praktisch zu erproben und weiterzuentwickeln. Requirements Engineering, Architektur, Testkonzept, Implementierung und Review werden dabei bewusst getrennt und je nach Arbeitspaket mit dem dafür geeigneten Werkzeug unterstützt.
 
 ## 2. Verantwortung und Rollen
 

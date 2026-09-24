@@ -1,7 +1,7 @@
-# Feature-Konzept: Dynamischer Web-Zugriff (Internet-Recherche) für Avalo
+# Feature-Konzept: Dynamischer Web-Zugriff (Internet-Recherche) für Avalon
 
 ## 1. Ziel & Nutzerwirkung
-Avalo soll Fragen zu aktuellen Ereignissen (z. B. „Was ist am Wochenende im Olympiapark München geboten?“) oder zu neuen Technologien dynamisch beantworten können, indem aktuelle Informationen aus dem Internet nachgeladen werden.
+Avalon soll Fragen zu aktuellen Ereignissen (z. B. „Was ist am Wochenende im Olympiapark München geboten?“) oder zu neuen Technologien dynamisch beantworten können, indem aktuelle Informationen aus dem Internet nachgeladen werden.
 
 ---
 
@@ -11,7 +11,7 @@ Avalo soll Fragen zu aktuellen Ereignissen (z. B. „Was ist am Wochenende im Ol
 * **Ablauf:**
   1. Das Python-Backend übergibt Ollama beim Chat-Request Definitionen von verfügbaren Werkzeugen (z. B. `web_search(query: str)`).
   2. Gemma / das gewählte Modell entscheidet autonom, wenn lokales Wissen nicht ausreicht, und gibt einen Tool-Call zurück.
-  3. Das Avalo-Backend führt die Suche aus und sendet die Ergebnisse als Werkzeug-Antwort zurück an Ollama.
+  3. Das Avalon-Backend führt die Suche aus und sendet die Ergebnisse als Werkzeug-Antwort zurück an Ollama.
   4. Ollama generiert die finale Antwort an den Nutzer.
 * **Vorteile:**
   * Fügt sich nahtlos in die bestehende `OllamaRuntime` und die `ChatService`-Architektur ein.
@@ -28,7 +28,7 @@ Avalo soll Fragen zu aktuellen Ereignissen (z. B. „Was ist am Wochenende im Ol
 ---
 
 ## 3. Randbedingungen & Fehlerbehandlung
-* **Netzwerk-/Offline-Fallback:** Ist keine Internetverbindung vorhanden oder schlägt die Suche fehl, darf der Chat nicht blockieren oder abstürzen. Avalo muss die Fehlfunktion abfangen und transparent informieren.
+* **Netzwerk-/Offline-Fallback:** Ist keine Internetverbindung vorhanden oder schlägt die Suche fehl, darf der Chat nicht blockieren oder abstürzen. Avalon muss die Fehlfunktion abfangen und transparent informieren.
 * **Timeouts:** Web-Suchanfragen müssen strikte Timeouts besitzen (z. B. max. 3–5 Sekunden), um die UX nicht negativ zu beeinträchtigen.
 * **Datenschutz:** Es werden nur die vom Modell generierten Suchbegriffe an externe Suchanbieter übermittelt, keine privaten Chat-Historien.
 

@@ -32,7 +32,7 @@ def test_chunking_window_overlap_and_final_tail(tmp_path: Path) -> None:
 
 
 def test_merge_is_exact_and_preserves_boundary_whitespace() -> None:
-    assert merge_transcripts("Hallo Welt,", "welt, das ist Avalo") == "Hallo Welt, das ist Avalo"
+    assert merge_transcripts("Hallo Welt,", "welt, das ist Avalon") == "Hallo Welt, das ist Avalon"
     assert merge_transcripts("eins zwei", "drei vier") == "eins zwei drei vier"
 
 

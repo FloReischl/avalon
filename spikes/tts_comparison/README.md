@@ -1,6 +1,6 @@
 # Lokaler TTS-Vergleich
 
-Einmalig, ausschließlich in Avalos vorhandener virtueller Umgebung:
+Einmalig, ausschließlich in Avalons vorhandener virtueller Umgebung:
 
 ```bash
 ./.venv/bin/pip install --upgrade --force-reinstall -r spikes/tts_comparison/requirements.txt

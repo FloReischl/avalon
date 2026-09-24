@@ -1,4 +1,4 @@
 #!/usr/bin/env bash
 
-cd ~/dev/avalo/frontend
+cd ~/dev/avalon/frontend
 npm run tauri:dev

@@ -38,7 +38,7 @@ class FakeRuntime:
 
 @pytest.fixture
 def repository(tmp_path: Path):
-    path = tmp_path / "avalo.sqlite"
+    path = tmp_path / "avalon.sqlite"
     run_migrations(path)
     engine = create_database_engine(path)
     try:

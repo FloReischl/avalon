@@ -2,11 +2,11 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-AVALO_ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd)"
+AVALON_ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 
-SOURCE="$AVALO_ROOT/data/blueprints/desktop/avalo.desktop"
+SOURCE="$AVALON_ROOT/data/blueprints/desktop/avalon.desktop"
 TARGET_DIR="$HOME/.local/share/applications"
-TARGET="$TARGET_DIR/avalo.desktop"
+TARGET="$TARGET_DIR/avalon.desktop"
 
 [[ -f "$SOURCE" ]] || {
     echo "❌ Desktop entry template not found: $SOURCE" >&2
@@ -15,6 +15,6 @@ TARGET="$TARGET_DIR/avalo.desktop"
 
 mkdir -p "$TARGET_DIR"
 
-sed "s|@AVALO_ROOT@|$AVALO_ROOT|g" "$SOURCE" > "$TARGET"
+sed "s|@AVALON_ROOT@|$AVALON_ROOT|g" "$SOURCE" > "$TARGET"
 
-echo "✅ Installed Avalo desktop entry: $TARGET"
+echo "✅ Installed Avalon desktop entry: $TARGET"

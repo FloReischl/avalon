@@ -15,7 +15,7 @@ class LlmConfig:
 class Settings:
     """Static settings for the initial local development setup."""
 
-    app_name: str = "Avalo Backend"
+    app_name: str = "Avalon Backend"
     api_host: str = "127.0.0.1"
     api_port: int = 8095
     music_db_path: str = "/media/flo/2TB_SSD/music/mp3db.sqlite3"
@@ -62,7 +62,7 @@ class Settings:
 
     @property
     def ollama_model(self) -> str:
-        """Return the standard model until runtime selection moves to AvaloState."""
+        """Return the standard model until runtime selection moves to AvalonState."""
         return next(
             llm.model
             for llm in self.llm_models

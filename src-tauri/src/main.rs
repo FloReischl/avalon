@@ -89,7 +89,7 @@ fn main() {
             Ok(())
         })
         .build(tauri::generate_context!())
-        .expect("error while building Avalo");
+        .expect("error while building Avalon");
 
     app.run(|app_handle, event| {
         if let tauri::RunEvent::WindowEvent {
@@ -105,7 +105,7 @@ fn main() {
 
                 if let Some(window) = app_handle.get_webview_window("chat") {
                     if let Err(error) = window.hide() {
-                        eprintln!("failed to hide Avalo chat window: {error}");
+                        eprintln!("failed to hide Avalon chat window: {error}");
                     }
                 }
             }

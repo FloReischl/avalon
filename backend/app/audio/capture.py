@@ -174,7 +174,7 @@ class PipeWireRecorder:
                 raise CaptureError("A recording is already active.")
 
             file_descriptor, temporary_name = tempfile.mkstemp(
-                prefix="avalo-recording-",
+                prefix="avalon-recording-",
                 suffix=".wav",
                 dir=self._output_directory,
             )
@@ -214,7 +214,7 @@ class PipeWireRecorder:
             )
             self._pcm_task = asyncio.create_task(
                 self._pump_pcm(stdout),
-                name="avalo-ptt-pcm-pump",
+                name="avalon-ptt-pcm-pump",
             )
 
     async def stop(self) -> CapturedAudio:
@@ -270,7 +270,7 @@ class PipeWireRecorder:
         """Wait for speech and return one silence-terminated turn."""
 
         file_descriptor, temporary_name = tempfile.mkstemp(
-            prefix="avalo-dialog-",
+            prefix="avalon-dialog-",
             suffix=".wav",
             dir=self._output_directory,
         )

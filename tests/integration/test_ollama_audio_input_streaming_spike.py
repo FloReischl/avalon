@@ -164,7 +164,7 @@ async def _measure_request(
     strict=True,
 )
 @pytest.mark.skipif(
-    os.environ.get("AVALO_RUN_AUDIO_STREAMING_SPIKE") != "1",
+    os.environ.get("AVALON_RUN_AUDIO_STREAMING_SPIKE") != "1",
     reason="requires explicit local Ollama streaming-spike opt-in",
 )
 async def test_ollama_audio_input_streaming_feasibility() -> None:

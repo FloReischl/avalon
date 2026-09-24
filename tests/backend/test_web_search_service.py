@@ -18,10 +18,10 @@ def test_default_provider_uses_duckduckgo_with_required_settings(monkeypatch):
 
     monkeypatch.setattr("app.services.web_search.DDGS", FakeDDGS)
 
-    assert asyncio.run(WebSearchService().search("Avalo")) == []
+    assert asyncio.run(WebSearchService().search("Avalon")) == []
     assert calls == {
         "timeout": 10,
-        "query": "Avalo",
+        "query": "Avalon",
         "region": "de-de",
         "safesearch": "off",
         "max_results": 5,
@@ -33,17 +33,17 @@ def test_search_maps_provider_result():
     service = WebSearchService(
         lambda _: [
             {
-                "title": "Avalo",
-                "href": "https://example.test/avalo",
+                "title": "Avalon",
+                "href": "https://example.test/avalon",
                 "body": "Local AI companion",
             }
         ]
     )
 
-    assert asyncio.run(service.search("Avalo local AI")) == [
+    assert asyncio.run(service.search("Avalon local AI")) == [
         {
-            "title": "Avalo",
-            "url": "https://example.test/avalo",
+            "title": "Avalon",
+            "url": "https://example.test/avalon",
             "snippet": "Local AI companion",
         }
     ]
@@ -55,8 +55,8 @@ def test_search_limits_results_and_allows_empty_results():
         for index in range(6)
     ]
 
-    assert len(asyncio.run(WebSearchService(lambda _: provider_results).search("Avalo"))) == 5
-    assert asyncio.run(WebSearchService(lambda _: []).search("Avalo")) == []
+    assert len(asyncio.run(WebSearchService(lambda _: provider_results).search("Avalon"))) == 5
+    assert asyncio.run(WebSearchService(lambda _: []).search("Avalon")) == []
 
 
 def test_search_propagates_error_without_retry():
@@ -68,7 +68,7 @@ def test_search_propagates_error_without_retry():
         raise ConnectionError("provider unavailable")
 
     with pytest.raises(ConnectionError, match="provider unavailable"):
-        asyncio.run(WebSearchService(broken_provider).search("Avalo"))
+        asyncio.run(WebSearchService(broken_provider).search("Avalon"))
     assert calls == 1
 
 
@@ -83,10 +83,10 @@ def test_search_uses_ten_second_timeout(monkeypatch):
 
     monkeypatch.setattr("app.services.web_search.asyncio.wait_for", timeout_immediately)
     with pytest.raises(asyncio.TimeoutError):
-        asyncio.run(WebSearchService(lambda _: []).search("Avalo"))
+        asyncio.run(WebSearchService(lambda _: []).search("Avalon"))
     assert observed_timeout == 10
 
 
 def test_search_rejects_invalid_provider_response():
     with pytest.raises(ValueError, match="invalid result"):
-        asyncio.run(WebSearchService(lambda _: [{"title": "Avalo"}]).search("Avalo"))
+        asyncio.run(WebSearchService(lambda _: [{"title": "Avalon"}]).search("Avalon"))

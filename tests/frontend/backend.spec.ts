@@ -41,7 +41,7 @@ describe("tts", () => {
       {
         status: 200,
         headers: {
-          "X-Avalo-TTS-Playback-ID": "playback-123",
+          "X-Avalon-TTS-Playback-ID": "playback-123",
         },
       },
     );

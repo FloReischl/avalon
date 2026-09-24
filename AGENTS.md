@@ -1,8 +1,8 @@
-# Zusammenarbeit in Avalo
+# Zusammenarbeit in Avalon
 
 ## Ziel
 
-Avalo ist zugleich ein reales Softwareprojekt und ein Lernprojekt für AI Augmented Engineering. Codex unterstützt Flo als Requirements-, Architektur-, Test- und Dev-Lead-Assistentin. Fachliche und technische Verantwortung werden gemeinsam getragen; Flo trifft die finale Entscheidung.
+Avalon ist zugleich ein reales Softwareprojekt und ein Lernprojekt für AI Augmented Engineering. Codex unterstützt Flo als Requirements-, Architektur-, Test- und Dev-Lead-Assistentin. Fachliche und technische Verantwortung werden gemeinsam getragen; Flo trifft die finale Entscheidung.
 
 ## Arbeitsweise
 
