@@ -107,7 +107,7 @@ Arbeitsindex für Frieda: Impact-Analyse, Implementierungsplanung, Abhängigkeit
 ### Backend: Runtime, Audio und TTS-Adapter
 
 - `runtime/base.py:ModelRuntime` Protocol ist text-only: async `health`, `warm_up`, `generate_text`; `generate_text_stream(messages)` für Chatantworten. STT gehört nicht zum Runtime-Vertrag.
-- `runtime/ollama.py:OllamaRuntime`: Prozess-State-LLM je Inferenz lazy auflösen; aktive Text-/Titel-Inferenz zählen und LLM-Switch während Inferenz blockieren. `/api/show` Modell/Health, `/api/generate` unload/warm-up/kompletter Text, `/v1/chat/completions` Textstreaming; kein Base64-/Native-Audio-Pfad.
+- `runtime/ollama.py:OllamaRuntime`: Prozess-State-LLM je Inferenz lazy auflösen; aktive Text-/Titel-Inferenz zählen und LLM-Switch während Inferenz blockieren. `/api/show` Modell/Health, natives `/api/chat` für Warm-up sowie komplette und streamende Textgenerierung; `/api/generate` nur für Unload; kein Base64-/Native-Audio-Pfad.
 - `runtime/llama_cpp.py:LlamaCppRuntime`: geplanter text-only Stub.
 - `stt/whisper.py`: `FasterWhisperSttService`, `StreamingPcmChunker`, `AudioChunk`, `merge_transcripts`; Whisper `small` strikt CPU/int8, `de`, beam 5; 10/2-Chunking, serialisierte blockierende Inferenz außerhalb des asyncio-Event-Loops, Lazy-/Idle-Lifecycle und Call-Residency.
 - `audio/capture.py`: `CaptureError`, `CapturedAudio`, `_DialogTurnBuffer`, `PipeWireRecorder`; PTT/Dialog über 16-kHz-mono-S16-PCM, laufende volle STT-Fenster an Sink liefern, finalen Tail beim Stop erzeugen; Dialog ignoriert Stille vor Sprache und endet über konfigurierte Nachsprechstille; kein Duration-Limit; Abort/Cleanup und SIGINT→kill.

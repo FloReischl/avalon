@@ -126,13 +126,13 @@ async def test_warm_up_model_uses_explicit_model(
     model = "example:model"
     httpx_mock.add_response(
         method="POST",
-        url=f"http://{settings.ollama_host}/api/generate",
+        url=f"http://{settings.ollama_host}/api/chat",
         match_json={
             "model": model,
-            "prompt": "Hallo",
+            "messages": [{"role": "user", "content": "Hallo"}],
             "stream": False,
         },
-        json={"response": "Hallo"},
+        json={"message": {"role": "assistant", "content": "Hallo"}},
     )
 
     await OllamaRuntime().warm_up_model(model)
@@ -144,13 +144,13 @@ async def test_warm_up_uses_stateless_text_generation(
 ) -> None:
     httpx_mock.add_response(
         method="POST",
-        url=f"http://{settings.ollama_host}/api/generate",
+        url=f"http://{settings.ollama_host}/api/chat",
         match_json={
             "model": settings.ollama_model,
-            "prompt": "Hallo",
+            "messages": [{"role": "user", "content": "Hallo"}],
             "stream": False,
         },
-        json={"response": "Hallo"},
+        json={"message": {"role": "assistant", "content": "Hallo"}},
     )
 
     await OllamaRuntime().warm_up()
@@ -176,13 +176,13 @@ async def test_generate_text_returns_response(
 ) -> None:
     httpx_mock.add_response(
         method="POST",
-        url=f"http://{settings.ollama_host}/api/generate",
+        url=f"http://{settings.ollama_host}/api/chat",
         match_json={
             "model": settings.ollama_model,
-            "prompt": "Hallo",
+            "messages": [{"role": "user", "content": "Hallo"}],
             "stream": False,
         },
-        json={"response": "Hallo Flo"},
+        json={"message": {"role": "assistant", "content": "Hallo Flo"}},
     )
 
     runtime = OllamaRuntime()
@@ -201,7 +201,7 @@ async def test_generate_text_raises_runtime_error_when_ollama_is_unreachable(
     httpx_mock.add_exception(
         ConnectError("connection failed"),
         method="POST",
-        url=f"http://{settings.ollama_host}/api/generate",
+        url=f"http://{settings.ollama_host}/api/chat",
     )
 
     runtime = OllamaRuntime()
@@ -216,8 +216,8 @@ async def test_generate_text_raises_runtime_error_for_invalid_response(
 ) -> None:
     httpx_mock.add_response(
         method="POST",
-        url=f"http://{settings.ollama_host}/api/generate",
-        json={"response": ""},
+        url=f"http://{settings.ollama_host}/api/chat",
+        json={"message": {"role": "assistant", "content": ""}},
     )
 
     runtime = OllamaRuntime()
@@ -237,16 +237,16 @@ async def test_generate_text_stream_includes_context_and_returns_chunks_in_order
     ]
     httpx_mock.add_response(
         method="POST",
-        url=f"http://{settings.ollama_host}/v1/chat/completions",
+        url=f"http://{settings.ollama_host}/api/chat",
         match_json={
             "model": settings.ollama_model,
             "messages": messages,
             "stream": True,
         },
         content=(
-            b'data: {"choices":[{"delta":{"content":"Du "}}]}\n\n'
-            b'data: {"choices":[{"delta":{"content":"heisst Flo."}}]}\n\n'
-            b"data: [DONE]\n\n"
+            b'{"message":{"role":"assistant","content":"Du "},"done":false}\n'
+            b'{"message":{"role":"assistant","content":"heisst Flo."},"done":false}\n'
+            b'{"message":{"role":"assistant","content":""},"done":true}\n'
         ),
     )
 
@@ -267,12 +267,11 @@ async def test_generate_text_stream_skips_empty_chunks(
     messages = [{"role": "user", "content": "Hallo"}]
     httpx_mock.add_response(
         method="POST",
-        url=f"http://{settings.ollama_host}/v1/chat/completions",
+        url=f"http://{settings.ollama_host}/api/chat",
         content=(
-            b'data: {"choices":[{"delta":{"content":""}}]}\n\n'
-            b'data: {"choices":[{"delta":{"content":"Hallo"}}]}\n\n'
-            b'data: {"choices":[{"delta":{"content":""}}]}\n\n'
-            b"data: [DONE]\n\n"
+            b'{"message":{"role":"assistant","content":""},"done":false}\n'
+            b'{"message":{"role":"assistant","content":"Hallo"},"done":false}\n'
+            b'{"message":{"role":"assistant","content":""},"done":true}\n'
         ),
     )
 
@@ -293,9 +292,9 @@ async def test_generate_text_stream_raises_runtime_error_for_invalid_chunk(
     messages = [{"role": "user", "content": "Hallo"}]
     httpx_mock.add_response(
         method="POST",
-        url=f"http://{settings.ollama_host}/v1/chat/completions",
+        url=f"http://{settings.ollama_host}/api/chat",
         content=(
-            b'data: {"choices":[{"delta":{"content":42}}]}\n\n'
+            b'{"message":{"role":"assistant","content":42},"done":false}\n'
         ),
     )
 
@@ -316,7 +315,7 @@ async def test_generate_text_stream_raises_runtime_error_when_ollama_is_unreacha
     httpx_mock.add_exception(
         ConnectError("connection failed"),
         method="POST",
-        url=f"http://{settings.ollama_host}/v1/chat/completions",
+        url=f"http://{settings.ollama_host}/api/chat",
     )
 
     runtime = OllamaRuntime()
@@ -342,7 +341,7 @@ async def test_generate_text_stream_closes_http_stream_when_cancelled(
             pass
 
         async def aiter_lines(self):
-            yield 'data: {"choices":[{"delta":{"content":"Hallo"}}]}'
+            yield '{"message":{"role":"assistant","content":"Hallo"},"done":false}'
             waiting.set()
             await asyncio.Event().wait()
 

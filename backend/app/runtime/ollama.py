@@ -68,11 +68,18 @@ class OllamaRuntime(ModelRuntime):
         try:
             async with httpx.AsyncClient(timeout=120.0) as client:
                 response = await client.post(
-                    f"http://{settings.ollama_host}/api/generate",
-                    json={"model": model, "prompt": "Hallo", "stream": False},
+                    f"http://{settings.ollama_host}/api/chat",
+                    json={
+                        "model": model,
+                        "messages": [{"role": "user", "content": "Hallo"}],
+                        "stream": False,
+                    },
                 )
                 response.raise_for_status()
-                if not isinstance(response.json().get("response"), str):
+                message = response.json().get("message")
+                if not isinstance(message, dict) or not isinstance(
+                    message.get("content"), str
+                ):
                     raise ValueError("Invalid Ollama response")
         except (httpx.RequestError, httpx.HTTPStatusError, ValueError) as exc:
             raise RuntimeError(f"Ollama error: {exc}") from exc
@@ -85,11 +92,18 @@ class OllamaRuntime(ModelRuntime):
             try:
                 async with httpx.AsyncClient(timeout=120.0) as client:
                     response = await client.post(
-                        f"http://{settings.ollama_host}/api/generate",
-                        json={"model": model, "prompt": message, "stream": False},
+                        f"http://{settings.ollama_host}/api/chat",
+                        json={
+                            "model": model,
+                            "messages": [{"role": "user", "content": message}],
+                            "stream": False,
+                        },
                     )
                     response.raise_for_status()
-                    text = response.json().get("response")
+                    response_message = response.json().get("message")
+                    if not isinstance(response_message, dict):
+                        raise ValueError("Invalid Ollama response")
+                    text = response_message.get("content")
                     if not isinstance(text, str) or not text.strip():
                         raise ValueError("Invalid Ollama response")
                     return text
@@ -105,23 +119,17 @@ class OllamaRuntime(ModelRuntime):
                 async with httpx.AsyncClient(timeout=120.0) as client:
                     async with client.stream(
                         "POST",
-                        f"http://{settings.ollama_host}/v1/chat/completions",
+                        f"http://{settings.ollama_host}/api/chat",
                         json={"model": model, "messages": messages, "stream": True},
                     ) as response:
                         response.raise_for_status()
                         async for line in response.aiter_lines():
-                            if not line.startswith("data: "):
+                            if not line:
                                 continue
-                            payload = line.removeprefix("data: ")
-                            if payload == "[DONE]":
-                                continue
-                            choices = json.loads(payload).get("choices")
-                            if not isinstance(choices, list) or not choices:
-                                continue
-                            delta = choices[0].get("delta")
-                            if not isinstance(delta, dict):
+                            message = json.loads(line).get("message")
+                            if not isinstance(message, dict):
                                 raise ValueError("Invalid Ollama stream response")
-                            text = delta.get("content")
+                            text = message.get("content")
                             if text is None:
                                 continue
                             if not isinstance(text, str):
