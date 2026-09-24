@@ -145,17 +145,10 @@ async def test_tool_runner_returns_final_text_after_authorized_tool_result():
 
 
 @pytest.mark.asyncio
-async def test_chat_sse_emits_authorization_request_before_final_response():
-    request = AuthorizationRequest("id", "web", "search", ["item"], [{"query": "Avalon"}], "duration", 36000)
-    release = asyncio.Event()
-
+async def test_chat_sse_waits_for_authorization_without_emitting_a_second_ui_event():
     class Service:
-        authorization_events = asyncio.Queue()
-
         async def stream_response(self, turn):
             del turn
-            self.authorization_events.put_nowait(request)
-            await release.wait()
             yield "Antwort"
 
         async def finalize_turn(self, turn):
@@ -163,7 +156,5 @@ async def test_chat_sse_emits_authorization_request_before_final_response():
 
     stream = stream_chat_response(Service(), ChatTurn(1, []))
     assert "event: chat" in await anext(stream)
-    assert "event: authorization_required" in await anext(stream)
-    release.set()
     assert "event: chunk" in await anext(stream)
     assert "event: done" in await anext(stream)

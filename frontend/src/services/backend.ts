@@ -17,7 +17,6 @@ export interface ChatStreamHandlers {
   onTranscriptChunk?: (text: string) => void;
   onTranscriptError?: () => void;
   onDone?: () => void;
-  onAuthorizationRequired?: (request: AuthorizationRequest) => void;
 }
 
 export interface AuthorizationRequest {
@@ -476,24 +475,6 @@ async function consumeChatStream(
       if (event === "done") {
         completed = true;
         handlers.onDone?.();
-        continue;
-      }
-
-      if (event === "authorization_required") {
-        const parsed = JSON.parse(data) as Record<string, unknown>;
-        const items = typeof parsed.items === "string" ? JSON.parse(parsed.items) : undefined;
-        if (
-          typeof parsed.id !== "string" || typeof parsed.context !== "string"
-          || typeof parsed.key !== "string" || !Array.isArray(items)
-          || !items.every((item) => typeof item === "string")
-          || !["permanent", "duration", "range"].includes(String(parsed.validity_type))
-          || !Number.isInteger(Number(parsed.default_expiry))
-        ) throw new Error("Invalid authorization request event");
-        handlers.onAuthorizationRequired?.({
-          id: parsed.id, context: parsed.context, key: parsed.key, items,
-          validityType: parsed.validity_type as "permanent" | "duration" | "range",
-          defaultExpiry: Number(parsed.default_expiry),
-        });
         continue;
       }
 

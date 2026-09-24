@@ -19,7 +19,6 @@ import {
   type ChatStreamRequest,
   type ChatSummary,
   type ConversationMessage,
-  type AuthorizationRequest,
 } from "../services/backend";
 
 import type { ChatMessage } from "../types/chat";
@@ -112,7 +111,6 @@ export function useTransientChat(
   const chatSummaries = ref<ChatSummary[]>([]);
   const chatStates = new Map<number, ChatState>();
   const runningChatIds = reactive(new Set<number>());
-  const authorizationRequest = ref<AuthorizationRequest>();
 
   const messages = computed({
     get: () => currentState.value.messages,
@@ -488,9 +486,6 @@ export function useTransientChat(
             }
             state.messages[turn.assistantIndex].content += text;
           },
-          onAuthorizationRequired(request) {
-            authorizationRequest.value = request;
-          },
           onDone() {
             if (state.activeTurn === turn) {
               turn.done = true;
@@ -857,7 +852,6 @@ export function useTransientChat(
     setChatPinned,
     deleteChat,
     isChatRunning,
-    authorizationRequest,
     send,
 
     sendAudio,

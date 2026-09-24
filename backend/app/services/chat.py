@@ -50,7 +50,6 @@ class ChatService:
         compression_service: ContextCompressionService | None = None,
         task_scheduler: Callable[[Any], Any] | None = None,
         tool_runner: ToolRunner | None = None,
-        authorization_events: asyncio.Queue[object] | None = None,
     ) -> None:
         self._runtime = runtime
         self._repository = repository
@@ -64,7 +63,6 @@ class ChatService:
         self._task_scheduler = task_scheduler or asyncio.create_task
         self._compression_tasks: set[asyncio.Task[object]] = set()
         self._tool_runner = tool_runner
-        self.authorization_events = authorization_events
 
     def start_turn(
         self,

@@ -24,8 +24,6 @@ import {
   synthesizeSpeech,
   startAudioCall,
   getAudioCallStatus,
-  abortAuthorization,
-  confirmAuthorization,
 } from "./services/backend";
 import { exportChatToMarkdown } from "./services/chatExport";
 import { formatMessageTime } from "./services/messageTime";
@@ -63,7 +61,6 @@ const {
   setChatPinned,
   deleteChat,
   isChatRunning,
-  authorizationRequest,
   send,
 
   sendAudio,
@@ -71,52 +68,6 @@ const {
   abortDialogTurn,
   stop,
 } = useTransientChat();
-
-const authorizationSelection = ref<number[]>([]);
-const authorizationDurationHours = ref(10);
-
-watch(authorizationRequest, (request) => {
-  authorizationSelection.value = request
-    ? request.items.map((_, index) => index)
-    : [];
-  authorizationDurationHours.value = request
-    ? Math.max(1, Math.round(request.defaultExpiry / 3600))
-    : 10;
-});
-
-function toggleAuthorizationItem(index: number) {
-  authorizationSelection.value = authorizationSelection.value.includes(index)
-    ? authorizationSelection.value.filter((value) => value !== index)
-    : [...authorizationSelection.value, index];
-}
-
-async function confirmPendingAuthorization() {
-  const request = authorizationRequest.value;
-  if (!request) return;
-  try {
-    await confirmAuthorization(
-      request.id,
-      authorizationSelection.value,
-      request.validityType === "permanent" ? undefined : authorizationDurationHours.value * 3600,
-    );
-    authorizationRequest.value = undefined;
-  } catch (error) {
-    console.error("[authorization] confirmation failed", error);
-    errorMessage.value = "Freigabe konnte nicht übermittelt werden.";
-  }
-}
-
-async function abortPendingAuthorization() {
-  const request = authorizationRequest.value;
-  if (!request) return;
-  try {
-    await abortAuthorization(request.id);
-    authorizationRequest.value = undefined;
-  } catch (error) {
-    console.error("[authorization] abort failed", error);
-    errorMessage.value = "Abbruch konnte nicht übermittelt werden.";
-  }
-}
 
 watch(input, (value) => {
   if (value.length > 0) {
@@ -1512,36 +1463,6 @@ function handleInputKeydown(event: KeyboardEvent) {
       </footer>
     </section>
   </main>
-  <div v-if="authorizationRequest" class="authorization-backdrop">
-    <section class="authorization-dialog" role="dialog" aria-modal="true">
-      <h2>Freigabe erforderlich</h2>
-      <p>Der Agent möchte <code>{{ authorizationRequest.context }}.{{ authorizationRequest.key }}</code> ausführen.</p>
-      <label
-        v-for="(item, index) in authorizationRequest.items"
-        :key="index"
-        class="authorization-item"
-      >
-        <input
-          type="checkbox"
-          :checked="authorizationSelection.includes(index)"
-          @change="toggleAuthorizationItem(index)"
-        >
-        {{ item }}
-      </label>
-      <div class="authorization-select-actions">
-        <button type="button" @click="authorizationSelection = authorizationRequest.items.map((_, index) => index)">Alle</button>
-        <button type="button" @click="authorizationSelection = []">Keine</button>
-      </div>
-      <label v-if="authorizationRequest.validityType !== 'permanent'" class="authorization-duration">
-        Dauer in Stunden
-        <input v-model.number="authorizationDurationHours" type="number" min="1" max="8760">
-      </label>
-      <div class="authorization-actions">
-        <button type="button" @click="abortPendingAuthorization">Abbrechen</button>
-        <button type="button" @click="confirmPendingAuthorization">Bestätigen</button>
-      </div>
-    </section>
-  </div>
 </template>
 
 <style scoped>
@@ -2046,38 +1967,6 @@ function handleInputKeydown(event: KeyboardEvent) {
   border-color: #b91c1c;
   background: #fee2e2;
   color: #b91c1c;
-}
-
-.authorization-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 20;
-  display: grid;
-  place-items: center;
-  background: rgb(0 0 0 / 35%);
-}
-
-.authorization-dialog {
-  width: min(34rem, calc(100vw - 2rem));
-  padding: 1.25rem;
-  border-radius: .75rem;
-  background: white;
-  box-shadow: 0 1rem 3rem rgb(0 0 0 / 25%);
-}
-
-.authorization-item,
-.authorization-duration {
-  display: flex;
-  gap: .5rem;
-  margin: .6rem 0;
-}
-
-.authorization-select-actions,
-.authorization-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: .5rem;
-  margin-top: 1rem;
 }
 
 </style>
