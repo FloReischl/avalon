@@ -1807,7 +1807,7 @@ function handleInputKeydown(event: KeyboardEvent) {
   max-height: 90%;
   transform: translate(-50%, -50%);
   object-fit: contain;
-  opacity: 0.2;
+  opacity: 0.1;
   pointer-events: none;
   user-select: none;
 }

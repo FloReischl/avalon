@@ -10,11 +10,13 @@ Arbeitsindex für Frieda: Impact-Analyse, Implementierungsplanung, Abhängigkeit
 - **Backend:** Python, FastAPI, MCP Python SDK v2 in `backend/app`; API, MCP, Application, SQLite-Persistenz, Runtime-Adapter, Audio, TTS, Konfiguration.
 - **Transport:** loopback-only `127.0.0.1:8095`, JSON, SSE mit JSON-`data`, keine Authentisierung; API `/api/v1`, MCP `/mcp`.
 - **MCP-Fähigkeiten:** `music.play_tracks`, `web.search`.
+- **Authorization:** Principals + `principal_permissions` begrenzen mögliche Rechte; konkrete Grants werden persistent gespeichert. Capability-Aufrufe laufen über `PermissionGuard`; fehlende Grants können einen Human-in-the-loop-Request erzeugen, ohne Authorization-Details dem LLM offenzulegen.
 
 ### Desktop- und Fensterverhalten
 
 - `main`: Avatar, always-on-top, transparent, ohne Dekoration; Schließen beendet die App.
 - `chat`: initial verborgen, resizable, mit Dekoration; Schließen versteckt Webview-State nur.
+- `permissions`: globale Permission-Inbox; zeigt pending Authorization-Requests mit auswählbaren Items und ggf. Grant-Dauer. Pending-State wird per SSE invalidiert; bei Event kurzzeitig per HTTP nachgeladen.
 - Avatar-Doppelklick zeigt/fokussiert vorhandenes Chatfenster. Geometrie-Persistenz nicht implementiert.
 - Chat-Laufzeitstatus geht über Tauri-Events an Avatar-Webview.
 - X11: native SHAPE-Inputregionen aus PNG-Alpha; beide Fenster erhalten das Avalon-Icon. Cinnamon/X11-Identität über Desktop-Entry mit `StartupWMClass=Avalon`.
@@ -43,6 +45,15 @@ Arbeitsindex für Frieda: Impact-Analyse, Implementierungsplanung, Abhängigkeit
 - `POST /api/v1/chat` → `routes/chat.py:create_chat_response` → `ChatService` → `ModelRuntime.generate_text_stream`.
 - Request `{"message":"<prompt>"}` oder `{"chat_id":<id>,"message":"<prompt>"}`; unbekannte Chat-ID vor `StreamingResponse` mit 404 ablehnen.
 - SSE: `chat {"id":"<chat-id>"}`, `chunk {"text":"<chunk>"}`, `done {}`, `error {}`. Reihenfolge: `chat`, 0+ `chunk`, `done`; `done` vor optionaler Titel-Finalisierung, EOF erst danach. Laufzeitfehler: `error`, kein `done`; technische Details nicht öffentlich. Cancellation propagiert ohne `error`.
+
+### Authorization und Tool-Calls
+
+- Neue Chats erhalten den konfigurierten Default-Chat-Principal; Chat/Agent-Identität bestimmt den effektiven Permission-Träger.
+- `ToolRunner` verarbeitet LLM-Tool-Calls; erster integrierter Pfad ist `web.search`. Authorization bleibt Infrastruktur unterhalb des LLM.
+- `PermissionGuard`: Permission im `principal_permissions`-Rahmen auflösen → vorhandenen Grant für den gesamten Call prüfen → sonst Authorization-Request erzeugen und Capability-Call bis Entscheidung suspendieren. Konkrete Permission-Implementierung interpretiert Scope/Items und formatiert Items für die UI.
+- Grant-Typen: `permanent`, `duration`, `range`; `range` speichert konkrete freigegebene Items und ist zeitlich begrenzt. UI darf die Items des aktuellen Calls einschränken, nie erweitern; Confirm mit leerer Auswahl ist erfolgreicher Call mit leerer Itemliste.
+- Kein `principal_permission` → `PermissionDenied` ohne Dialog. Benutzer-Abbruch → `AbortException`; Timeout → `AuthorizationTimeout`. Abort beendet die aktuelle Agent-/Tool-Operation.
+- `GET /api/v1/authorization-requests` liefert die globale Pending-Inbox; Confirm/Abort entscheiden Requests. `/authorization-requests/events` sendet SSE-Invalidierungen. Permission-Window lädt initial und nach Event; bei noch nicht sichtbarem Request pollt es höchstens 5 s in 500-ms-Abständen und stoppt sobald ein Request sichtbar ist.
 
 ### Audio
 
@@ -81,11 +92,15 @@ Arbeitsindex für Frieda: Impact-Analyse, Implementierungsplanung, Abhängigkeit
 - `backend/app/state.py`: prozesslokaler Avatar, aktives LLM, Inferenzzähler, Switch-Guard; Standard-LLM beim Start, nicht persistent; Modellwechsel während Inferenz blockieren.
 - `backend/app/commands`: async `/ <group> <command> [payload]`; `/avatar set <key>`, `/llm set <key>`. LLM: unbekannt/nicht verfügbar ablehnen, gleiches Modell No-op, altes unloaden, Ziel aufwärmen, erst dann publizieren; bei Warm-up-Fehler altes wiederherstellen, bei Fehlschlag terminieren.
 - `backend/app/main.py`: `create_app() -> FastAPI`, `StderrExceptionMiddleware`, `app`; validiert Konfiguration, initialisiert State, verlangt Standard-LLM in Ollama, warnt bei anderen, Alembic + MCP-Session-Lifespan, mountet `/mcp`.
-- `backend/app/api/router.py`: Health root; UI, Assets, Runtime, Chat, Chatmanagement, Audio/Call, TTS unter `/api/v1`.
+- `backend/app/api/router.py`: Health root; UI, Assets, Runtime, Chat, Chatmanagement, Authorization, Audio/Call, TTS unter `/api/v1`.
+- `backend/app/authorization`: `PermissionGuard`, konkrete Permission-Checks/Formatter, Authorization-Request-Manager, Typen/Exceptions und Runtime-Wiring.
+- `backend/app/persistence/authorization_repository.py`: Principals, Permission-Katalog/-Rahmen und Grants; Alembic `0005_add_authorization_schema.py`.
+- `backend/app/services/tool_runner.py`: LLM-Tool-Loop und Capability-Dispatch; aktuell `web.search`, Authorization über `PermissionGuard`.
+- `backend/app/api/routes/authorization.py`: Pending-Requests, Confirm/Abort und SSE-Invalidierungen für die globale Permission-Inbox.
 - `backend/app/api/schemas.py`: öffentliche Verträge. `ChatRequest(chat_id?: positive int, message: non-empty)`, `ConversationMessage(role user|assistant, content)`, `AudioResponseRequest(messages, chat_id?)`, `HealthResponse`, Chat summary/detail (inkl. `pinned`, `compression_error_code`), Rename (max. 200), Pin, TTS, Playback-ended, UI-Konfiguration/Avatar/Sprite-Regionen.
 - `routes/health.py`: `health() -> HealthResponse`.
 - `routes/runtime.py`: `POST /api/v1/runtime/warm-up`, stateless best-effort, Inhalt verwerfen.
-- `routes/chat.py`: request-scoped ChatService mit Ollama/Persistenz, `format_sse_event`, Eventtypen `chat/chunk/done/error`; Cancellation unverändert.
+- `routes/chat.py`: request-scoped ChatService mit Ollama/Persistenz und ToolRunner; `format_sse_event`, Chat-/Authorization-SSE und Fehlerabbildung; Cancellation unverändert.
 - `routes/chats.py`: `GET /chats`, `GET /chats/{id}`, `PATCH /chats/{id}`, `PATCH /chats/{id}/pinned`, `DELETE /chats/{id}`.
 - `routes/audio.py`: Call status/start/end/turn-complete/speech-consume; recording start/abort/stop; dialog turn. Nutzt `AudioChatService`, `AudioCallState`, `ChatRepository`.
 - `routes/tts.py`: Synthese und Playback-Lifecycle; `TtsService`, Factory.
