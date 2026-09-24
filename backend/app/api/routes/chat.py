@@ -76,15 +76,73 @@ async def stream_chat_response(
     """Translate one persistent chat turn into the Avalon SSE protocol."""
     yield format_sse_event("chat", {"id": str(turn.chat_id)})
 
+    authorization_events = getattr(service, "authorization_events", None)
+    if authorization_events is None:
+        response_text = ""
+        try:
+            async for chunk in service.stream_response(turn):
+                response_text += chunk
+                yield format_sse_event("chunk", {"text": chunk})
+        except RuntimeError:
+            logger.exception("[chat] response stream failed")
+            yield format_sse_event("error", {})
+            return
+        yield format_sse_event("done", {})
+        await service.finalize_turn(turn)
+        return
+
+    output: asyncio.Queue[tuple[str, object]] = asyncio.Queue()
+
+    async def produce() -> None:
+        try:
+            async for chunk in service.stream_response(turn):
+                await output.put(("chunk", chunk))
+        except Exception as exc:
+            await output.put(("error", exc))
+        else:
+            await output.put(("done", None))
+
+    producer = asyncio.create_task(produce())
     response_text = ""
     try:
-        async for chunk in service.stream_response(turn):
-            response_text += chunk
-            yield format_sse_event("chunk", {"text": chunk})
-    except RuntimeError:
-        logger.exception("[chat] response stream failed")
-        yield format_sse_event("error", {})
-        return
+        while True:
+            output_task = asyncio.create_task(output.get())
+            request_task = asyncio.create_task(authorization_events.get())
+            done, pending = await asyncio.wait(
+                {output_task, request_task}, return_when=asyncio.FIRST_COMPLETED
+            )
+            for task in pending:
+                task.cancel()
+            await asyncio.gather(*pending, return_exceptions=True)
+            task = next(iter(done))
+            value = task.result()
+            if task is request_task:
+                request = value
+                assert isinstance(request, AuthorizationRequest)
+                yield format_sse_event("authorization_required", {
+                    "id": request.id,
+                    "context": request.context,
+                    "key": request.key,
+                    "items": json.dumps(request.formatted_items),
+                    "validity_type": request.validity_type,
+                    "default_expiry": str(request.default_expiry),
+                })
+                continue
+            kind, payload = value
+            if kind == "chunk":
+                assert isinstance(payload, str)
+                response_text += payload
+                yield format_sse_event("chunk", {"text": payload})
+                continue
+            if kind == "error":
+                logger.error("[chat] response stream failed: %s", payload)
+                yield format_sse_event("error", {"code": type(payload).__name__})
+                return
+            break
+    finally:
+        if not producer.done():
+            producer.cancel()
+            await asyncio.gather(producer, return_exceptions=True)
 
     yield format_sse_event("done", {})
     await service.finalize_turn(turn)

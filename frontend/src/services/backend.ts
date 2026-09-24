@@ -483,7 +483,9 @@ async function consumeChatStream(
       }
 
       if (event === "error") {
-        throw new Error("Chat generation failed");
+        const parsed = JSON.parse(data) as { code?: unknown };
+        const code = typeof parsed.code === "string" ? parsed.code : "ChatGenerationFailed";
+        throw new Error(`Chat generation failed: ${code}`);
       }
 
       throw new Error(`Unknown chat stream event: ${event}`);

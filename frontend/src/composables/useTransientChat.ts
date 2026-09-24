@@ -508,8 +508,14 @@ export function useTransientChat(
 
       if (!controller.signal.aborted) {
         console.error("[chat] response generation failed", error);
-        state.errorMessage =
-          "Antwort konnte nicht erzeugt werden.";
+        const code = error instanceof Error ? error.message : "";
+        state.errorMessage = code.includes("AbortException")
+          ? "Der Vorgang wurde abgebrochen."
+          : code.includes("AuthorizationTimeout")
+            ? "Die Freigabe ist abgelaufen."
+            : code.includes("PermissionDenied")
+              ? "Diese Aktion ist nicht erlaubt."
+              : "Antwort konnte nicht erzeugt werden.";
       }
     } finally {
       state.backendPending = false;

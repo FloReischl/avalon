@@ -1,0 +1,169 @@
+"""Focused tests for the first authorization vertical slice."""
+
+import asyncio
+from datetime import datetime, timedelta
+from types import SimpleNamespace
+
+import pytest
+
+from app.api.routes.chat import stream_chat_response
+from app.authorization.exceptions import AbortException, AuthorizationTimeout, PermissionDenied
+from app.authorization.guard import PermissionGuard
+from app.authorization.permissions import build_permission_registry
+from app.authorization.requests import AuthorizationRequestManager
+from app.authorization.types import AuthorizationRequest
+from app.services.chat import ChatTurn
+from app.services.tool_runner import ToolRunner
+
+
+class FakeAuthorizationRepository:
+    def __init__(self, definition=None, grants=None):
+        self.definition = definition
+        self.grants = grants or []
+        self.created = []
+
+    def get_principal_permission(self, principal_id, context, key):
+        del principal_id, context, key
+        return self.definition
+
+    def get_grants(self, principal_permission_id):
+        del principal_permission_id
+        return self.grants
+
+    def create_grant(self, *args):
+        self.created.append(args)
+
+
+def definition():
+    return SimpleNamespace(
+        id=7,
+        scope='["duckduckgo.com"]',
+        validity_type="duration",
+        default_expiry=36_000,
+    )
+
+
+@pytest.mark.asyncio
+async def test_guard_waits_for_confirmation_and_uses_only_selected_items():
+    repository = FakeAuthorizationRepository(definition())
+    manager = AuthorizationRequestManager()
+    captured = []
+    guard = PermissionGuard(
+        repository, build_permission_registry(), manager, captured.append
+    )
+    executed = []
+
+    async def capability(items):
+        executed.extend(items)
+        return "ok"
+
+    task = asyncio.create_task(
+        guard.execute(1, "web", "search", [{"query": "Avalon"}], capability)
+    )
+    await asyncio.sleep(0)
+    assert captured[0].formatted_items == ["Websuche bei DuckDuckGo: Avalon"]
+    manager.confirm(captured[0].id, [0], 3600)
+
+    assert await task == "ok"
+    assert executed == [{"query": "Avalon"}]
+    assert len(repository.created) == 1
+
+
+@pytest.mark.asyncio
+async def test_guard_denies_without_creating_a_request():
+    manager = AuthorizationRequestManager()
+    guard = PermissionGuard(
+        FakeAuthorizationRepository(), build_permission_registry(), manager
+    )
+
+    with pytest.raises(PermissionDenied):
+        await guard.execute(1, "web", "search", [{"query": "Avalon"}], lambda _: None)
+
+
+@pytest.mark.asyncio
+async def test_abort_exception_stops_waiting_guard():
+    manager = AuthorizationRequestManager()
+    requests = []
+    guard = PermissionGuard(
+        FakeAuthorizationRepository(definition()),
+        build_permission_registry(),
+        manager,
+        requests.append,
+    )
+
+    async def capability(items):
+        del items
+        return "not reached"
+
+    task = asyncio.create_task(
+        guard.execute(1, "web", "search", [{"query": "Avalon"}], capability)
+    )
+    await asyncio.sleep(0)
+    manager.abort(requests[0].id)
+    with pytest.raises(AbortException):
+        await task
+
+
+@pytest.mark.asyncio
+async def test_request_manager_times_out_and_removes_request():
+    manager = AuthorizationRequestManager(timeout_seconds=0.001)
+    request = manager.create("web", "search", [], [], "duration", 1)
+    with pytest.raises(AuthorizationTimeout):
+        await manager.wait(request.id)
+    with pytest.raises(KeyError):
+        manager.abort(request.id)
+
+
+class FakeToolRuntime:
+    def __init__(self):
+        self.responses = [
+            {"tool_calls": [{"function": {"name": "web.search", "arguments": {"query": "Avalon"}}}]},
+            {"content": "Hier ist das Ergebnis."},
+        ]
+
+    async def generate_tool_response(self, messages, tools):
+        assert tools
+        return self.responses.pop(0)
+
+
+class FakeGuard:
+    async def execute(self, principal_id, context, key, items, capability):
+        assert (principal_id, context, key) == (3, "web", "search")
+        return await capability(items)
+
+
+class FakeWebSearch:
+    async def search(self, query):
+        assert query == "Avalon"
+        return [{"title": "Avalon", "url": "https://example.test", "snippet": "ok"}]
+
+
+@pytest.mark.asyncio
+async def test_tool_runner_returns_final_text_after_authorized_tool_result():
+    runner = ToolRunner(FakeToolRuntime(), FakeGuard(), FakeWebSearch())
+    assert [chunk async for chunk in runner.stream_response(3, [{"role": "user", "content": "Suche Avalon"}])] == ["Hier ist das Ergebnis."]
+
+
+@pytest.mark.asyncio
+async def test_chat_sse_emits_authorization_request_before_final_response():
+    request = AuthorizationRequest("id", "web", "search", ["item"], [{"query": "Avalon"}], "duration", 36000)
+    release = asyncio.Event()
+
+    class Service:
+        authorization_events = asyncio.Queue()
+
+        async def stream_response(self, turn):
+            del turn
+            self.authorization_events.put_nowait(request)
+            await release.wait()
+            yield "Antwort"
+
+        async def finalize_turn(self, turn):
+            del turn
+
+    stream = stream_chat_response(Service(), ChatTurn(1, []))
+    assert "event: chat" in await anext(stream)
+    assert "event: authorization_required" in await anext(stream)
+    release.set()
+    assert "event: chunk" in await anext(stream)
+    assert "event: done" in await anext(stream)
