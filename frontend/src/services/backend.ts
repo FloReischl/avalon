@@ -29,6 +29,10 @@ export interface AuthorizationRequest {
   defaultExpiry: number;
 }
 
+export interface PendingAuthorizationRequest extends AuthorizationRequest {
+  sourceLabel: string;
+}
+
 export interface ConversationMessage {
   role: "user" | "assistant";
   content: string;
@@ -213,6 +217,17 @@ export async function abortAuthorization(requestId: string): Promise<void> {
     { method: "POST" },
   );
   if (!response.ok) throw new Error(`Authorization abort failed with ${response.status}`);
+}
+
+export async function getPendingAuthorizationRequests(): Promise<PendingAuthorizationRequest[]> {
+  const response = await fetch(`${BACKEND_BASE_URL}/api/v1/authorization-requests`);
+  if (!response.ok) throw new Error(`Authorization request list failed with ${response.status}`);
+  const payload = await response.json() as Array<Record<string, unknown>>;
+  return payload.map((request) => ({
+    id: String(request.id), context: String(request.context), key: String(request.key),
+    items: request.items as string[], validityType: request.validity_type as PendingAuthorizationRequest["validityType"],
+    defaultExpiry: Number(request.default_expiry), sourceLabel: String(request.source_label),
+  }));
 }
 
 export async function startAudioRecording(): Promise<void> {

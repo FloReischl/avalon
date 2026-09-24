@@ -127,7 +127,7 @@ class FakeToolRuntime:
 
 
 class FakeGuard:
-    async def execute(self, principal_id, context, key, items, capability):
+    async def execute(self, principal_id, context, key, items, capability, source_label):
         assert (principal_id, context, key) == (3, "web", "search")
         return await capability(items)
 
@@ -141,7 +141,7 @@ class FakeWebSearch:
 @pytest.mark.asyncio
 async def test_tool_runner_returns_final_text_after_authorized_tool_result():
     runner = ToolRunner(FakeToolRuntime(), FakeGuard(), FakeWebSearch())
-    assert [chunk async for chunk in runner.stream_response(3, [{"role": "user", "content": "Suche Avalon"}])] == ["Hier ist das Ergebnis."]
+    assert [chunk async for chunk in runner.stream_response(3, [{"role": "user", "content": "Suche Avalon"}], "Chat: Suche")] == ["Hier ist das Ergebnis."]
 
 
 @pytest.mark.asyncio

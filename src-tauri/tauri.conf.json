@@ -35,6 +35,18 @@
         "decorations": true,
         "transparent": false,
         "visible": false
+      },
+      {
+        "label": "permissions",
+        "title": "Permissions",
+        "width": 900,
+        "height": 620,
+        "minWidth": 650,
+        "minHeight": 400,
+        "resizable": true,
+        "decorations": true,
+        "transparent": false,
+        "visible": false
       }
     ]
   },

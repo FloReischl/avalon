@@ -4,6 +4,7 @@ import { createApp } from "vue";
 
 import App from "./App.vue";
 import ChatWindow from "./ChatWindow.vue";
+import PermissionsWindow from "./PermissionsWindow.vue";
 import "./styles.css";
 
 async function bootstrap() {
@@ -12,15 +13,15 @@ async function bootstrap() {
     ? getCurrentWindow()
     : undefined;
   const isChatWindow = currentWindow?.label === "chat";
+  const isPermissionsWindow = currentWindow?.label === "permissions";
 
   if (currentWindow && isChatWindow) {
     await currentWindow.setTitle("Chat Window");
   }
 
-  createApp(isChatWindow ? ChatWindow : App).mount("#app");
+  createApp(isPermissionsWindow ? PermissionsWindow : isChatWindow ? ChatWindow : App).mount("#app");
 }
 
 void bootstrap().catch((error) => {
   console.error("[startup] failed to initialize Avalon", error);
 });
-

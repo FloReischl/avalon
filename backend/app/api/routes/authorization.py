@@ -1,12 +1,48 @@
 """Browser decisions for pending authorization requests."""
 
-from fastapi import APIRouter, HTTPException
+import asyncio
+import json
+from collections.abc import AsyncIterator
 
-from app.api.schemas import AuthorizationDecisionRequest
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
+
+from app.api.schemas import AuthorizationDecisionRequest, PendingAuthorizationRequestResponse
 from app.authorization.runtime import get_authorization_request_manager
 
 
 router = APIRouter(prefix="/authorization-requests", tags=["authorization"])
+
+
+@router.get("", response_model=list[PendingAuthorizationRequestResponse])
+async def list_pending_authorization_requests() -> list[PendingAuthorizationRequestResponse]:
+    """List all pending requests for the global permission inbox."""
+    return [
+        PendingAuthorizationRequestResponse(
+            id=request.id, context=request.context, key=request.key,
+            items=request.formatted_items, validity_type=request.validity_type,
+            default_expiry=request.default_expiry, source_label=request.source_label,
+        )
+        for request in get_authorization_request_manager().pending_requests()
+    ]
+
+
+@router.get("/events")
+async def authorization_events() -> StreamingResponse:
+    """Emit compact invalidations whenever the pending request list changes."""
+    manager = get_authorization_request_manager()
+    queue = manager.subscribe()
+
+    async def events() -> AsyncIterator[str]:
+        try:
+            yield f"event: authorization_requests_changed\ndata: {json.dumps({})}\n\n"
+            while True:
+                await queue.get()
+                yield f"event: authorization_requests_changed\ndata: {json.dumps({})}\n\n"
+        finally:
+            manager.unsubscribe(queue)
+
+    return StreamingResponse(events(), media_type="text/event-stream")
 
 
 @router.post("/{request_id}/confirm", status_code=204)

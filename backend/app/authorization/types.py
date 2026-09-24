@@ -15,6 +15,7 @@ class AuthorizationRequest:
     items: list[object]
     validity_type: str
     default_expiry: int
+    source_label: str = "Chat: chat-default"
 
 
 @dataclass(frozen=True, slots=True)

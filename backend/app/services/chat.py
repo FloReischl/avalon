@@ -35,6 +35,7 @@ class ChatTurn:
     messages: list[dict[str, str]]
     command_response: str | None = None
     command_request: CommandRequest | None = None
+    authorization_source_label: str = "Chat: Unbenannt"
 
 
 class ChatService:
@@ -118,7 +119,11 @@ class ChatService:
             chat.compressed_through_seq,
             self._avatar,
         )
-        return ChatTurn(chat_id=chat_id, messages=messages)
+        return ChatTurn(
+            chat_id=chat_id,
+            messages=messages,
+            authorization_source_label=self._authorization_source_label(chat.title),
+        )
 
     async def stream_response(
         self,
@@ -151,7 +156,9 @@ class ChatService:
         if self._tool_runner is not None:
             chat = self._repository.get_chat(turn.chat_id)
             assert chat is not None and chat.principal_id is not None
-            chunks = self._tool_runner.stream_response(chat.principal_id, turn.messages)
+            chunks = self._tool_runner.stream_response(
+                chat.principal_id, turn.messages, turn.authorization_source_label
+            )
         else:
             chunks = self._runtime.generate_text_stream(turn.messages)
 
@@ -238,3 +245,9 @@ class ChatService:
         except Exception:
             # Automatic naming is optional and must never fail the chat turn.
             return
+
+    @staticmethod
+    def _authorization_source_label(title: str) -> str:
+        """Create the compact chat label shown by the permission inbox."""
+        compact = " ".join(title.split())
+        return f"Chat: {compact[:60]}"

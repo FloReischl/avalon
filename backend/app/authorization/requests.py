@@ -20,6 +20,7 @@ class AuthorizationRequestManager:
     def __init__(self, timeout_seconds: float = 600.0) -> None:
         self._timeout_seconds = timeout_seconds
         self._pending: dict[str, _PendingRequest] = {}
+        self._listeners: set[asyncio.Queue[None]] = set()
 
     def create(
         self,
@@ -29,6 +30,7 @@ class AuthorizationRequestManager:
         formatted_items: list[str],
         validity_type: str,
         default_expiry: int,
+        source_label: str = "Chat: chat-default",
     ) -> AuthorizationRequest:
         if len(items) != len(formatted_items):
             raise ValueError("Authorization items must have matching labels.")
@@ -40,11 +42,13 @@ class AuthorizationRequestManager:
             formatted_items=formatted_items,
             validity_type=validity_type,
             default_expiry=default_expiry,
+            source_label=source_label,
         )
         self._pending[request.id] = _PendingRequest(
             request=request,
             future=asyncio.get_running_loop().create_future(),
         )
+        self._notify()
         return request
 
     async def wait(self, request_id: str) -> AuthorizationDecision:
@@ -57,6 +61,24 @@ class AuthorizationRequestManager:
             raise AuthorizationTimeout() from exc
         finally:
             self._pending.pop(request_id, None)
+            self._notify()
+
+    def pending_requests(self) -> list[AuthorizationRequest]:
+        """Return public pending-request metadata in creation order."""
+        return [pending.request for pending in self._pending.values()]
+
+    def subscribe(self) -> asyncio.Queue[None]:
+        queue: asyncio.Queue[None] = asyncio.Queue(maxsize=1)
+        self._listeners.add(queue)
+        return queue
+
+    def unsubscribe(self, queue: asyncio.Queue[None]) -> None:
+        self._listeners.discard(queue)
+
+    def _notify(self) -> None:
+        for queue in self._listeners:
+            if queue.empty():
+                queue.put_nowait(None)
 
     def confirm(
         self,

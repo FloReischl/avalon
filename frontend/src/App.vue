@@ -24,6 +24,7 @@ import {
 } from "./services/inputShape";
 import { exitAvalon } from "./services/appLifecycle";
 import { showChatWindow } from "./services/chatWindow";
+import { showPermissionsWindow } from "./services/permissionsWindow";
 import { startAvatarWindowDrag } from "./services/windowDrag";
 import { setAvatarWindowTitle } from "./services/windowTitle";
 import {
@@ -43,6 +44,7 @@ import {
   notifyTtsPlaybackEnded,
   startAudioCall,
   synthesizeSpeech,
+  getPendingAuthorizationRequests,
 } from "./services/backend";
 import { requestRuntimeWarmUp } from "./services/runtimeWarmup";
 
@@ -60,9 +62,12 @@ const backendLogs = ref<string[]>([]);
 const avatarScalePercent = ref(100);
 const avatarRuntimeState = ref<AvatarRuntimeState>({ state: "standard", backendPending: false });
 const animationFrame = ref(0);
+const pendingPermissionCount = ref(0);
+let permissionEvents: EventSource | undefined;
 const avatarStage = useTemplateRef<HTMLDivElement>("avatarStage");
 const avatarRegion = useTemplateRef<HTMLDivElement>("avatarRegion");
 const avatarImage = useTemplateRef<HTMLImageElement>("avatarImage");
+const permissionsButton = useTemplateRef<HTMLButtonElement>("permissionsButton");
 const audioButton = useTemplateRef<HTMLButtonElement>("audioButton");
 const exitButton = useTemplateRef<HTMLButtonElement>("exitButton");
 
@@ -622,6 +627,7 @@ async function applyAvatarInputShape() {
   }
 
   const controls: Array<HTMLElement | null> = [
+    permissionsButton.value,
     audioButton.value,
     exitButton.value,
   ];
@@ -697,6 +703,18 @@ async function handleAvatarDoubleClick() {
   }
 }
 
+async function refreshPendingPermissionCount() {
+  try {
+    pendingPermissionCount.value = (await getPendingAuthorizationRequests()).length;
+  } catch (error) {
+    console.error("[permissions] failed to refresh pending requests", error);
+  }
+}
+
+async function openPermissions() {
+  try { await showPermissionsWindow(); } catch (error) { console.error("[permissions] failed to show window", error); }
+}
+
 async function handleExit() {
   try {
     await exitAvalon();
@@ -709,6 +727,16 @@ onMounted(async () => {
   window.addEventListener("keydown", handleAvatarScaleKeydown);
   window.addEventListener("resize", handleAvatarWindowResize);
   window.addEventListener("focus", syncExternalAvatarCall);
+  await refreshPendingPermissionCount();
+  if (typeof EventSource !== "undefined") {
+    permissionEvents = new EventSource(
+      "http://127.0.0.1:8095/api/v1/authorization-requests/events",
+    );
+    permissionEvents.addEventListener(
+      "authorization_requests_changed",
+      () => { void refreshPendingPermissionCount(); },
+    );
+  }
 
   try {
     unlistenAudioCall = await listenToAudioCallChanged(() => {
@@ -782,6 +810,7 @@ onBeforeUnmount(() => {
   unlisten?.();
   unlistenAvatarState?.();
   unlistenAudioCall?.();
+  permissionEvents?.close();
   if (animationTimer !== undefined) window.clearInterval(animationTimer);
 });
 
@@ -855,6 +884,10 @@ onBeforeUnmount(() => {
         :style="{ width: `${24 * avatarScalePercent / 100}rem` }"
       >
         <div class="avatar-control-buttons">
+          <button ref="permissionsButton" class="audio-button permission-button" type="button" data-testid="permissions-button" aria-label="Permissions" title="Permissions" @click="openPermissions">
+            <svg class="audio-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l8 3v6c0 5-3.4 9.4-8 11-4.6-1.6-8-6-8-11V5l8-3z"/><path d="M8 12h8M10 9v6M14 9v6"/></svg>
+            <span v-if="pendingPermissionCount > 0" class="permission-badge">!</span>
+          </button>
           <button
             ref="audioButton"
             class="audio-button"

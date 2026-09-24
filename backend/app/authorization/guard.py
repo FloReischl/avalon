@@ -39,6 +39,7 @@ class PermissionGuard:
         key: str,
         items: list[object],
         capability: Callable[[list[object]], Awaitable[Result]],
+        source_label: str = "Chat: chat-default",
     ) -> Result:
         definition = self._repository.get_principal_permission(
             principal_id, context, key
@@ -58,6 +59,7 @@ class PermissionGuard:
             [permission.format(item) for item in items],
             definition.validity_type,
             definition.default_expiry,
+            source_label,
         )
         if self._request_observer is not None:
             self._request_observer(request)

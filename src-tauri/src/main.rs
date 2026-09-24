@@ -51,6 +51,15 @@ fn show_chat_window(app: tauri::AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn show_permissions_window(app: tauri::AppHandle) -> Result<(), String> {
+    let window = app
+        .get_webview_window("permissions")
+        .ok_or("Permissions window is unavailable")?;
+    window.show().map_err(|error| error.to_string())?;
+    window.set_focus().map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 fn exit_app(app: tauri::AppHandle) {
     app.exit(0);
 }
@@ -68,12 +77,13 @@ fn main() {
             set_window_input_regions,
             resize_avatar_window,
             show_chat_window,
+            show_permissions_window,
             exit_app
         ])
         .setup(move |app| {
             let icon = tauri::include_image!("./icons/icon.png");
 
-            for label in ["main", "chat"] {
+            for label in ["main", "chat", "permissions"] {
                 let window = app
                     .get_webview_window(label)
                     .ok_or_else(|| std::io::Error::other(format!("window '{label}' not found")))?;
@@ -100,12 +110,12 @@ fn main() {
         {
             if label == "main" {
                 app_handle.exit(0);
-            } else if label == "chat" {
+            } else if label == "chat" || label == "permissions" {
                 api.prevent_close();
 
-                if let Some(window) = app_handle.get_webview_window("chat") {
+                if let Some(window) = app_handle.get_webview_window(label) {
                     if let Err(error) = window.hide() {
-                        eprintln!("failed to hide Avalon chat window: {error}");
+                        eprintln!("failed to hide Avalon window '{label}': {error}");
                     }
                 }
             }

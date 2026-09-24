@@ -68,6 +68,16 @@ class AuthorizationDecisionRequest(BaseModel):
     duration_seconds: int | None = Field(default=None, ge=1, le=365 * 24 * 60 * 60)
 
 
+class PendingAuthorizationRequestResponse(BaseModel):
+    id: str
+    context: str
+    key: str
+    items: list[str]
+    validity_type: Literal["permanent", "duration", "range"]
+    default_expiry: int
+    source_label: str
+
+
 class ConversationMessage(BaseModel):
     """One previous plain-text conversation message."""
 
