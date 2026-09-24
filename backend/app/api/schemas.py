@@ -61,6 +61,13 @@ class ChatRequest(BaseModel):
     message: str = Field(min_length=1)
 
 
+class AuthorizationDecisionRequest(BaseModel):
+    """One browser decision for a pending authorization request."""
+
+    approved_item_indexes: list[int] = Field(default_factory=list)
+    duration_seconds: int | None = Field(default=None, ge=1, le=365 * 24 * 60 * 60)
+
+
 class ConversationMessage(BaseModel):
     """One previous plain-text conversation message."""
 

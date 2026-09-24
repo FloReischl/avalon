@@ -180,6 +180,7 @@ class UserConfig(StrictConfigModel):
     """Validated editable Avalon configuration."""
 
     name: NonEmptyStr
+    chat_default_principal_key: NonEmptyStr = "chat-default"
     tts: TtsUserConfig
     avatars: list[AvatarConfig] = Field(min_length=1)
 

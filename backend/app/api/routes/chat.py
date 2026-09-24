@@ -3,6 +3,7 @@
 import json
 import logging
 from collections.abc import AsyncIterator
+import asyncio
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -10,6 +11,7 @@ from fastapi.responses import StreamingResponse
 from app.api.schemas import ChatRequest
 from app.commands.factory import build_command_registry
 from app.persistence.chat_repository import ChatRepository
+from app.persistence.authorization_repository import AuthorizationRepository
 from app.persistence.database import (
     create_database_engine,
     create_session_factory,
@@ -21,6 +23,12 @@ from app.services.chat import (
     ChatService,
     ChatTurn,
 )
+from app.authorization.guard import PermissionGuard
+from app.authorization.permissions import build_permission_registry
+from app.authorization.runtime import get_authorization_request_manager
+from app.authorization.types import AuthorizationRequest
+from app.services.tool_runner import ToolRunner
+from app.services.web_search import WebSearchService
 from app.state import get_avalon_state
 from app.state import get_audio_call_state
 
@@ -36,12 +44,21 @@ def get_chat_service():
 
     try:
         state = get_avalon_state()
+        authorization_events: asyncio.Queue[object] = asyncio.Queue()
+        guard = PermissionGuard(
+            AuthorizationRepository(create_session_factory(engine)),
+            build_permission_registry(),
+            get_authorization_request_manager(),
+            request_observer=authorization_events.put_nowait,
+        )
 
         yield ChatService(
             OllamaRuntime(),
             repository,
             state.current_avatar,
             build_command_registry(state),
+            tool_runner=ToolRunner(OllamaRuntime(), guard, WebSearchService()),
+            authorization_events=authorization_events,
         )
     finally:
         engine.dispose()

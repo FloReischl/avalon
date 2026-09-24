@@ -1,4 +1,5 @@
 name: Frieda
+chat_default_principal_key: chat-default
 tts:
   chatterbox:
     reference_audio: data/tts/chatterbox/frieda1.wav

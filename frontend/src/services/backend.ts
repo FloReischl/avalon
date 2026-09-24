@@ -17,6 +17,16 @@ export interface ChatStreamHandlers {
   onTranscriptChunk?: (text: string) => void;
   onTranscriptError?: () => void;
   onDone?: () => void;
+  onAuthorizationRequired?: (request: AuthorizationRequest) => void;
+}
+
+export interface AuthorizationRequest {
+  id: string;
+  context: string;
+  key: string;
+  items: string[];
+  validityType: "permanent" | "duration" | "range";
+  defaultExpiry: number;
 }
 
 export interface ConversationMessage {
@@ -185,6 +195,24 @@ export async function streamChatMessage(
   });
 
   await consumeChatStream(response, handlers);
+}
+
+export async function confirmAuthorization(
+  requestId: string, approvedItemIndexes: number[], durationSeconds?: number,
+): Promise<void> {
+  const response = await fetch(
+    `${BACKEND_BASE_URL}/api/v1/authorization-requests/${requestId}/confirm`,
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ approved_item_indexes: approvedItemIndexes, duration_seconds: durationSeconds }) },
+  );
+  if (!response.ok) throw new Error(`Authorization confirmation failed with ${response.status}`);
+}
+
+export async function abortAuthorization(requestId: string): Promise<void> {
+  const response = await fetch(
+    `${BACKEND_BASE_URL}/api/v1/authorization-requests/${requestId}/abort`,
+    { method: "POST" },
+  );
+  if (!response.ok) throw new Error(`Authorization abort failed with ${response.status}`);
 }
 
 export async function startAudioRecording(): Promise<void> {
@@ -433,6 +461,24 @@ async function consumeChatStream(
       if (event === "done") {
         completed = true;
         handlers.onDone?.();
+        continue;
+      }
+
+      if (event === "authorization_required") {
+        const parsed = JSON.parse(data) as Record<string, unknown>;
+        const items = typeof parsed.items === "string" ? JSON.parse(parsed.items) : undefined;
+        if (
+          typeof parsed.id !== "string" || typeof parsed.context !== "string"
+          || typeof parsed.key !== "string" || !Array.isArray(items)
+          || !items.every((item) => typeof item === "string")
+          || !["permanent", "duration", "range"].includes(String(parsed.validity_type))
+          || !Number.isInteger(Number(parsed.default_expiry))
+        ) throw new Error("Invalid authorization request event");
+        handlers.onAuthorizationRequired?.({
+          id: parsed.id, context: parsed.context, key: parsed.key, items,
+          validityType: parsed.validity_type as "permanent" | "duration" | "range",
+          defaultExpiry: Number(parsed.default_expiry),
+        });
         continue;
       }
 

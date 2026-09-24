@@ -13,6 +13,8 @@ from app.api.router import api_router
 from app.config import settings
 from app.mcp.server import create_mcp_server
 from app.persistence.migrations import run_migrations
+from app.persistence.authorization_repository import AuthorizationRepository
+from app.persistence.database import create_database_engine, create_session_factory
 from app.runtime.ollama import OllamaRuntime
 from app.state import initialize_avalon_state
 from app.user_config import initialize_user_config
@@ -58,6 +60,13 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
             initialize_avalon_state(user_config)
             await validate_configured_llms(OllamaRuntime())
             run_migrations()
+            engine = create_database_engine()
+            try:
+                AuthorizationRepository(create_session_factory(engine)).bootstrap_chat_default_web_search(
+                    user_config.chat_default_principal_key
+                )
+            finally:
+                engine.dispose()
         except Exception:
             traceback.print_exc(file=sys.stderr)
             raise

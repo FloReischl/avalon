@@ -8,6 +8,7 @@ from typing import Any, Callable
 
 from app.commands import CommandRegistry, CommandRequest, parse_command
 from app.persistence.chat_repository import ChatRepository
+from app.user_config import get_user_config
 from app.user_config import AvatarConfig
 from app.runtime.base import ModelRuntime
 from app.services.context_compression import (
@@ -15,6 +16,7 @@ from app.services.context_compression import (
     build_active_context,
     parse_compressed_context,
 )
+from app.services.tool_runner import ToolRunner
 
 
 class ChatNotFoundError(Exception):
@@ -46,6 +48,8 @@ class ChatService:
         command_registry: CommandRegistry | None = None,
         compression_service: ContextCompressionService | None = None,
         task_scheduler: Callable[[Any], Any] | None = None,
+        tool_runner: ToolRunner | None = None,
+        authorization_events: asyncio.Queue[object] | None = None,
     ) -> None:
         self._runtime = runtime
         self._repository = repository
@@ -58,6 +62,8 @@ class ChatService:
         )
         self._task_scheduler = task_scheduler or asyncio.create_task
         self._compression_tasks: set[asyncio.Task[object]] = set()
+        self._tool_runner = tool_runner
+        self.authorization_events = authorization_events
 
     def start_turn(
         self,
@@ -67,10 +73,18 @@ class ChatService:
         """Persist the user input and prepare bounded model context."""
         if chat_id is None:
             title = datetime.now().strftime("New %Y-%m-%d %H:%M:%S")
+            try:
+                principal_key = get_user_config().chat_default_principal_key
+            except RuntimeError:
+                principal_key = "chat-default"
+            principal = self._repository.get_principal_by_key(principal_key)
+            if principal is None:
+                raise RuntimeError("Configured chat default principal is missing.")
             chat = self._repository.create_chat_with_message(
                 title,
                 "user",
                 message,
+                principal.id,
             )
             chat_id = chat.id
         else:
@@ -134,7 +148,14 @@ class ChatService:
 
         response_chunks: list[str] = []
 
-        async for chunk in self._runtime.generate_text_stream(turn.messages):
+        if self._tool_runner is not None:
+            chat = self._repository.get_chat(turn.chat_id)
+            assert chat is not None and chat.principal_id is not None
+            chunks = self._tool_runner.stream_response(chat.principal_id, turn.messages)
+        else:
+            chunks = self._runtime.generate_text_stream(turn.messages)
+
+        async for chunk in chunks:
             response_chunks.append(chunk)
             yield chunk
 

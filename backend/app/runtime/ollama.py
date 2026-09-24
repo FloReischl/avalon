@@ -138,3 +138,29 @@ class OllamaRuntime(ModelRuntime):
                                 yield text
             except (httpx.RequestError, httpx.HTTPStatusError, ValueError) as exc:
                 raise RuntimeError(f"Ollama error: {exc}") from exc
+
+    async def generate_tool_response(
+        self,
+        messages: list[dict[str, object]],
+        tools: list[dict[str, object]],
+    ) -> dict[str, object]:
+        """Run one non-streaming native Ollama tool-calling turn."""
+        async with self._inference_model() as model:
+            try:
+                async with httpx.AsyncClient(timeout=120.0) as client:
+                    response = await client.post(
+                        f"http://{settings.ollama_host}/api/chat",
+                        json={
+                            "model": model,
+                            "messages": messages,
+                            "tools": tools,
+                            "stream": False,
+                        },
+                    )
+                    response.raise_for_status()
+                    message = response.json().get("message")
+                    if not isinstance(message, dict):
+                        raise ValueError("Invalid Ollama tool response")
+                    return message
+            except (httpx.RequestError, httpx.HTTPStatusError, ValueError) as exc:
+                raise RuntimeError(f"Ollama error: {exc}") from exc

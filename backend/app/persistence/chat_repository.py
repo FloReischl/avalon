@@ -3,7 +3,7 @@
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.persistence.models import Chat, Message
+from app.persistence.models import Chat, Message, Principal
 
 
 class ChatRepository:
@@ -12,12 +12,20 @@ class ChatRepository:
     def __init__(self, session_factory: sessionmaker[Session]) -> None:
         self._session_factory = session_factory
 
-    def create_chat(self, title: str) -> Chat:
+    @property
+    def session_factory(self) -> sessionmaker[Session]:
+        """Expose the shared factory for collaborating repositories."""
+        return self._session_factory
+
+    def create_chat(self, title: str, principal_id: int | None = None) -> Chat:
         """Create one persistent chat."""
         normalized_title = self._validate_title(title)
 
         with self._session_factory() as session:
-            chat = Chat(title=normalized_title)
+            chat = Chat(
+                title=normalized_title,
+                principal_id=self._resolve_principal_id(session, principal_id),
+            )
             session.add(chat)
             session.commit()
             session.refresh(chat)
@@ -28,13 +36,18 @@ class ChatRepository:
         title: str,
         role: str,
         content: str,
+        principal_id: int | None = None,
     ) -> Chat:
         """Create a chat and its first message atomically."""
         normalized_title = self._validate_title(title)
         self._validate_message(role, content)
 
         with self._session_factory() as session:
-            chat = Chat(title=normalized_title, next_message_seq=2)
+            chat = Chat(
+                title=normalized_title,
+                principal_id=self._resolve_principal_id(session, principal_id),
+                next_message_seq=2,
+            )
             message = Message(
                 chat=chat,
                 role=role,
@@ -98,6 +111,17 @@ class ChatRepository:
         """Return one chat or None when it does not exist."""
         with self._session_factory() as session:
             return session.get(Chat, chat_id)
+
+    def get_principal_by_key(self, key: str) -> Principal | None:
+        """Resolve a configured chat principal."""
+        with self._session_factory() as session:
+            principal = session.scalar(select(Principal).where(Principal.key == key))
+            if principal is None and key == "chat-default":
+                principal = Principal(key=key, chat_assignable=True)
+                session.add(principal)
+                session.commit()
+                session.refresh(principal)
+            return principal
 
     def get_messages(self, chat_id: int) -> list[Message]:
         """Return the complete chat history in chronological order."""
@@ -252,6 +276,21 @@ class ChatRepository:
             session.delete(chat)
             session.commit()
             return True
+
+    @staticmethod
+    def _resolve_principal_id(session: Session, principal_id: int | None) -> int:
+        """Use the bootstrap default for legacy callers and focused tests."""
+        if principal_id is not None:
+            return principal_id
+
+        principal = session.scalar(
+            select(Principal).where(Principal.key == "chat-default")
+        )
+        if principal is None:
+            principal = Principal(key="chat-default", chat_assignable=True)
+            session.add(principal)
+            session.flush()
+        return principal.id
 
     @staticmethod
     def _validate_message(role: str, content: str) -> None:
