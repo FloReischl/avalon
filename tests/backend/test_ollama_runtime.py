@@ -6,8 +6,8 @@ import pytest
 from httpx import ConnectError
 from pytest_httpx import HTTPXMock
 
-from app.config import settings
-from app.runtime.ollama import OllamaRuntime
+from app.config import LlmConfig, settings
+from app.runtime.ollama import OllamaRuntime, _normalize_qwen_text_tool_call
 
 
 class FakeRuntimeState:
@@ -154,6 +154,66 @@ async def test_warm_up_uses_stateless_text_generation(
     )
 
     await OllamaRuntime().warm_up()
+
+
+@pytest.mark.asyncio
+async def test_generate_tool_response_normalizes_qwen_text_json_tool_call(
+    httpx_mock: HTTPXMock,
+    runtime_state: FakeRuntimeState,
+) -> None:
+    runtime_state.current_llm = LlmConfig(
+        key="qwen",
+        model="qwen2.5-coder:7b-instruct-ctx16k",
+    )
+    messages = [{"role": "user", "content": "Suche Avalon."}]
+    tools = [{"type": "function", "function": {"name": "web.search"}}]
+    httpx_mock.add_response(
+        method="POST",
+        url=f"http://{settings.ollama_host}/api/chat",
+        match_json={
+            "model": runtime_state.current_llm.model,
+            "messages": messages,
+            "tools": tools,
+            "stream": False,
+        },
+        json={
+            "message": {
+                "role": "assistant",
+                "content": '{"name":"web.search","arguments":{"query":"Avalon"}}',
+            }
+        },
+    )
+
+    response = await OllamaRuntime().generate_tool_response(messages, tools)
+
+    assert response == {
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [
+            {"function": {"name": "web.search", "arguments": {"query": "Avalon"}}}
+        ],
+    }
+
+
+@pytest.mark.parametrize(
+    ("model", "message"),
+    [
+        ("qwen2.5-coder:7b-instruct", {"content": "not json"}),
+        (
+            "qwen2.5-coder:7b-instruct",
+            {"content": '{"name":"web.search","arguments":{},"extra":true}'},
+        ),
+        (
+            "gemma4:e4b-it-q4_K_M-ctx16k",
+            {"content": '{"name":"web.search","arguments":{}}'},
+        ),
+    ],
+)
+def test_qwen_text_tool_call_normalizer_preserves_non_matching_content(
+    model: str,
+    message: dict[str, object],
+) -> None:
+    assert _normalize_qwen_text_tool_call(model, message) == message
 
 
 @pytest.mark.asyncio
@@ -389,4 +449,3 @@ async def test_generate_text_stream_closes_http_stream_when_cancelled(
     assert client_exited is True
     assert runtime_state.begin_calls == 1
     assert runtime_state.end_calls == 1
-

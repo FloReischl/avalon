@@ -35,6 +35,7 @@ class ToolRunner:
         self, principal_id: int, messages: list[dict[str, str]], source_label: str
     ) -> AsyncIterator[str]:
         tool_messages: list[dict[str, object]] = list(messages)
+        tool_result_cache: dict[str, list[dict[str, str]]] = {}
         for _ in range(5):
             response = await self._runtime.generate_tool_response(
                 tool_messages, [WEB_SEARCH_TOOL]
@@ -50,11 +51,38 @@ class ToolRunner:
                 raise RuntimeError("Ollama returned invalid tool calls.")
             tool_messages.append({"role": "assistant", "content": "", "tool_calls": calls})
             for call in calls:
-                result = await self._run_call(principal_id, call, source_label)
+                cache_key = self._cache_key(call)
+                if cache_key is not None and cache_key in tool_result_cache:
+                    result = tool_result_cache[cache_key]
+                else:
+                    result = await self._run_call(principal_id, call, source_label)
+                    if cache_key is not None:
+                        tool_result_cache[cache_key] = result
                 tool_messages.append(
                     {"role": "tool", "content": json.dumps(result, ensure_ascii=False)}
                 )
         raise RuntimeError("Tool calling exceeded five iterations.")
+
+    @staticmethod
+    def _cache_key(call: object) -> str | None:
+        """Return a stable cache key for the currently supported read-only tool."""
+        if not isinstance(call, dict):
+            return None
+        function = call.get("function")
+        if not isinstance(function, dict):
+            return None
+        arguments = function.get("arguments")
+        if (
+            function.get("name") != "web.search"
+            or not isinstance(arguments, dict)
+            or not isinstance(arguments.get("query"), str)
+        ):
+            return None
+        return json.dumps(
+            {"name": "web.search", "arguments": {"query": arguments["query"]}},
+            ensure_ascii=False,
+            sort_keys=True,
+        )
 
     async def _run_call(self, principal_id: int, call: object, source_label: str) -> list[dict[str, str]]:
         if not isinstance(call, dict) or call.get("function", {}).get("name") != "web.search":

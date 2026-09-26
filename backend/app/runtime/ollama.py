@@ -11,6 +11,45 @@ from app.runtime.base import ModelRuntime
 from app.state import AvalonState, get_avalon_state
 
 
+def _normalize_qwen_text_tool_call(
+    model: str, message: dict[str, object]
+) -> dict[str, object]:
+    """Map Qwen2.5-Coder's text-JSON tool call to Ollama's native shape.
+
+    Some Qwen2.5-Coder variants return the JSON object requested by their
+    Modelfile as assistant content, without the ``<tool_call>`` delimiters
+    Ollama needs to populate ``tool_calls``. Only accept one complete and
+    unambiguous call object; all other assistant content remains text.
+    """
+    is_qwen_coder = model == "qwen2.5-coder" or model.startswith(
+        "qwen2.5-coder:"
+    )
+    if not is_qwen_coder or message.get("tool_calls"):
+        return message
+
+    content = message.get("content")
+    if not isinstance(content, str):
+        return message
+    try:
+        call = json.loads(content)
+    except json.JSONDecodeError:
+        return message
+
+    if (
+        not isinstance(call, dict)
+        or set(call) != {"name", "arguments"}
+        or not isinstance(call["name"], str)
+        or not isinstance(call["arguments"], dict)
+    ):
+        return message
+
+    return {
+        **message,
+        "content": "",
+        "tool_calls": [{"function": call}],
+    }
+
+
 class OllamaRuntime(ModelRuntime):
     """Ollama adapter for text-only local language models."""
 
@@ -161,6 +200,6 @@ class OllamaRuntime(ModelRuntime):
                     message = response.json().get("message")
                     if not isinstance(message, dict):
                         raise ValueError("Invalid Ollama tool response")
-                    return message
+                    return _normalize_qwen_text_tool_call(model, message)
             except (httpx.RequestError, httpx.HTTPStatusError, ValueError) as exc:
                 raise RuntimeError(f"Ollama error: {exc}") from exc

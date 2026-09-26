@@ -127,7 +127,11 @@ class FakeToolRuntime:
 
 
 class FakeGuard:
+    def __init__(self):
+        self.execute_calls = 0
+
     async def execute(self, principal_id, context, key, items, capability, source_label):
+        self.execute_calls += 1
         assert (principal_id, context, key) == (3, "web", "search")
         return await capability(items)
 
@@ -142,6 +146,34 @@ class FakeWebSearch:
 async def test_tool_runner_returns_final_text_after_authorized_tool_result():
     runner = ToolRunner(FakeToolRuntime(), FakeGuard(), FakeWebSearch())
     assert [chunk async for chunk in runner.stream_response(3, [{"role": "user", "content": "Suche Avalon"}], "Chat: Suche")] == ["Hier ist das Ergebnis."]
+
+
+@pytest.mark.asyncio
+async def test_tool_runner_reuses_a_duplicate_web_search_result_within_one_turn():
+    duplicate_call = {
+        "tool_calls": [
+            {"function": {"name": "web.search", "arguments": {"query": "Avalon"}}}
+        ]
+    }
+
+    class RepeatingToolRuntime:
+        def __init__(self):
+            self.responses = [duplicate_call, duplicate_call, {"content": "Fertig."}]
+
+        async def generate_tool_response(self, messages, tools):
+            assert tools
+            return self.responses.pop(0)
+
+    guard = FakeGuard()
+    runner = ToolRunner(RepeatingToolRuntime(), guard, FakeWebSearch())
+
+    assert [
+        chunk
+        async for chunk in runner.stream_response(
+            3, [{"role": "user", "content": "Suche Avalon"}], "Chat: Suche"
+        )
+    ] == ["Fertig."]
+    assert guard.execute_calls == 1
 
 
 @pytest.mark.asyncio

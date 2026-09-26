@@ -49,7 +49,7 @@ Arbeitsindex für Frieda: Impact-Analyse, Implementierungsplanung, Abhängigkeit
 ### Authorization und Tool-Calls
 
 - Neue Chats erhalten den konfigurierten Default-Chat-Principal; Chat/Agent-Identität bestimmt den effektiven Permission-Träger.
-- `ToolRunner` verarbeitet LLM-Tool-Calls; erster integrierter Pfad ist `web.search`. Authorization bleibt Infrastruktur unterhalb des LLM.
+- `ToolRunner` verarbeitet LLM-Tool-Calls; erster integrierter Pfad ist `web.search`. Identische `web.search`-Calls werden innerhalb eines Tool-Loops über stabile Call-Keys nur einmal ausgeführt und das Ergebnis wiederverwendet. Authorization bleibt Infrastruktur unterhalb des LLM.
 - `PermissionGuard`: Permission im `principal_permissions`-Rahmen auflösen → vorhandenen Grant für den gesamten Call prüfen → sonst Authorization-Request erzeugen und Capability-Call bis Entscheidung suspendieren. Konkrete Permission-Implementierung interpretiert Scope/Items und formatiert Items für die UI.
 - Grant-Typen: `permanent`, `duration`, `range`; `range` speichert konkrete freigegebene Items und ist zeitlich begrenzt. UI darf die Items des aktuellen Calls einschränken, nie erweitern; Confirm mit leerer Auswahl ist erfolgreicher Call mit leerer Itemliste.
 - Kein `principal_permission` → `PermissionDenied` ohne Dialog. Benutzer-Abbruch → `AbortException`; Timeout → `AuthorizationTimeout`. Abort beendet die aktuelle Agent-/Tool-Operation.
@@ -95,7 +95,7 @@ Arbeitsindex für Frieda: Impact-Analyse, Implementierungsplanung, Abhängigkeit
 - `backend/app/api/router.py`: Health root; UI, Assets, Runtime, Chat, Chatmanagement, Authorization, Audio/Call, TTS unter `/api/v1`.
 - `backend/app/authorization`: `PermissionGuard`, konkrete Permission-Checks/Formatter, Authorization-Request-Manager, Typen/Exceptions und Runtime-Wiring.
 - `backend/app/persistence/authorization_repository.py`: Principals, Permission-Katalog/-Rahmen und Grants; Alembic `0005_add_authorization_schema.py`.
-- `backend/app/services/tool_runner.py`: LLM-Tool-Loop und Capability-Dispatch; aktuell `web.search`, Authorization über `PermissionGuard`.
+- `backend/app/services/tool_runner.py`: LLM-Tool-Loop und Capability-Dispatch; aktuell `web.search`, Authorization über `PermissionGuard`; turn-lokaler Result-Cache verhindert wiederholte Ausführung identischer `web.search`-Calls.
 - `backend/app/api/routes/authorization.py`: Pending-Requests, Confirm/Abort und SSE-Invalidierungen für die globale Permission-Inbox.
 - `backend/app/api/schemas.py`: öffentliche Verträge. `ChatRequest(chat_id?: positive int, message: non-empty)`, `ConversationMessage(role user|assistant, content)`, `AudioResponseRequest(messages, chat_id?)`, `HealthResponse`, Chat summary/detail (inkl. `pinned`, `compression_error_code`), Rename (max. 200), Pin, TTS, Playback-ended, UI-Konfiguration/Avatar/Sprite-Regionen.
 - `routes/health.py`: `health() -> HealthResponse`.
@@ -122,7 +122,7 @@ Arbeitsindex für Frieda: Impact-Analyse, Implementierungsplanung, Abhängigkeit
 ### Backend: Runtime, Audio und TTS-Adapter
 
 - `runtime/base.py:ModelRuntime` Protocol ist text-only: async `health`, `warm_up`, `generate_text`; `generate_text_stream(messages)` für Chatantworten. STT gehört nicht zum Runtime-Vertrag.
-- `runtime/ollama.py:OllamaRuntime`: Prozess-State-LLM je Inferenz lazy auflösen; aktive Text-/Titel-Inferenz zählen und LLM-Switch während Inferenz blockieren. `/api/show` Modell/Health, natives `/api/chat` für Warm-up sowie komplette und streamende Textgenerierung; `/api/generate` nur für Unload; kein Base64-/Native-Audio-Pfad.
+- `runtime/ollama.py:OllamaRuntime`: Prozess-State-LLM je Inferenz lazy auflösen; aktive Text-/Titel-Inferenz zählen und LLM-Switch während Inferenz blockieren. `/api/show` Modell/Health, natives `/api/chat` für Warm-up sowie komplette, streamende und Tool-Generierung; Qwen2.5-Coder-Tool-Calls, die Ollama als eindeutiges JSON im Assistant-Content statt als `tool_calls` liefert, werden eng auf Ollamas natives Tool-Call-Format normalisiert. `/api/generate` nur für Unload; kein Base64-/Native-Audio-Pfad.
 - `runtime/llama_cpp.py:LlamaCppRuntime`: geplanter text-only Stub.
 - `stt/whisper.py`: `FasterWhisperSttService`, `StreamingPcmChunker`, `AudioChunk`, `merge_transcripts`; Whisper `small` strikt CPU/int8, `de`, beam 5; 10/2-Chunking, serialisierte blockierende Inferenz außerhalb des asyncio-Event-Loops, Lazy-/Idle-Lifecycle und Call-Residency.
 - `audio/capture.py`: `CaptureError`, `CapturedAudio`, `_DialogTurnBuffer`, `PipeWireRecorder`; PTT/Dialog über 16-kHz-mono-S16-PCM, laufende volle STT-Fenster an Sink liefern, finalen Tail beim Stop erzeugen; Dialog ignoriert Stille vor Sprache und endet über konfigurierte Nachsprechstille; kein Duration-Limit; Abort/Cleanup und SIGINT→kill.
