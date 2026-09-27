@@ -47,4 +47,5 @@ addopts = "-ra"
 testpaths = ["tests/backend", "tests/integration"]
 markers = [
     "integration: tests requiring explicitly available local services or hardware",
+    "mcp_spike: opt-in live MCP-to-Ollama tool-calling compatibility spike",
 ]

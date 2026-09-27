@@ -1,7 +1,11 @@
 # ADR 06: Nativer Audioinput mit Gemma 4
 
-- Status: Angenommen als Ziel; technische Machbarkeit durch Spike zu bestätigen
-- Datum: 2026-08-26
+- ~~Status: Angenommen als Ziel; technische Machbarkeit durch Spike zu bestätigen~~
+- ~~Datum: 2026-08-26~~
+
+- Status: Ausgebaut. 2026-09-24
+  - Die Anforderung von Modellen natives Audio-In zu unterstützen war eone starke Einschränkung.
+  - whisper via CPU bringt ausreichen gute Ergebnisse bei guter Ressource-Auslastung.
 
 ## Kontext
 
