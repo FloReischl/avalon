@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # BASE_MODEL="gemma4:e4b-it-q4_K_M"
-BASE_MODEL="qwen2.5-coder:14b-instruct"
+BASE_MODEL="gemma4:12b-it-q4_K_M"
 TARGET_MODEL="${BASE_MODEL}-ctx16k"
 
 TMPFILE="$(mktemp)"
