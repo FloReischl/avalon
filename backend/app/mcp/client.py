@@ -23,12 +23,16 @@ def _internal_token(principal_id: int) -> str:
 
 
 class HttpMcpToolClient:
+    _REQUEST_TIMEOUT_SECONDS = 60 * 60
+
     def __init__(self, principal_id: int) -> None:
         self._principal_id = principal_id
 
     async def _request(self, operation: Callable[[Client], Awaitable[Result]]) -> Result:
         headers = {"Authorization": f"Bearer {_internal_token(self._principal_id)}"}
-        async with httpx2.AsyncClient(headers=headers) as http:
+        async with httpx2.AsyncClient(
+            headers=headers, timeout=self._REQUEST_TIMEOUT_SECONDS
+        ) as http:
             transport = streamable_http_client(
                 f"http://{settings.api_host}:{settings.api_port}/mcp", http_client=http
             )

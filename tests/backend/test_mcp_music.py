@@ -20,12 +20,16 @@ class FakeMusicService:
         self.track_ids = track_ids
 
 
-def test_mcp_server_exposes_music_play_tracks_and_web_search():
+def test_mcp_server_exposes_music_and_web_tools():
     mcp = create_mcp_server(FakeMusicService())  # type: ignore[arg-type]
 
     tools = asyncio.run(mcp.list_tools())
 
-    assert [tool.name for tool in tools] == ["music.play_tracks", "web.search"]
+    assert [tool.name for tool in tools] == [
+        "music.play_tracks",
+        "web.search",
+        "web.get-content",
+    ]
 
 
 def test_music_tool_logs_request_and_delegates_to_service(caplog):
@@ -50,7 +54,7 @@ def test_mcp_is_available_at_backend_mcp_path(monkeypatch):
     monkeypatch.setattr(
         main_module,
         "initialize_user_config",
-        lambda: SimpleNamespace(chat_default_principal_key="chat-default"),
+        lambda: SimpleNamespace(chat=object()),
     )
     monkeypatch.setattr(main_module, "load_agents_config", lambda: SimpleNamespace(agents=[]))
     monkeypatch.setattr(main_module, "initialize_avalon_state", lambda _: None)
@@ -59,7 +63,7 @@ def test_mcp_is_available_at_backend_mcp_path(monkeypatch):
         main_module,
         "AuthorizationRepository",
         lambda _: SimpleNamespace(
-            bootstrap_chat_default_web_search=lambda _: None,
+            reconcile_chat_permissions=lambda _: None,
             reconcile_agents_permissions=lambda _: None,
         ),
     )

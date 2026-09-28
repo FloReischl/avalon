@@ -33,6 +33,7 @@ def _valid_config(tmp_path: Path) -> tuple[dict, Path]:
 
     data = {
         "name": "Frieda",
+        "chat": {"principal_key": "chat-default"},
         "tts": {
             "chatterbox": {
                 "reference_audio": str(tmp_path / "missing-chatterbox.wav"),
@@ -101,6 +102,7 @@ def test_loads_and_normalizes_valid_user_config(tmp_path: Path) -> None:
     config = load_user_config(config_path)
 
     assert config.name == "Frieda"
+    assert config.chat.principal_key == "chat-default"
     assert config.standard_avatar.key == "standard"
     assert config.standard_avatar.base_path == (tmp_path / "avatar").resolve()
     assert config.standard_avatar.greeting_audio == "greeting.wav"

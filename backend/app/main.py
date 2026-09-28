@@ -67,9 +67,7 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
             engine = create_database_engine()
             try:
                 repository = AuthorizationRepository(create_session_factory(engine))
-                repository.bootstrap_chat_default_web_search(
-                    user_config.chat_default_principal_key
-                )
+                repository.reconcile_chat_permissions(user_config.chat)
                 repository.reconcile_agents_permissions(agents_config)
             finally:
                 engine.dispose()

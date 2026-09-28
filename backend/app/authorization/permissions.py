@@ -95,8 +95,49 @@ class WebSearchPermission:
         return {"query": query["query"]}
 
 
+class WebGetContentPermission:
+    """Authorize individual web-content retrieval requests by URL."""
+
+    def check(
+        self,
+        principal_permission: PrincipalPermission,
+        grant: PermissionGrant,
+        items: list[object],
+        now: datetime,
+    ) -> bool:
+        if grant.valid_from > now or grant.valid_to < now:
+            return False
+        if principal_permission.validity_type == "range":
+            if grant.range is None:
+                return False
+            return all(item in json.loads(grant.range) for item in items)
+        return True
+
+    def format(self, item: object) -> str:
+        if not isinstance(item, dict) or not isinstance(item.get("url"), str):
+            raise ValueError("web.get-content items require a string URL.")
+        return f"Webinhalt abrufen: {item['url']}"
+
+    def items(self, arguments: dict[str, object]) -> list[object]:
+        url = arguments.get("url")
+        if not isinstance(url, str):
+            raise ValueError("web.get-content requires a string URL.")
+        return [{"url": url}]
+
+    def approved_arguments(
+        self, approved_items: list[object], original_arguments: dict[str, object]
+    ) -> dict[str, object] | None:
+        del original_arguments
+        if not approved_items:
+            return None
+        item = approved_items[0]
+        assert isinstance(item, dict)
+        return {"url": item["url"]}
+
+
 def build_permission_registry() -> PermissionRegistry:
     """Build the registry available in the first authorization slice."""
     registry = PermissionRegistry()
     registry.register("web", "search", WebSearchPermission())
+    registry.register("web", "get-content", WebGetContentPermission())
     return registry

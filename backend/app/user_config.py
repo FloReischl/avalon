@@ -8,6 +8,8 @@ from typing import Annotated, Self
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator, model_validator
 
+from app.agents_config import AgentPermissionConfig
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 USER_CONFIG_PATH = Path("~/.avalon/config.yaml").expanduser()
@@ -176,11 +178,18 @@ class TtsUserConfig(StrictConfigModel):
     kokoro: KokoroUserConfig
 
 
+class ChatUserConfig(StrictConfigModel):
+    """Default chat principal and its grantable capabilities."""
+
+    principal_key: NonEmptyStr
+    permissions: list[AgentPermissionConfig] = Field(default_factory=list)
+
+
 class UserConfig(StrictConfigModel):
     """Validated editable Avalon configuration."""
 
     name: NonEmptyStr
-    chat_default_principal_key: NonEmptyStr = "chat-default"
+    chat: ChatUserConfig
     tts: TtsUserConfig
     avatars: list[AvatarConfig] = Field(min_length=1)
 
@@ -197,6 +206,11 @@ class UserConfig(StrictConfigModel):
     def standard_avatar(self) -> AvatarConfig:
         """Return the uniquely validated standard avatar."""
         return next(avatar for avatar in self.avatars if avatar.key == "standard")
+
+    @property
+    def chat_default_principal_key(self) -> str:
+        """Return the configured default chat principal key."""
+        return self.chat.principal_key
 
 
 _user_config: UserConfig | None = None

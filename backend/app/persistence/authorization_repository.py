@@ -12,7 +12,8 @@ from app.persistence.models import (
     Principal,
     PrincipalPermission,
 )
-from app.agents_config import AgentsConfig, AgentConfig
+from app.agents_config import AgentConfig, AgentPermissionConfig, AgentsConfig
+from app.user_config import ChatUserConfig
 
 
 class AuthorizationRepository:
@@ -34,6 +35,7 @@ class AuthorizationRepository:
                 .join(PermissionCatalog)
                 .where(
                     PrincipalPermission.principal_id == principal_id,
+                    PrincipalPermission.is_active.is_(True),
                     PermissionCatalog.context == context,
                     PermissionCatalog.key == key,
                 )
@@ -58,6 +60,7 @@ class AuthorizationRepository:
                 select(PrincipalPermission).where(
                     PrincipalPermission.principal_id == principal_id,
                     PrincipalPermission.permission_catalog_id == permission_catalog_id,
+                    PrincipalPermission.is_active.is_(True),
                 )
             )
 
@@ -67,7 +70,8 @@ class AuthorizationRepository:
             return set(
                 session.scalars(
                     select(PrincipalPermission.permission_catalog_id).where(
-                        PrincipalPermission.principal_id == principal_id
+                        PrincipalPermission.principal_id == principal_id,
+                        PrincipalPermission.is_active.is_(True),
                     )
                 )
             )
@@ -78,7 +82,10 @@ class AuthorizationRepository:
             rows = session.execute(
                 select(PermissionCatalog.context, PermissionCatalog.key)
                 .join(PrincipalPermission)
-                .where(PrincipalPermission.principal_id == principal_id)
+                .where(
+                    PrincipalPermission.principal_id == principal_id,
+                    PrincipalPermission.is_active.is_(True),
+                )
             )
             return {f"{context}.{key}" for context, key in rows}
 
@@ -98,8 +105,36 @@ class AuthorizationRepository:
             session.add(agent)
             session.flush()
 
+        self._reconcile_principal_permissions(
+            session, agent.principal_id, agent_config.permissions
+        )
+
+    def reconcile_chat_permissions(self, config: ChatUserConfig) -> Principal:
+        """Synchronize the configured default chat principal and permissions."""
+        with self._session_factory.begin() as session:
+            principal = session.scalar(
+                select(Principal).where(Principal.key == config.principal_key)
+            )
+            if principal is None:
+                principal = Principal(key=config.principal_key, chat_assignable=True)
+                session.add(principal)
+                session.flush()
+            elif not principal.chat_assignable:
+                raise ValueError(
+                    f"Configured principal '{config.principal_key}' is not chat assignable."
+                )
+
+            self._reconcile_principal_permissions(session, principal.id, config.permissions)
+            return principal
+
+    def _reconcile_principal_permissions(
+        self,
+        session: Session,
+        principal_id: int,
+        configured_permissions: list[AgentPermissionConfig],
+    ) -> None:
         configured_ids: set[tuple[int, str]] = set()
-        for configured in agent_config.permissions:
+        for configured in configured_permissions:
             catalog_config = configured.permission_catalog
             catalog = session.scalar(
                 select(PermissionCatalog).where(
@@ -120,7 +155,7 @@ class AuthorizationRepository:
             configured_ids.add(identity)
             permission = session.scalar(
                 select(PrincipalPermission).where(
-                    PrincipalPermission.principal_id == agent.principal_id,
+                    PrincipalPermission.principal_id == principal_id,
                     PrincipalPermission.permission_catalog_id == catalog.id,
                     PrincipalPermission.scope == scope,
                 )
@@ -128,7 +163,7 @@ class AuthorizationRepository:
             if permission is None:
                 session.add(
                     PrincipalPermission(
-                        principal_id=agent.principal_id,
+                        principal_id=principal_id,
                         permission_catalog_id=catalog.id,
                         scope=scope,
                         is_active=True,
@@ -143,7 +178,7 @@ class AuthorizationRepository:
 
         permissions = session.scalars(
             select(PrincipalPermission).where(
-                PrincipalPermission.principal_id == agent.principal_id
+                PrincipalPermission.principal_id == principal_id
             )
         )
         for permission in permissions:
@@ -179,51 +214,3 @@ class AuthorizationRepository:
             session.commit()
             session.refresh(grant)
             return grant
-
-    def bootstrap_chat_default_web_search(
-        self, principal_key: str
-    ) -> Principal:
-        """Idempotently provision the configured default chat principal."""
-        with self._session_factory() as session:
-            principal = session.scalar(
-                select(Principal).where(Principal.key == principal_key)
-            )
-            if principal is None:
-                principal = Principal(key=principal_key, chat_assignable=True)
-                session.add(principal)
-                session.flush()
-            elif not principal.chat_assignable:
-                raise ValueError(
-                    f"Configured principal '{principal_key}' is not chat assignable."
-                )
-
-            catalog = session.scalar(
-                select(PermissionCatalog).where(
-                    PermissionCatalog.context == "web",
-                    PermissionCatalog.key == "search",
-                )
-            )
-            if catalog is None:
-                catalog = PermissionCatalog(context="web", key="search")
-                session.add(catalog)
-                session.flush()
-
-            definition = session.scalar(
-                select(PrincipalPermission).where(
-                    PrincipalPermission.principal_id == principal.id,
-                    PrincipalPermission.permission_catalog_id == catalog.id,
-                )
-            )
-            if definition is None:
-                session.add(
-                    PrincipalPermission(
-                        principal_id=principal.id,
-                        permission_catalog_id=catalog.id,
-                        scope='["duckduckgo.com"]',
-                        validity_type="duration",
-                        default_expiry=36_000,
-                    )
-                )
-            session.commit()
-            session.refresh(principal)
-            return principal
