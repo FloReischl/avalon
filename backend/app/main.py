@@ -20,6 +20,7 @@ from app.persistence.database import create_database_engine, create_session_fact
 from app.runtime.ollama import OllamaRuntime
 from app.state import initialize_avalon_state
 from app.user_config import initialize_user_config
+from app.agents_config import load_agents_config
 
 
 logger = logging.getLogger(__name__)
@@ -59,14 +60,17 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
     async with application.state.mcp.session_manager.run():
         try:
             user_config = initialize_user_config()
+            agents_config = load_agents_config()
             initialize_avalon_state(user_config)
             await validate_configured_llms(OllamaRuntime())
             run_migrations()
             engine = create_database_engine()
             try:
-                AuthorizationRepository(create_session_factory(engine)).bootstrap_chat_default_web_search(
+                repository = AuthorizationRepository(create_session_factory(engine))
+                repository.bootstrap_chat_default_web_search(
                     user_config.chat_default_principal_key
                 )
+                repository.reconcile_agents_permissions(agents_config)
             finally:
                 engine.dispose()
         except Exception:

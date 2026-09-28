@@ -30,6 +30,8 @@ agents:
       context: file
       key: copy
     principal_permission:
+      validity_type: duration
+      default_expiry: 7200
       scope:
       - source: /tmp/avalon/podcasts
         destination: ~/Documents/podcasts

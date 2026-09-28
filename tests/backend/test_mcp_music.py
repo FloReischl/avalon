@@ -52,8 +52,17 @@ def test_mcp_is_available_at_backend_mcp_path(monkeypatch):
         "initialize_user_config",
         lambda: SimpleNamespace(chat_default_principal_key="chat-default"),
     )
+    monkeypatch.setattr(main_module, "load_agents_config", lambda: SimpleNamespace(agents=[]))
     monkeypatch.setattr(main_module, "initialize_avalon_state", lambda _: None)
     monkeypatch.setattr(main_module, "run_migrations", lambda: None)
+    monkeypatch.setattr(
+        main_module,
+        "AuthorizationRepository",
+        lambda _: SimpleNamespace(
+            bootstrap_chat_default_web_search=lambda _: None,
+            reconcile_agents_permissions=lambda _: None,
+        ),
+    )
 
     async def validate_llms(_: object) -> None:
         pass

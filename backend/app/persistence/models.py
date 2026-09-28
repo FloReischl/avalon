@@ -63,7 +63,7 @@ class PrincipalPermission(Base):
 
     __tablename__ = "principal_permissions"
     __table_args__ = (
-        UniqueConstraint("principal_id", "permission_catalog_id"),
+        UniqueConstraint("principal_id", "permission_catalog_id", "scope"),
         CheckConstraint(
             "validity_type IN ('permanent', 'duration', 'range')",
             name="ck_principal_permissions_validity_type",
@@ -78,6 +78,9 @@ class PrincipalPermission(Base):
         ForeignKey("permission_catalog.id", ondelete="CASCADE"), nullable=False
     )
     scope: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="1"
+    )
     validity_type: Mapped[str] = mapped_column(String(16), nullable=False)
     default_expiry: Mapped[int] = mapped_column(Integer, nullable=False)
 

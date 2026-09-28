@@ -6,11 +6,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.persistence.models import (
+    Agent,
     PermissionCatalog,
     PermissionGrant,
     Principal,
     PrincipalPermission,
 )
+from app.agents_config import AgentsConfig, AgentConfig
 
 
 class AuthorizationRepository:
@@ -79,6 +81,74 @@ class AuthorizationRepository:
                 .where(PrincipalPermission.principal_id == principal_id)
             )
             return {f"{context}.{key}" for context, key in rows}
+
+    def reconcile_agents_permissions(self, config: AgentsConfig) -> None:
+        """Synchronize all configured agent permissions in one DB transaction."""
+        with self._session_factory.begin() as session:
+            for agent_config in config.agents:
+                self._reconcile_agent(session, agent_config)
+
+    def _reconcile_agent(self, session: Session, agent_config: AgentConfig) -> None:
+        agent = session.scalar(select(Agent).where(Agent.key == agent_config.key))
+        if agent is None:
+            principal = Principal(key=f"agent:{agent_config.key}")
+            session.add(principal)
+            session.flush()
+            agent = Agent(key=agent_config.key, principal_id=principal.id)
+            session.add(agent)
+            session.flush()
+
+        configured_ids: set[tuple[int, str]] = set()
+        for configured in agent_config.permissions:
+            catalog_config = configured.permission_catalog
+            catalog = session.scalar(
+                select(PermissionCatalog).where(
+                    PermissionCatalog.context == catalog_config.context,
+                    PermissionCatalog.key == catalog_config.key,
+                )
+            )
+            if catalog is None:
+                catalog = PermissionCatalog(
+                    context=catalog_config.context, key=catalog_config.key
+                )
+                session.add(catalog)
+                session.flush()
+
+            permission_config = configured.principal_permission
+            scope = permission_config.canonical_scope
+            identity = (catalog.id, scope)
+            configured_ids.add(identity)
+            permission = session.scalar(
+                select(PrincipalPermission).where(
+                    PrincipalPermission.principal_id == agent.principal_id,
+                    PrincipalPermission.permission_catalog_id == catalog.id,
+                    PrincipalPermission.scope == scope,
+                )
+            )
+            if permission is None:
+                session.add(
+                    PrincipalPermission(
+                        principal_id=agent.principal_id,
+                        permission_catalog_id=catalog.id,
+                        scope=scope,
+                        is_active=True,
+                        validity_type=permission_config.validity_type,
+                        default_expiry=permission_config.default_expiry,
+                    )
+                )
+            else:
+                permission.is_active = True
+                permission.validity_type = permission_config.validity_type
+                permission.default_expiry = permission_config.default_expiry
+
+        permissions = session.scalars(
+            select(PrincipalPermission).where(
+                PrincipalPermission.principal_id == agent.principal_id
+            )
+        )
+        for permission in permissions:
+            if (permission.permission_catalog_id, permission.scope) not in configured_ids:
+                permission.is_active = False
 
     def get_grants(self, principal_permission_id: int) -> list[PermissionGrant]:
         with self._session_factory() as session:
