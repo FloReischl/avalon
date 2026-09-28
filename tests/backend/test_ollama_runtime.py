@@ -131,6 +131,7 @@ async def test_warm_up_model_uses_explicit_model(
             "model": model,
             "messages": [{"role": "user", "content": "Hallo"}],
             "stream": False,
+            "keep_alive": "1h",
         },
         json={"message": {"role": "assistant", "content": "Hallo"}},
     )
@@ -149,6 +150,7 @@ async def test_warm_up_uses_stateless_text_generation(
             "model": settings.ollama_model,
             "messages": [{"role": "user", "content": "Hallo"}],
             "stream": False,
+            "keep_alive": "1h",
         },
         json={"message": {"role": "assistant", "content": "Hallo"}},
     )
@@ -175,6 +177,7 @@ async def test_generate_tool_response_normalizes_qwen_text_json_tool_call(
             "messages": messages,
             "tools": tools,
             "stream": False,
+            "keep_alive": "1h",
         },
         json={
             "message": {
@@ -241,6 +244,7 @@ async def test_generate_text_returns_response(
             "model": settings.ollama_model,
             "messages": [{"role": "user", "content": "Hallo"}],
             "stream": False,
+            "keep_alive": "1h",
         },
         json={"message": {"role": "assistant", "content": "Hallo Flo"}},
     )
@@ -302,6 +306,7 @@ async def test_generate_text_stream_includes_context_and_returns_chunks_in_order
             "model": settings.ollama_model,
             "messages": messages,
             "stream": True,
+            "keep_alive": "1h",
         },
         content=(
             b'{"message":{"role":"assistant","content":"Du "},"done":false}\n'

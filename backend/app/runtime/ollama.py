@@ -10,6 +10,8 @@ from app.config import settings
 from app.runtime.base import ModelRuntime
 from app.state import AvalonState, get_avalon_state
 
+OLLAMA_KEEP_ALIVE = "1h"
+
 
 def _normalize_qwen_text_tool_call(
     model: str, message: dict[str, object]
@@ -112,6 +114,7 @@ class OllamaRuntime(ModelRuntime):
                         "model": model,
                         "messages": [{"role": "user", "content": "Hallo"}],
                         "stream": False,
+                        "keep_alive": OLLAMA_KEEP_ALIVE,
                     },
                 )
                 response.raise_for_status()
@@ -136,6 +139,7 @@ class OllamaRuntime(ModelRuntime):
                             "model": model,
                             "messages": [{"role": "user", "content": message}],
                             "stream": False,
+                            "keep_alive": OLLAMA_KEEP_ALIVE,
                         },
                     )
                     response.raise_for_status()
@@ -159,7 +163,12 @@ class OllamaRuntime(ModelRuntime):
                     async with client.stream(
                         "POST",
                         f"http://{settings.ollama_host}/api/chat",
-                        json={"model": model, "messages": messages, "stream": True},
+                        json={
+                            "model": model,
+                            "messages": messages,
+                            "stream": True,
+                            "keep_alive": OLLAMA_KEEP_ALIVE,
+                        },
                     ) as response:
                         response.raise_for_status()
                         async for line in response.aiter_lines():
@@ -194,6 +203,7 @@ class OllamaRuntime(ModelRuntime):
                             "messages": messages,
                             "tools": tools,
                             "stream": False,
+                            "keep_alive": OLLAMA_KEEP_ALIVE,
                         },
                     )
                     response.raise_for_status()
