@@ -136,7 +136,7 @@ async def test_llm_command_switches_model() -> None:
 
     response = await command.execute(target.key)
 
-    assert response == f"'{target.key}' activated."
+    assert response == f"'{target.key}' ({target.model}) activated."
     assert state.current_llm is target
     assert runtime.exists_calls == [target.model]
     assert runtime.unload_calls == [previous.model]
