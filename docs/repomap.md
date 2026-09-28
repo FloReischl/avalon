@@ -9,7 +9,7 @@ Arbeitsindex für Frieda: Impact-Analyse, Implementierungsplanung, Abhängigkeit
 - **Frontend:** Vue 3, TypeScript, Vite in `frontend`; Roots: Avatar `frontend/src/App.vue`, Chat `frontend/src/ChatWindow.vue`; HTTP zum Backend.
 - **Backend:** Python, FastAPI, MCP Python SDK v2 in `backend/app`; API, MCP, Application, SQLite-Persistenz, Runtime-Adapter, Audio, TTS, Konfiguration.
 - **Transport:** loopback-only `127.0.0.1:8095`, JSON, SSE mit JSON-`data`, keine Authentisierung; API `/api/v1`, MCP `/mcp`.
-- **MCP-Fähigkeiten:** `music.play_tracks`, `web.search`.
+- **MCP-Fähigkeiten:** `music.play_tracks`, `web.search`, `web.get-content`.
 - **Authorization:** Principals + `principal_permissions` begrenzen mögliche Rechte; konkrete Grants werden persistent gespeichert. Capability-Aufrufe laufen über `PermissionGuard`; fehlende Grants können einen Human-in-the-loop-Request erzeugen, ohne Authorization-Details dem LLM offenzulegen.
 
 ### Desktop- und Fensterverhalten
@@ -48,7 +48,7 @@ Arbeitsindex für Frieda: Impact-Analyse, Implementierungsplanung, Abhängigkeit
 
 ### Authorization und Tool-Calls
 
-- Neue Chats erhalten den konfigurierten Default-Chat-Principal; Chat/Agent-Identität bestimmt den effektiven Permission-Träger.
+- Neue Chats erhalten `chat.principal_key` aus `config.yaml`; `chat.permissions` ist für dessen Principal-Permissions autoritativ und wird beim App-Start analog zu Agent-Permissions transactional reconciliiert. Chat/Agent-Identität bestimmt den effektiven Permission-Träger.
 - `ToolRunner` ist capability-agnostisch: principal-spezifische Tooldefinitionen werden über MCP `tools/list` bezogen und statisch gecacht; LLM-Tool-Calls werden generisch über MCP `tools/call` ausgeführt. Identische Calls werden innerhalb eines Tool-Loops über stabile Call-Keys nur einmal ausgeführt und das Ergebnis wiederverwendet.
 - MCP bildet die Authorization-Grenze. Toolnamen `<context>.<key>` werden über `(context, key)` dynamisch gegen `permission_catalog` aufgelöst. `tools/list` exponiert nur Tools mit passender `principal_permission`; Grants beeinflussen Discovery nicht. `tools/call` verwendet dieselbe Permission-Auflösung und führt den Call über `PermissionGuard` aus.
 - `PermissionGuard`: aufgelöste `principal_permission` → vorhandenen Grant für den gesamten Call prüfen → sonst Authorization-Request erzeugen und Capability-Call bis Entscheidung suspendieren. Konkrete Permission-Implementierung interpretiert Scope/Items und formatiert Items für die UI.
@@ -85,6 +85,7 @@ Arbeitsindex für Frieda: Impact-Analyse, Implementierungsplanung, Abhängigkeit
 - `track_ids: list[int]` wird vollständig geloggt; `MusicService` löst `tracks.id → file_path` aus externer Musik-SQLite auf. Reihenfolge/Duplikate erhalten, unbekannte IDs auslassen; Playlist `/tmp/avalon_music.m3u`, Celluloid starten.
 - `web.search(query)` (`backend/app/mcp/web.py:register_web_tools`) delegiert an `WebSearchService`; vollständige Query vor Ausführung loggen.
 - `WebSearchService` nutzt `ddgs`/DuckDuckGo außerhalb des asyncio-Event-Loops: Region `de-de`, SafeSearch off, max. 5 Treffer, 10-s Timeout, keine Retries. Ergebnis `title`, `url`, `snippet`; keine Treffer `[]`, Provider-/Formatfehler propagieren.
+- `web.get-content(url)` lädt HTTP/HTTPS-Inhalte mit Redirect-Validierung, 10-s Timeout und ohne Retries. Nur finale 2xx-Antworten mit `text/html` oder `text/plain`; HTML wird als LLM-tauglicher Hauptinhalt extrahiert. Ergebnis `url`, `content`, `truncated`; Content maximal 20.000 Zeichen. Private/Loopback-/Link-local-Ziele sind erlaubt.
 
 ## Module
 
@@ -97,7 +98,7 @@ Arbeitsindex für Frieda: Impact-Analyse, Implementierungsplanung, Abhängigkeit
 - `backend/app/api/router.py`: Health root; UI, Assets, Runtime, Chat, Chatmanagement, Authorization, Audio/Call, TTS unter `/api/v1`.
 - `backend/app/authorization`: `PermissionGuard`, konkrete Permission-Checks/Formatter, Authorization-Request-Manager, Typen/Exceptions und Runtime-Wiring.
 - `backend/app/persistence/authorization_repository.py`: Principals, Permission-Katalog/-Rahmen und Grants; Alembic `0005_add_authorization_schema.py`.
-- Agent-Permissions aus `agents.yaml` werden beim App-Start validiert und transactional in die Authorization-DB reconciliiert. Fehlende Principals/Agents und Permission-Catalog-Einträge werden angelegt; Principal-Permissions werden angelegt, aktualisiert, reaktiviert oder via `is_active=false` deaktiviert. `scope` bleibt semantisch opaque und wird als kanonisches JSON persistiert. Der Reconcile ist atomar und idempotent.
+- Agent-Permissions aus `agents.yaml` sowie Default-Chat-Permissions aus `config.yaml:chat.permissions` werden beim App-Start validiert und transactional in die Authorization-DB reconciliiert. Fehlende Principals/Agents und Permission-Catalog-Einträge werden angelegt; Principal-Permissions werden angelegt, aktualisiert, reaktiviert oder via `is_active=false` deaktiviert. `scope` bleibt semantisch opaque und wird als kanonisches JSON persistiert. Der Reconcile ist atomar und idempotent; die jeweilige Konfiguration ist für die Permissions des Principals führend.
 - `backend/app/services/tool_runner.py`: capability-agnostischer LLM-Tool-Loop; bezieht principal-spezifische Tooldefinitionen über MCP, cached sie statisch und dispatcht Tool-Calls generisch über MCP. Turn-lokaler Result-Cache verhindert wiederholte Ausführung identischer Tool-Calls.
 - `backend/app/api/routes/authorization.py`: Pending-Requests, Confirm/Abort und SSE-Invalidierungen für die globale Permission-Inbox.
 - `backend/app/api/schemas.py`: öffentliche Verträge. `ChatRequest(chat_id?: positive int, message: non-empty)`, `ConversationMessage(role user|assistant, content)`, `AudioResponseRequest(messages, chat_id?)`, `HealthResponse`, Chat summary/detail (inkl. `pinned`, `compression_error_code`), Rename (max. 200), Pin, TTS, Playback-ended, UI-Konfiguration/Avatar/Sprite-Regionen.
@@ -200,6 +201,6 @@ Arbeitsindex für Frieda: Impact-Analyse, Implementierungsplanung, Abhängigkeit
 - Dieser Index ist kompakt, nicht autoritativ — `docs/adrs/08-incremental-repo-map-as-ai-working-index.md`.
 - Kleine lokale Patches erst nach genauer Quellprüfung, dann Finaldiff/Testreview — `docs/adrs/09-prompt2code-source-patching.md`.
 - MCP ist die einheitliche Capability-Grenze; Capability-Verträge, principal-spezifische Discovery und Authorization gelten transportunabhängig. Inter-Process-MCP bleibt erforderlich, ein späterer In-Process-Pfad darf nur eine semantisch und sicherheitsseitig äquivalente Optimierung sein — `docs/adrs/10-mcp-as-unified-capability-interface.md`.
-- Implementiert: FastAPI/Health/Streaming-Chat, persistierte Chats/Kompression, text-only Ollama-Runtime, Tauri-Shell/Backend-Lifecycle/Avatar-Interaktion/X11-Input-Shape, Chat-UI/Markdown, PTT/Dialog/Call mit CPU-faster-whisper-STT, MCP-Musik/Websuche, lokales TTS inkl. Avatar Call read-aloud.
+- Implementiert: FastAPI/Health/Streaming-Chat, persistierte Chats/Kompression, text-only Ollama-Runtime, Tauri-Shell/Backend-Lifecycle/Avatar-Interaktion/X11-Input-Shape, Chat-UI/Markdown, PTT/Dialog/Call mit CPU-faster-whisper-STT, MCP-Musik/Websuche/Web-Content, lokales TTS inkl. Avatar Call read-aloud.
 - Verträge/Stubs: llama.cpp-Runtime. Nicht vorhanden: Memory, Production Packaging.
 - Offen: finale lokale LLM-Runtime und Chatterbox Ressourcen/Qualität.
