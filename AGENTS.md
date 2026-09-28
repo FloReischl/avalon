@@ -17,7 +17,7 @@ Avalon ist zugleich ein reales Softwareprojekt und ein Lernprojekt für AI Augme
 - Kleine und deterministische Änderungen können von Codex als Prompt2Code-Patch vorbereitet und von Flo angewendet werden.
 - Arbeitspakete, die breite Repository-Exploration, umfangreiche Änderungen, interaktives Debugging oder größere Implementierungsautonomie benötigen, können gezielt an einen repository-aware Coding-Agenten übergeben werden.
 - Ergebnisse werden nach jedem Paket durch Codex und Flo anhand von Diff, Tests und Akzeptanzkriterien geprüft.
-- Keine Commits, Pushes oder sonstigen externen Änderungen ohne ausdrücklichen Auftrag.
+- Git Commits sind erlaubt. Pushes oder sonstigen externen Änderungen ohne ausdrücklichen Auftrag.
 
 ## Rollen von Codex
 
