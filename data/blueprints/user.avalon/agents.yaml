@@ -23,7 +23,7 @@ agents:
       context: communicate
       key: create-audio
     principal_permission:
-      scope: [ "/tmp/avalon/podcasts"]
+      scope: [ "/tmp/avalon/audio"]
       validity_type: duration
       default_expiry: 7200
   - permission_catalog:   # file.copy
@@ -33,7 +33,7 @@ agents:
       validity_type: duration
       default_expiry: 7200
       scope:
-      - source: /tmp/avalon/podcasts
+      - source: /tmp/avalon/audio
         destination: ~/Documents/podcasts
 
 # - name: orange

@@ -4,7 +4,6 @@ todo
   - authenticate
 - agents
   - communication.create-audio
-  - web.get-content
   - file.copy
 - admin
   - agents/mcp monitor
