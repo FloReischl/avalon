@@ -9,6 +9,7 @@ class LlmConfig:
 
     key: str
     model: str
+    tool_support: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,21 +32,25 @@ class Settings:
     llm_models: tuple[LlmConfig, ...] = (
         LlmConfig(
             key="standard",
-            model = "gemma4:e4b-it-q4_K_M-ctx16k"
+            model="gemma4:e4b-it-q4_K_M-ctx16k",
+            tool_support=True,
             # model="qwen2.5-coder:14b-instruct-ctx16k",
             # model="qwen2.5-coder:7b-instruct-ctx16k",
         ),
         LlmConfig(
             key="gemma4b",
             model="gemma4:e4b-it-q4_K_M-ctx16k",
+            tool_support=True,
         ),
         LlmConfig(
             key="gemma12b",
             model="gemma4:12b-it-q4_K_M-ctx16k",
+            tool_support=True,
         ),
         LlmConfig(
             key="qwen",
             model="qwen2.5-coder:7b-instruct-ctx16k",
+            tool_support=True,
             # model="qwen2.5-coder:7b-instruct",
         ),
         LlmConfig(

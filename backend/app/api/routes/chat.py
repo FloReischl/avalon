@@ -39,12 +39,17 @@ def get_chat_service():
 
     try:
         state = get_avalon_state()
+        tool_runner = (
+            ToolRunner(OllamaRuntime(), HttpMcpToolClient)
+            if state.current_llm.tool_support
+            else None
+        )
         yield ChatService(
             OllamaRuntime(),
             repository,
             state.current_avatar,
             build_command_registry(state),
-            tool_runner=ToolRunner(OllamaRuntime(), HttpMcpToolClient),
+            tool_runner=tool_runner,
         )
     finally:
         engine.dispose()
@@ -69,7 +74,7 @@ async def stream_chat_response(
             yield format_sse_event("chunk", {"text": chunk})
     except Exception as exc:
         logger.error("[chat] response stream failed: %s", exc)
-        yield format_sse_event("error", {"code": type(exc).__name__})
+        yield format_sse_event("error", {})
         return
 
     yield format_sse_event("done", {})

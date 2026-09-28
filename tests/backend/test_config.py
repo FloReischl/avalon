@@ -13,6 +13,11 @@ def test_ollama_runtime_settings_are_recorded() -> None:
     assert settings.ollama_model == "gemma4:e4b-it-q4_K_M-ctx16k"
 
 
+def test_tool_support_is_enabled_only_for_tool_capable_model_families() -> None:
+    for llm in settings.llm_models:
+        assert llm.tool_support is llm.model.startswith(("gemma4", "qwen2.5"))
+
+
 def test_chatterbox_tts_settings_are_recorded() -> None:
     assert settings.tts_device == "auto"
     assert settings.tts_chatterbox_reference_audio == "data/tts/chatterbox/frieda1.wav"

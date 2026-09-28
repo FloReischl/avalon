@@ -5,6 +5,7 @@ import pytest
 from fastapi import HTTPException
 from httpx import ASGITransport, AsyncClient
 
+from app.api.routes import chat as chat_route
 from app.api.routes.chat import (
     create_chat_response,
     get_chat_service,
@@ -12,6 +13,7 @@ from app.api.routes.chat import (
 )
 from app.api.schemas import ChatRequest
 from app.main import create_app
+from app.config import LlmConfig
 from app.services.chat import (
     ChatCompressionFailedError,
     ChatNotFoundError,
@@ -62,6 +64,48 @@ class FakeChatService:
     async def finalize_turn(self, turn: ChatTurn) -> None:
         """Accept optional post-response finalization."""
         del turn
+
+
+@pytest.mark.parametrize(
+    ("tool_support", "has_tool_runner"),
+    [(False, False), (True, True)],
+)
+def test_chat_service_creates_tool_runner_only_for_tool_capable_llm(
+    monkeypatch: pytest.MonkeyPatch,
+    tool_support: bool,
+    has_tool_runner: bool,
+) -> None:
+    disposed = False
+
+    class FakeEngine:
+        def dispose(self) -> None:
+            nonlocal disposed
+            disposed = True
+
+    state = type(
+        "State",
+        (),
+        {
+            "current_llm": LlmConfig(
+                "test", "example:model", tool_support=tool_support
+            ),
+            "current_avatar": None,
+        },
+    )()
+    monkeypatch.setattr(chat_route, "create_database_engine", lambda: FakeEngine())
+    monkeypatch.setattr(chat_route, "create_session_factory", lambda engine: object())
+    monkeypatch.setattr(chat_route, "ChatRepository", lambda factory: object())
+    monkeypatch.setattr(chat_route, "get_avalon_state", lambda: state)
+    monkeypatch.setattr(chat_route, "build_command_registry", lambda state: object())
+
+    service_factory = chat_route.get_chat_service()
+    service = next(service_factory)
+
+    assert (service._tool_runner is not None) is has_tool_runner
+
+    with pytest.raises(StopIteration):
+        next(service_factory)
+    assert disposed is True
 
 
 def post_chat(
