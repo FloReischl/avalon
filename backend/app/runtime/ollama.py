@@ -187,6 +187,80 @@ class OllamaRuntime(ModelRuntime):
             except (httpx.RequestError, httpx.HTTPStatusError, ValueError) as exc:
                 raise RuntimeError(f"Ollama error: {exc}") from exc
 
+    async def generate_tool_response_stream(
+        self,
+        messages: list[dict[str, object]],
+        tools: list[dict[str, object]],
+    ) -> AsyncIterator[dict[str, object]]:
+        """Stream one native Ollama tool-capable turn.
+
+        Qwen2.5-Coder text-JSON tool calls must be buffered until the complete
+        assistant message is available so they can be normalized without
+        leaking the tool-call JSON as visible assistant text.
+        """
+        async with self._inference_model() as model:
+            try:
+                async with httpx.AsyncClient(timeout=120.0) as client:
+                    async with client.stream(
+                        "POST",
+                        f"http://{settings.ollama_host}/api/chat",
+                        json={
+                            "model": model,
+                            "messages": messages,
+                            "tools": tools,
+                            "stream": True,
+                            "keep_alive": OLLAMA_KEEP_ALIVE,
+                        },
+                    ) as response:
+                        response.raise_for_status()
+
+                        is_qwen_coder = model == "qwen2.5-coder" or model.startswith(
+                            "qwen2.5-coder:"
+                        )
+                        qwen_content: list[str] = []
+                        qwen_tool_calls: list[object] = []
+
+                        async for line in response.aiter_lines():
+                            if not line:
+                                continue
+
+                            message = json.loads(line).get("message")
+                            if not isinstance(message, dict):
+                                raise ValueError("Invalid Ollama tool stream response")
+
+                            content = message.get("content")
+                            if content is not None and not isinstance(content, str):
+                                raise ValueError("Invalid Ollama tool stream response")
+
+                            tool_calls = message.get("tool_calls")
+                            if tool_calls is not None and not isinstance(tool_calls, list):
+                                raise ValueError("Invalid Ollama tool stream response")
+
+                            if is_qwen_coder:
+                                if content:
+                                    qwen_content.append(content)
+                                if tool_calls:
+                                    qwen_tool_calls.extend(tool_calls)
+                                continue
+
+                            if content or tool_calls:
+                                yield message
+
+                        if is_qwen_coder:
+                            complete_message: dict[str, object] = {
+                                "content": "".join(qwen_content),
+                            }
+                            if qwen_tool_calls:
+                                complete_message["tool_calls"] = qwen_tool_calls
+
+                            normalized = _normalize_qwen_text_tool_call(
+                                model, complete_message
+                            )
+                            if normalized.get("content") or normalized.get("tool_calls"):
+                                yield normalized
+            except (httpx.RequestError, httpx.HTTPStatusError, ValueError) as exc:
+                raise RuntimeError(f"Ollama error: {exc}") from exc
+
     async def generate_tool_response(
         self,
         messages: list[dict[str, object]],

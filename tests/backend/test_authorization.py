@@ -121,9 +121,9 @@ class FakeToolRuntime:
             {"content": "Hier ist das Ergebnis."},
         ]
 
-    async def generate_tool_response(self, messages, tools):
+    async def generate_tool_response_stream(self, messages, tools):
         assert tools
-        return self.responses.pop(0)
+        yield self.responses.pop(0)
 
 
 class FakeGuard:
@@ -169,9 +169,9 @@ async def test_tool_runner_reuses_a_duplicate_web_search_result_within_one_turn(
         def __init__(self):
             self.responses = [duplicate_call, duplicate_call, {"content": "Fertig."}]
 
-        async def generate_tool_response(self, messages, tools):
+        async def generate_tool_response_stream(self, messages, tools):
             assert tools
-            return self.responses.pop(0)
+            yield self.responses.pop(0)
 
     client = FakeMcpClient()
     runner = ToolRunner(RepeatingToolRuntime(), lambda principal_id: client)
@@ -190,8 +190,8 @@ async def test_tool_runner_caches_discovery_for_a_principal():
     ToolRunner._tool_definition_cache = {}
 
     class Runtime:
-        async def generate_tool_response(self, messages, tools):
-            return {"content": "Fertig."}
+        async def generate_tool_response_stream(self, messages, tools):
+            yield {"content": "Fertig."}
 
     class Client:
         def __init__(self):
