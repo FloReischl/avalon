@@ -10,7 +10,7 @@ def test_local_api_address_is_fixed() -> None:
 
 def test_ollama_runtime_settings_are_recorded() -> None:
     assert settings.ollama_host == "127.0.0.1:11434"
-    assert settings.ollama_model == "qwen2.5-coder:7b-instruct"
+    assert settings.ollama_model == "gemma4:e4b-it-q4_K_M-ctx16k"
 
 
 def test_chatterbox_tts_settings_are_recorded() -> None:

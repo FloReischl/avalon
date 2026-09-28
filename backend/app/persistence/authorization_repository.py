@@ -38,6 +38,16 @@ class AuthorizationRepository:
             )
             return session.scalar(statement)
 
+    def get_principal_capability_names(self, principal_id: int) -> set[str]:
+        """Return grantable MCP tool names; grants deliberately do not apply here."""
+        with self._session_factory() as session:
+            rows = session.execute(
+                select(PermissionCatalog.context, PermissionCatalog.key)
+                .join(PrincipalPermission)
+                .where(PrincipalPermission.principal_id == principal_id)
+            )
+            return {f"{context}.{key}" for context, key in rows}
+
     def get_grants(self, principal_permission_id: int) -> list[PermissionGrant]:
         with self._session_factory() as session:
             return list(

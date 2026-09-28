@@ -14,7 +14,7 @@ import pytest
 
 from app.config import settings
 from app.runtime.ollama import OllamaRuntime
-from app.services.tool_runner import ToolRunner, WEB_SEARCH_TOOL
+from app.services.tool_runner import ToolRunner
 
 
 pytestmark = pytest.mark.integration
@@ -41,6 +41,7 @@ _TOOL_PROMPT = (
     "einem kurzen vollständigen deutschen Satz, der dessen Titel nennt. Gib "
     "niemals JSON oder das unveränderte Toolresultat aus."
 )
+_WEB_SEARCH_TOOL = {"type": "function", "function": {"name": "web.search", "description": "", "parameters": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]}}}
 
 
 def _integration_enabled() -> bool:
@@ -121,26 +122,22 @@ async def test_model_returns_tool_call_through_ollama_runtime(model: str) -> Non
 
     await _stop_active_ollama_models()
     response = await _runtime_for(model).generate_tool_response(
-        [{"role": "user", "content": _TOOL_PROMPT}], [WEB_SEARCH_TOOL]
+        [{"role": "user", "content": _TOOL_PROMPT}], [_WEB_SEARCH_TOOL]
     )
 
     _assert_expected_call(response, model)
 
 
-class _AllowAllGuard:
-    async def execute(self, principal_id, context, key, items, capability, source_label):
-        assert (principal_id, context, key) == (42, "web", "search")
-        assert source_label == "Tool-call integration test"
-        return await capability(items)
-
-
-class _FakeWebSearch:
+class _FakeMcpClient:
     def __init__(self) -> None:
         self.queries: list[str] = []
 
-    async def search(self, query: str) -> list[dict[str, str]]:
-        assert query == _TOOL_QUERY
-        self.queries.append(query)
+    async def list_tools(self):
+        return [_WEB_SEARCH_TOOL]
+
+    async def call_tool(self, name, arguments) -> list[dict[str, str]]:
+        assert (name, arguments) == ("web.search", {"query": _TOOL_QUERY})
+        self.queries.append(arguments["query"])
         return [
             {
                 "title": _FAKE_RESULT_TITLE,
@@ -158,11 +155,10 @@ async def test_qwen_text_json_fallback_completes_tool_runner_loop(model: str) ->
         pytest.skip(f"set {_RUN_ENVIRONMENT_VARIABLE}=1 to run local Ollama model checks")
 
     await _stop_active_ollama_models()
-    web = _FakeWebSearch()
+    mcp = _FakeMcpClient()
     runner = ToolRunner(
         _TracingToolRuntime(model, _runtime_for(model)),
-        _AllowAllGuard(),
-        web,
+        lambda principal_id: mcp,
     )
 
     answer = "".join(
@@ -176,7 +172,7 @@ async def test_qwen_text_json_fallback_completes_tool_runner_loop(model: str) ->
         ]
     )
 
-    assert web.queries == [_TOOL_QUERY], f"{model} did not execute the parsed tool call."
+    assert mcp.queries == [_TOOL_QUERY], f"{model} did not execute the parsed tool call."
     assert answer.strip(), f"{model} produced no final response after the tool result."
     assert _FAKE_RESULT_TITLE in answer
     assert not answer.lstrip().startswith(("{", "[")), (

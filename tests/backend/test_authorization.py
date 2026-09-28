@@ -136,15 +136,22 @@ class FakeGuard:
         return await capability(items)
 
 
-class FakeWebSearch:
-    async def search(self, query):
-        assert query == "Avalon"
+class FakeMcpClient:
+    def __init__(self):
+        self.calls = 0
+
+    async def list_tools(self):
+        return [{"type": "function", "function": {"name": "web.search", "parameters": {}}}]
+
+    async def call_tool(self, name, arguments):
+        assert (name, arguments) == ("web.search", {"query": "Avalon"})
+        self.calls += 1
         return [{"title": "Avalon", "url": "https://example.test", "snippet": "ok"}]
 
 
 @pytest.mark.asyncio
 async def test_tool_runner_returns_final_text_after_authorized_tool_result():
-    runner = ToolRunner(FakeToolRuntime(), FakeGuard(), FakeWebSearch())
+    runner = ToolRunner(FakeToolRuntime(), lambda principal_id: FakeMcpClient())
     assert [chunk async for chunk in runner.stream_response(3, [{"role": "user", "content": "Suche Avalon"}], "Chat: Suche")] == ["Hier ist das Ergebnis."]
 
 
@@ -164,8 +171,8 @@ async def test_tool_runner_reuses_a_duplicate_web_search_result_within_one_turn(
             assert tools
             return self.responses.pop(0)
 
-    guard = FakeGuard()
-    runner = ToolRunner(RepeatingToolRuntime(), guard, FakeWebSearch())
+    client = FakeMcpClient()
+    runner = ToolRunner(RepeatingToolRuntime(), lambda principal_id: client)
 
     assert [
         chunk
@@ -173,7 +180,7 @@ async def test_tool_runner_reuses_a_duplicate_web_search_result_within_one_turn(
             3, [{"role": "user", "content": "Suche Avalon"}], "Chat: Suche"
         )
     ] == ["Fertig."]
-    assert guard.execute_calls == 1
+    assert client.calls == 1
 
 
 @pytest.mark.asyncio

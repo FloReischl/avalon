@@ -1,45 +1,36 @@
-"""Minimal in-process LLM tool runner for the first capability slice."""
+"""Generic MCP-backed LLM tool loop."""
 
 import json
-from collections.abc import AsyncIterator, Callable
-from typing import Awaitable
-
-from app.authorization.guard import PermissionGuard
-from app.runtime.ollama import OllamaRuntime
-from app.services.web_search import WebSearchService
+from collections.abc import AsyncIterator
+from typing import Protocol
 
 
-WEB_SEARCH_TOOL = {
-    "type": "function",
-    "function": {
-        "name": "web.search",
-        "description": "Durchsuche das Web bei DuckDuckGo nach aktuellen Informationen.",
-        "parameters": {
-            "type": "object",
-            "properties": {"query": {"type": "string"}},
-            "required": ["query"],
-        },
-    },
-}
+class McpToolClient(Protocol):
+    async def list_tools(self) -> list[dict[str, object]]: ...
+
+    async def call_tool(self, name: str, arguments: dict[str, object]) -> object: ...
 
 
 class ToolRunner:
-    """Resolve Ollama tool calls without exposing authorization to the LLM."""
+    """Resolve LLM tool calls through MCP without capability knowledge."""
 
-    def __init__(self, runtime: OllamaRuntime, guard: PermissionGuard, web: WebSearchService) -> None:
+    def __init__(self, runtime, mcp_client_factory) -> None:
         self._runtime = runtime
-        self._guard = guard
-        self._web = web
+        self._mcp_client_factory = mcp_client_factory
 
     async def stream_response(
         self, principal_id: int, messages: list[dict[str, str]], source_label: str
     ) -> AsyncIterator[str]:
+        del source_label
+        client = self._mcp_client_factory(principal_id)
+        try:
+            tools = await client.list_tools()
+        except Exception as exc:
+            raise RuntimeError("MCP tools/list failed.") from exc
         tool_messages: list[dict[str, object]] = list(messages)
-        tool_result_cache: dict[str, list[dict[str, str]]] = {}
+        tool_result_cache: dict[str, object] = {}
         for _ in range(5):
-            response = await self._runtime.generate_tool_response(
-                tool_messages, [WEB_SEARCH_TOOL]
-            )
+            response = await self._runtime.generate_tool_response(tool_messages, tools)
             calls = response.get("tool_calls")
             if not calls:
                 content = response.get("content")
@@ -51,54 +42,26 @@ class ToolRunner:
                 raise RuntimeError("Ollama returned invalid tool calls.")
             tool_messages.append({"role": "assistant", "content": "", "tool_calls": calls})
             for call in calls:
-                cache_key = self._cache_key(call)
-                if cache_key is not None and cache_key in tool_result_cache:
-                    result = tool_result_cache[cache_key]
-                else:
-                    result = await self._run_call(principal_id, call, source_label)
-                    if cache_key is not None:
-                        tool_result_cache[cache_key] = result
+                name, arguments = self._parse_call(call)
+                cache_key = json.dumps({"name": name, "arguments": arguments}, ensure_ascii=False, sort_keys=True)
+                if cache_key not in tool_result_cache:
+                    try:
+                        tool_result_cache[cache_key] = await client.call_tool(name, arguments)
+                    except Exception as exc:
+                        raise RuntimeError("MCP tools/call failed.") from exc
                 tool_messages.append(
-                    {"role": "tool", "content": json.dumps(result, ensure_ascii=False)}
+                    {"role": "tool", "content": json.dumps(tool_result_cache[cache_key], ensure_ascii=False)}
                 )
         raise RuntimeError("Tool calling exceeded five iterations.")
 
     @staticmethod
-    def _cache_key(call: object) -> str | None:
-        """Return a stable cache key for the currently supported read-only tool."""
+    def _parse_call(call: object) -> tuple[str, dict[str, object]]:
         if not isinstance(call, dict):
-            return None
+            raise RuntimeError("Invalid Ollama tool call.")
         function = call.get("function")
         if not isinstance(function, dict):
-            return None
-        arguments = function.get("arguments")
-        if (
-            function.get("name") != "web.search"
-            or not isinstance(arguments, dict)
-            or not isinstance(arguments.get("query"), str)
-        ):
-            return None
-        return json.dumps(
-            {"name": "web.search", "arguments": {"query": arguments["query"]}},
-            ensure_ascii=False,
-            sort_keys=True,
-        )
-
-    async def _run_call(self, principal_id: int, call: object, source_label: str) -> list[dict[str, str]]:
-        if not isinstance(call, dict) or call.get("function", {}).get("name") != "web.search":
-            raise RuntimeError("Unsupported Ollama tool call.")
-        arguments = call["function"].get("arguments")
-        if not isinstance(arguments, dict) or not isinstance(arguments.get("query"), str):
-            raise RuntimeError("web.search requires a string query.")
-        items: list[object] = [{"query": arguments["query"]}]
-
-        async def capability(approved: list[object]) -> list[dict[str, str]]:
-            if not approved:
-                return []
-            query = approved[0]
-            assert isinstance(query, dict)
-            return await self._web.search(query["query"])
-
-        return await self._guard.execute(
-            principal_id, "web", "search", items, capability, source_label
-        )
+            raise RuntimeError("Invalid Ollama tool call.")
+        name, arguments = function.get("name"), function.get("arguments")
+        if not isinstance(name, str) or not isinstance(arguments, dict):
+            raise RuntimeError("Invalid Ollama tool call.")
+        return name, arguments

@@ -1,11 +1,13 @@
 import asyncio
 import json
 import logging
+from types import SimpleNamespace
 
 from httpx import ASGITransport, AsyncClient
 from mcp.server import MCPServer
 
 import app.main as main_module
+from app.mcp.client import _internal_token
 from app.mcp.music import register_music_tools
 from app.mcp.server import create_mcp_server
 
@@ -45,7 +47,11 @@ def test_music_tool_logs_request_and_delegates_to_service(caplog):
 
 
 def test_mcp_is_available_at_backend_mcp_path(monkeypatch):
-    monkeypatch.setattr(main_module, "initialize_user_config", lambda: object())
+    monkeypatch.setattr(
+        main_module,
+        "initialize_user_config",
+        lambda: SimpleNamespace(chat_default_principal_key="chat-default"),
+    )
     monkeypatch.setattr(main_module, "initialize_avalon_state", lambda _: None)
     monkeypatch.setattr(main_module, "run_migrations", lambda: None)
 
@@ -68,6 +74,7 @@ def test_mcp_is_available_at_backend_mcp_path(monkeypatch):
                     headers={
                         "Accept": "application/json, text/event-stream",
                         "Content-Type": "application/json",
+                        "Authorization": f"Bearer {_internal_token(1)}",
                     },
                     json={
                         "jsonrpc": "2.0",
@@ -85,3 +92,18 @@ def test_mcp_is_available_at_backend_mcp_path(monkeypatch):
 
     assert response.status_code == 200
     assert '"name":"Avalon Backend"' in response.text
+
+
+def test_mcp_rejects_missing_bearer_token(monkeypatch):
+    monkeypatch.setattr(main_module, "initialize_user_config", lambda: object())
+
+    async def request_mcp():
+        application = main_module.create_app()
+        transport = ASGITransport(app=application)
+        async with AsyncClient(transport=transport, base_url="http://127.0.0.1:8095") as client:
+            return await client.post("/mcp", json={})
+
+    response = asyncio.run(request_mcp())
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": "MCP requires a bearer token."}

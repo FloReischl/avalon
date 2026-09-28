@@ -6,12 +6,14 @@ import traceback
 from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.router import api_router
 from app.config import settings
 from app.mcp.server import create_mcp_server
+from app.mcp.security import current_principal_id, principal_from_authorization
 from app.persistence.migrations import run_migrations
 from app.persistence.authorization_repository import AuthorizationRepository
 from app.persistence.database import create_database_engine, create_session_factory
@@ -88,10 +90,34 @@ class StderrExceptionMiddleware:
             raise
 
 
+class McpBearerMiddleware:
+    """Require the provisional JWT-shaped bearer token on the MCP endpoint."""
+
+    def __init__(self, app) -> None:
+        self.app = app
+
+    async def __call__(self, scope, receive, send) -> None:
+        if scope["type"] != "http" or not scope["path"].startswith("/mcp"):
+            await self.app(scope, receive, send)
+            return
+        headers = dict(scope["headers"])
+        try:
+            principal_id = principal_from_authorization(headers.get(b"authorization", b"").decode())
+        except HTTPException as exc:
+            await JSONResponse({"detail": exc.detail}, status_code=exc.status_code)(scope, receive, send)
+            return
+        token = current_principal_id.set(principal_id)
+        try:
+            await self.app(scope, receive, send)
+        finally:
+            current_principal_id.reset(token)
+
+
 def create_app() -> FastAPI:
     """Create the backend application."""
 
     application = FastAPI(title=settings.app_name, lifespan=lifespan)
+    application.add_middleware(McpBearerMiddleware)
     application.add_middleware(StderrExceptionMiddleware)
     application.add_middleware(
         CORSMiddleware,

@@ -7,6 +7,8 @@ from mcp.server import MCPServer
 
 from app.mcp.server import create_mcp_server
 from app.mcp.web import register_web_tools
+from app.mcp.security import current_principal_id
+import app.mcp.server as mcp_server_module
 
 
 class FakeMusicService:
@@ -33,6 +35,33 @@ def test_mcp_server_exposes_music_and_web_tools():
         "music.play_tracks",
         "web.search",
     ]
+
+
+def test_mcp_discovery_filters_only_principal_permissions(monkeypatch):
+    class FakeRepository:
+        def __init__(self, _):
+            pass
+
+        def get_principal_capability_names(self, principal_id):
+            assert principal_id == 7
+            return {"web.search"}
+
+    class FakeEngine:
+        def dispose(self):
+            pass
+
+    monkeypatch.setattr(mcp_server_module, "AuthorizationRepository", FakeRepository)
+    monkeypatch.setattr(mcp_server_module, "create_database_engine", FakeEngine)
+    monkeypatch.setattr(mcp_server_module, "create_session_factory", lambda _: object())
+    token = current_principal_id.set(7)
+    try:
+        tools = asyncio.run(
+            create_mcp_server(FakeMusicService(), FakeWebSearchService()).list_tools()
+        )
+    finally:
+        current_principal_id.reset(token)
+
+    assert [tool.name for tool in tools] == ["web.search"]
 
 
 def test_web_tool_logs_full_query_and_delegates(caplog):

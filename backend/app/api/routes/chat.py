@@ -22,11 +22,8 @@ from app.services.chat import (
     ChatService,
     ChatTurn,
 )
-from app.authorization.guard import PermissionGuard
-from app.authorization.permissions import build_permission_registry
-from app.authorization.runtime import get_authorization_request_manager
+from app.mcp.client import HttpMcpToolClient
 from app.services.tool_runner import ToolRunner
-from app.services.web_search import WebSearchService
 from app.state import get_avalon_state
 from app.state import get_audio_call_state
 
@@ -42,18 +39,12 @@ def get_chat_service():
 
     try:
         state = get_avalon_state()
-        guard = PermissionGuard(
-            AuthorizationRepository(create_session_factory(engine)),
-            build_permission_registry(),
-            get_authorization_request_manager(),
-        )
-
         yield ChatService(
             OllamaRuntime(),
             repository,
             state.current_avatar,
             build_command_registry(state),
-            tool_runner=ToolRunner(OllamaRuntime(), guard, WebSearchService()),
+            tool_runner=ToolRunner(OllamaRuntime(), HttpMcpToolClient),
         )
     finally:
         engine.dispose()
