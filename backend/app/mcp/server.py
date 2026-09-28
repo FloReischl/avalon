@@ -6,6 +6,7 @@ from mcp_types import CallToolResult
 from mcp.server import MCPServer
 
 from app.authorization.guard import PermissionGuard
+from app.authorization.exceptions import PermissionDenied
 from app.authorization.permissions import build_permission_registry
 from app.authorization.runtime import get_authorization_request_manager
 from app.config import settings
@@ -27,8 +28,18 @@ class AuthorizedMcpServer(MCPServer):
         principal_id = current_principal_id.get()
         if principal_id is None:
             return tools
-        allowed = self._principal_capabilities(principal_id)
-        return [tool for tool in tools if tool.name in allowed]
+        engine = create_database_engine()
+        try:
+            repository = AuthorizationRepository(create_session_factory(engine))
+            allowed = self._principal_permission_catalog_ids(principal_id, repository)
+            return [
+                tool
+                for tool in tools
+                if (resolved := self._resolve_permission(tool.name, repository)) is not None
+                and resolved[2] in allowed
+            ]
+        finally:
+            engine.dispose()
 
     async def call_tool(self, name: str, arguments: dict[str, Any], context=None):
         """Authorize every HTTP MCP capability call before delegation."""
@@ -42,10 +53,15 @@ class AuthorizedMcpServer(MCPServer):
 
         engine = create_database_engine()
         try:
+            repository = AuthorizationRepository(create_session_factory(engine))
+            resolved = self._resolve_permission(name, repository)
+            if resolved is None:
+                raise PermissionDenied(f"{name} is not grantable for principal.")
+            permission_context, permission_key, permission_catalog_id = resolved
             registry = build_permission_registry()
             permission = registry.get(permission_context, permission_key)
             guard = PermissionGuard(
-                AuthorizationRepository(create_session_factory(engine)),
+                repository,
                 registry,
                 get_authorization_request_manager(),
             )
@@ -65,23 +81,33 @@ class AuthorizedMcpServer(MCPServer):
                 items,
                 authorized_capability,
                 "MCP",
+                permission_catalog_id=permission_catalog_id,
             )
         finally:
             engine.dispose()
 
-    def _principal_capabilities(self, principal_id: int) -> set[str]:
-        if not hasattr(self, "_principal_capability_cache"):
-            self._principal_capability_cache: dict[int, set[str]] = {}
-        cache = self._principal_capability_cache
+    def _principal_permission_catalog_ids(
+        self, principal_id: int, repository: AuthorizationRepository
+    ) -> set[int]:
+        if not hasattr(self, "_principal_permission_cache"):
+            self._principal_permission_cache: dict[int, set[int]] = {}
+        cache = self._principal_permission_cache
         if principal_id not in cache:
-            engine = create_database_engine()
-            try:
-                cache[principal_id] = AuthorizationRepository(
-                    create_session_factory(engine)
-                ).get_principal_capability_names(principal_id)
-            finally:
-                engine.dispose()
+            cache[principal_id] = repository.get_principal_permission_catalog_ids(principal_id)
         return cache[principal_id]
+
+    @staticmethod
+    def _resolve_permission(
+        name: str, repository: AuthorizationRepository
+    ) -> tuple[str, str, int] | None:
+        try:
+            context, key = name.split(".", 1)
+        except ValueError:
+            return None
+        permission_catalog_id = repository.get_permission_catalog_id(context, key)
+        if permission_catalog_id is None:
+            return None
+        return context, key, permission_catalog_id
 
 
 def create_mcp_server(

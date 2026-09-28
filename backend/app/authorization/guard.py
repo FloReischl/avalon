@@ -40,9 +40,14 @@ class PermissionGuard:
         items: list[object],
         capability: Callable[[list[object]], Awaitable[Result]],
         source_label: str = "Chat: chat-default",
+        permission_catalog_id: int | None = None,
     ) -> Result:
-        definition = self._repository.get_principal_permission(
-            principal_id, context, key
+        definition = (
+            self._repository.get_principal_permission_by_catalog_id(
+                principal_id, permission_catalog_id
+            )
+            if permission_catalog_id is not None
+            else self._repository.get_principal_permission(principal_id, context, key)
         )
         if definition is None:
             raise PermissionDenied(f"{context}/{key} is not grantable for principal.")

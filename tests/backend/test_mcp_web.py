@@ -5,6 +5,7 @@ import logging
 import pytest
 from mcp.server import MCPServer
 
+from app.authorization.exceptions import PermissionDenied
 from app.mcp.server import create_mcp_server
 from app.mcp.web import register_web_tools
 from app.mcp.security import current_principal_id
@@ -44,10 +45,13 @@ def test_mcp_discovery_filters_only_principal_permissions(monkeypatch):
         def __init__(self, _):
             pass
 
-        def get_principal_capability_names(self, principal_id):
+        def get_principal_permission_catalog_ids(self, principal_id):
             lookups.append(principal_id)
             assert principal_id == 7
-            return {"web.search"}
+            return {11}
+
+        def get_permission_catalog_id(self, context, key):
+            return 11 if (context, key) == ("web", "search") else None
 
     class FakeEngine:
         def dispose(self):
@@ -79,12 +83,17 @@ def test_mcp_call_uses_central_permission_guard(monkeypatch):
         def __init__(self, _):
             pass
 
+        def get_permission_catalog_id(self, context, key):
+            return 11 if (context, key) == ("web", "search") else None
+
     class FakeGuard:
         def __init__(self, *_):
             pass
 
-        async def execute(self, principal_id, context, key, items, capability, source_label):
-            calls.append((principal_id, context, key, items, source_label))
+        async def execute(
+            self, principal_id, context, key, items, capability, source_label, **kwargs
+        ):
+            calls.append((principal_id, context, key, items, source_label, kwargs))
             return await capability(items)
 
     monkeypatch.setattr(mcp_server_module, "AuthorizationRepository", FakeRepository)
@@ -102,8 +111,45 @@ def test_mcp_call_uses_central_permission_guard(monkeypatch):
     finally:
         current_principal_id.reset(token)
 
-    assert calls == [(7, "web", "search", [{"query": "Avalon"}], "MCP")]
+    assert calls == [
+        (
+            7,
+            "web",
+            "search",
+            [{"query": "Avalon"}],
+            "MCP",
+            {"permission_catalog_id": 11},
+        )
+    ]
     assert service.queries == ["Avalon"]
+
+
+def test_mcp_call_denies_a_tool_without_catalog_entry(monkeypatch):
+    class FakeEngine:
+        def dispose(self):
+            pass
+
+    class FakeRepository:
+        def __init__(self, _):
+            pass
+
+        def get_permission_catalog_id(self, context, key):
+            assert (context, key) == ("music", "play_tracks")
+            return None
+
+    monkeypatch.setattr(mcp_server_module, "AuthorizationRepository", FakeRepository)
+    monkeypatch.setattr(mcp_server_module, "create_database_engine", FakeEngine)
+    monkeypatch.setattr(mcp_server_module, "create_session_factory", lambda _: object())
+    token = current_principal_id.set(7)
+    try:
+        with pytest.raises(PermissionDenied, match="music.play_tracks"):
+            asyncio.run(
+                create_mcp_server(FakeMusicService(), FakeWebSearchService()).call_tool(
+                    "music.play_tracks", {"track_ids": [1]}
+                )
+            )
+    finally:
+        current_principal_id.reset(token)
 
 
 def test_web_tool_logs_full_query_and_delegates(caplog):

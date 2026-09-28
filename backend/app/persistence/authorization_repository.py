@@ -38,6 +38,38 @@ class AuthorizationRepository:
             )
             return session.scalar(statement)
 
+    def get_permission_catalog_id(self, context: str, key: str) -> int | None:
+        """Resolve one MCP permission name to its persistent catalog identity."""
+        with self._session_factory() as session:
+            return session.scalar(
+                select(PermissionCatalog.id).where(
+                    PermissionCatalog.context == context,
+                    PermissionCatalog.key == key,
+                )
+            )
+
+    def get_principal_permission_by_catalog_id(
+        self, principal_id: int, permission_catalog_id: int
+    ) -> PrincipalPermission | None:
+        with self._session_factory() as session:
+            return session.scalar(
+                select(PrincipalPermission).where(
+                    PrincipalPermission.principal_id == principal_id,
+                    PrincipalPermission.permission_catalog_id == permission_catalog_id,
+                )
+            )
+
+    def get_principal_permission_catalog_ids(self, principal_id: int) -> set[int]:
+        """Return statically cacheable permission IDs, independent of grants."""
+        with self._session_factory() as session:
+            return set(
+                session.scalars(
+                    select(PrincipalPermission.permission_catalog_id).where(
+                        PrincipalPermission.principal_id == principal_id
+                    )
+                )
+            )
+
     def get_principal_capability_names(self, principal_id: int) -> set[str]:
         """Return grantable MCP tool names; grants deliberately do not apply here."""
         with self._session_factory() as session:
