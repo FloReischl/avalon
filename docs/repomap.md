@@ -49,8 +49,9 @@ Arbeitsindex für Frieda: Impact-Analyse, Implementierungsplanung, Abhängigkeit
 ### Authorization und Tool-Calls
 
 - Neue Chats erhalten den konfigurierten Default-Chat-Principal; Chat/Agent-Identität bestimmt den effektiven Permission-Träger.
-- `ToolRunner` verarbeitet LLM-Tool-Calls; erster integrierter Pfad ist `web.search`. Identische `web.search`-Calls werden innerhalb eines Tool-Loops über stabile Call-Keys nur einmal ausgeführt und das Ergebnis wiederverwendet. Authorization bleibt Infrastruktur unterhalb des LLM.
-- `PermissionGuard`: Permission im `principal_permissions`-Rahmen auflösen → vorhandenen Grant für den gesamten Call prüfen → sonst Authorization-Request erzeugen und Capability-Call bis Entscheidung suspendieren. Konkrete Permission-Implementierung interpretiert Scope/Items und formatiert Items für die UI.
+- `ToolRunner` ist capability-agnostisch: principal-spezifische Tooldefinitionen werden über MCP `tools/list` bezogen und statisch gecacht; LLM-Tool-Calls werden generisch über MCP `tools/call` ausgeführt. Identische Calls werden innerhalb eines Tool-Loops über stabile Call-Keys nur einmal ausgeführt und das Ergebnis wiederverwendet.
+- MCP bildet die Authorization-Grenze. Toolnamen `<context>.<key>` werden über `(context, key)` dynamisch gegen `permission_catalog` aufgelöst. `tools/list` exponiert nur Tools mit passender `principal_permission`; Grants beeinflussen Discovery nicht. `tools/call` verwendet dieselbe Permission-Auflösung und führt den Call über `PermissionGuard` aus.
+- `PermissionGuard`: aufgelöste `principal_permission` → vorhandenen Grant für den gesamten Call prüfen → sonst Authorization-Request erzeugen und Capability-Call bis Entscheidung suspendieren. Konkrete Permission-Implementierung interpretiert Scope/Items und formatiert Items für die UI.
 - Grant-Typen: `permanent`, `duration`, `range`; `range` speichert konkrete freigegebene Items und ist zeitlich begrenzt. UI darf die Items des aktuellen Calls einschränken, nie erweitern; Confirm mit leerer Auswahl ist erfolgreicher Call mit leerer Itemliste.
 - Kein `principal_permission` → `PermissionDenied` ohne Dialog. Benutzer-Abbruch → `AbortException`; Timeout → `AuthorizationTimeout`. Abort beendet die aktuelle Agent-/Tool-Operation.
 - `GET /api/v1/authorization-requests` liefert die globale Pending-Inbox; Confirm/Abort entscheiden Requests. `/authorization-requests/events` sendet SSE-Invalidierungen. Permission-Window lädt initial und nach Event; bei noch nicht sichtbarem Request pollt es höchstens 5 s in 500-ms-Abständen und stoppt sobald ein Request sichtbar ist.
@@ -79,7 +80,8 @@ Arbeitsindex für Frieda: Impact-Analyse, Implementierungsplanung, Abhängigkeit
 
 ### MCP-Fähigkeiten
 
-- `music.play_tracks` (`backend/app/mcp/music.py:register_music_tools`) über MCP Streamable HTTP `/mcp`.
+- MCP Streamable HTTP `/mcp` ist die einheitliche Capability-Grenze; Discovery und Aufruf erfolgen über `tools/list` bzw. `tools/call`. Toolnamen folgen `<context>.<key>` und werden über `permission_catalog` an das Permission-System gebunden.
+- `music.play_tracks` (`backend/app/mcp/music.py:register_music_tools`) ist als MCP-Capability registriert; Sichtbarkeit für einen Principal entsteht erst durch eine entsprechende `principal_permission`.
 - `track_ids: list[int]` wird vollständig geloggt; `MusicService` löst `tracks.id → file_path` aus externer Musik-SQLite auf. Reihenfolge/Duplikate erhalten, unbekannte IDs auslassen; Playlist `/tmp/avalon_music.m3u`, Celluloid starten.
 - `web.search(query)` (`backend/app/mcp/web.py:register_web_tools`) delegiert an `WebSearchService`; vollständige Query vor Ausführung loggen.
 - `WebSearchService` nutzt `ddgs`/DuckDuckGo außerhalb des asyncio-Event-Loops: Region `de-de`, SafeSearch off, max. 5 Treffer, 10-s Timeout, keine Retries. Ergebnis `title`, `url`, `snippet`; keine Treffer `[]`, Provider-/Formatfehler propagieren.
@@ -95,7 +97,7 @@ Arbeitsindex für Frieda: Impact-Analyse, Implementierungsplanung, Abhängigkeit
 - `backend/app/api/router.py`: Health root; UI, Assets, Runtime, Chat, Chatmanagement, Authorization, Audio/Call, TTS unter `/api/v1`.
 - `backend/app/authorization`: `PermissionGuard`, konkrete Permission-Checks/Formatter, Authorization-Request-Manager, Typen/Exceptions und Runtime-Wiring.
 - `backend/app/persistence/authorization_repository.py`: Principals, Permission-Katalog/-Rahmen und Grants; Alembic `0005_add_authorization_schema.py`.
-- `backend/app/services/tool_runner.py`: LLM-Tool-Loop und Capability-Dispatch; aktuell `web.search`, Authorization über `PermissionGuard`; turn-lokaler Result-Cache verhindert wiederholte Ausführung identischer `web.search`-Calls.
+- `backend/app/services/tool_runner.py`: capability-agnostischer LLM-Tool-Loop; bezieht principal-spezifische Tooldefinitionen über MCP, cached sie statisch und dispatcht Tool-Calls generisch über MCP. Turn-lokaler Result-Cache verhindert wiederholte Ausführung identischer Tool-Calls.
 - `backend/app/api/routes/authorization.py`: Pending-Requests, Confirm/Abort und SSE-Invalidierungen für die globale Permission-Inbox.
 - `backend/app/api/schemas.py`: öffentliche Verträge. `ChatRequest(chat_id?: positive int, message: non-empty)`, `ConversationMessage(role user|assistant, content)`, `AudioResponseRequest(messages, chat_id?)`, `HealthResponse`, Chat summary/detail (inkl. `pinned`, `compression_error_code`), Rename (max. 200), Pin, TTS, Playback-ended, UI-Konfiguration/Avatar/Sprite-Regionen.
 - `routes/health.py`: `health() -> HealthResponse`.
@@ -117,7 +119,7 @@ Arbeitsindex für Frieda: Impact-Analyse, Implementierungsplanung, Abhängigkeit
 - `services/audio_text_chat.py:AudioTextChatService`: orchestriert PTT/Dialog als STT-first-Pipeline; Streaming-Chunks seriell transkribieren/mergen, finalen Usertext vor normalem Text-LLM persistieren, Post-Recording-STT-Timeout/Fehler/Empty behandeln, temporäre Audioartefakte bereinigen. PTT startet Capture vor parallelem Whisper-Warm-up.
 - `services/audio_call.py:AudioCallState`: genau ein globaler Call, gebundene Chat-ID, `turn_active`, eine pending Assistant-Speech; Ende leert Assoziation/Pending.
 - `services/tts.py`: `TtsBusyError`, `TtsResult(playback_id,audio)`, single-flight inkl. Cancellation, Playback-ID, Idle-Unload.
-- `mcp/server.py`: MCP Streamable-HTTP-Komposition und Tool-Registrierung; `mcp/music.py`: Musik-Grenze über `MusicService`; `mcp/web.py`: Websuch-Grenze über `WebSearchService`.
+- `mcp/server.py`: MCP Streamable-HTTP-Komposition, Tool-Registrierung und zentrale Authorization-Grenze; principal-spezifische Discovery über `permission_catalog`/`principal_permissions`, Capability-Aufrufe über dieselbe Permission-Auflösung und `PermissionGuard`. `mcp/music.py`: Musik-Grenze über `MusicService`; `mcp/web.py`: reine Websuch-Grenze über `WebSearchService`.
 
 ### Backend: Runtime, Audio und TTS-Adapter
 
@@ -164,7 +166,7 @@ Arbeitsindex für Frieda: Impact-Analyse, Implementierungsplanung, Abhängigkeit
 - Audio/STT: `test_audio_capture.py`, `test_audio_chat_contract.py`, `test_audio_dialog.py`, `test_audio_text_chat.py`, `test_whisper_stt.py`; reale faster-whisper-Transkription von `tests/data/german-transcription.wav` läuft im normalen Pytest-Lauf; Mikrofonintegration `tests/integration/test_audio_capture_integration.py` mit `AVALON_TEST_MICROPHONE=1`.
 - TTS: `test_tts_contract.py`, `test_tts_service.py`, `test_tts_factory.py`, `test_tts_kokoro.py`, `test_tts_blueprint.py`; Kokoro-Integration `tests/integration/test_kokoro_tts_integration.py` mit `AVALON_RUN_TTS_INTEGRATION=1` und Marker.
 - UI/User-Konfiguration: `test_ui_config_contract.py`, `test_user_config.py`, `test_config.py`, `test_health.py`.
-- Commands/MCP/Musik/Web: `test_commands.py`, `test_mcp_music.py`, `test_mcp_web.py`, `test_web_search_service.py`, `test_music_service.py`, `test_music_repository.py`, `test_music_adapters.py`, Integration `tests/integration/test_music_mcp.py`.
+- Commands/MCP/Musik/Web: `test_commands.py`, `test_mcp_music.py`, `test_mcp_web.py`, `test_web_search_service.py`, `test_music_service.py`, `test_music_repository.py`, `test_music_adapters.py`; MCP-/ToolRunner-Tests prüfen principal-spezifische Discovery, zentrale Authorization, generischen Dispatch, Caching und Call-Deduplizierung. Integrationen: `tests/integration/test_music_mcp.py`; opt-in MCP/Ollama-Spike `test_mcp_ollama_tool_calling_spike.py` mit bewusst volatiler lokaler Modellmatrix.
 - Frontend: `tests/frontend/App.spec.ts`, `ChatWindow.spec.ts`, `useTransientChat.spec.ts`; bei konkreten Flows ggf. auch `backend.spec.ts`, `backend.dialog.spec.ts`, `useTransientChat.dialog.spec.ts`, `MarkdownMessage.spec.ts`, `externalLinks.spec.ts` prüfen.
 - Fixture `tests/data/german-transcription.wav`: kleine reale faster-whisper-Integration für den CPU/int8-Produktions-STT-Pfad.
 
@@ -184,7 +186,7 @@ Arbeitsindex für Frieda: Impact-Analyse, Implementierungsplanung, Abhängigkeit
 | Frontend-Chat | ChatWindow, Hook, Backend, Types, Markdown-Komponenten, Links, ChatWindow-Service/Main, Frontendtests, Chat-Schemas/Route |
 | Desktop-Shell | Tauri Main/Backend/Config/Icon, Desktop Entry/Installer, Frontend Main/App/ChatWindow/Window-Services/Styles, App-Tests |
 | Native Inputregionen | `input_shape.rs`, Tauri Main, Frontend InputShape/App/Styles, App-Tests; Alpha-Regionen/CORS und post-resize Geometrie erhalten |
-| MCP/Capabilities | `main.py`, `mcp/server.py`, `mcp/music.py`, `mcp/web.py`, `services/web_search.py`, MusicService/Repository/Playlist/Player, `pyproject.toml`, MCP-/Web-/Musik-Tests, optional Musik-Integration |
+| MCP/Capabilities | `main.py`, `mcp/server.py`, `mcp/music.py`, `mcp/web.py`, `services/tool_runner.py`, `authorization`, `persistence/authorization_repository.py`, `services/web_search.py`, MusicService/Repository/Playlist/Player, `pyproject.toml`, MCP-/ToolRunner-/Authorization-/Web-/Musik-Tests, optionale Integrationen/Spikes |
 
 ## Architekturgrenzen und Status
 
@@ -195,6 +197,7 @@ Arbeitsindex für Frieda: Impact-Analyse, Implementierungsplanung, Abhängigkeit
 - TTS hinter austauschbarem Python-Adapter — `docs/adrs/07-tts-output.md`.
 - Dieser Index ist kompakt, nicht autoritativ — `docs/adrs/08-incremental-repo-map-as-ai-working-index.md`.
 - Kleine lokale Patches erst nach genauer Quellprüfung, dann Finaldiff/Testreview — `docs/adrs/09-prompt2code-source-patching.md`.
+- MCP ist die einheitliche Capability-Grenze; Capability-Verträge, principal-spezifische Discovery und Authorization gelten transportunabhängig. Inter-Process-MCP bleibt erforderlich, ein späterer In-Process-Pfad darf nur eine semantisch und sicherheitsseitig äquivalente Optimierung sein — `docs/adrs/10-mcp-as-unified-capability-interface.md`.
 - Implementiert: FastAPI/Health/Streaming-Chat, persistierte Chats/Kompression, text-only Ollama-Runtime, Tauri-Shell/Backend-Lifecycle/Avatar-Interaktion/X11-Input-Shape, Chat-UI/Markdown, PTT/Dialog/Call mit CPU-faster-whisper-STT, MCP-Musik/Websuche, lokales TTS inkl. Avatar Call read-aloud.
 - Verträge/Stubs: llama.cpp-Runtime. Nicht vorhanden: Memory, Production Packaging.
 - Offen: finale lokale LLM-Runtime und Chatterbox Ressourcen/Qualität.
