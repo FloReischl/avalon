@@ -9,6 +9,7 @@ from httpx import ASGITransport, AsyncClient
 import app.state as state_module
 import app.user_config as user_config_module
 from app.main import create_app
+from app.models_config import load_models_config
 from app.state import initialize_avalon_state
 from app.user_config import initialize_user_config
 
@@ -21,6 +22,7 @@ BLUEPRINT_CONFIG = (
     / "user.avalon"
     / "config.yaml"
 )
+BLUEPRINT_MODELS_CONFIG = BLUEPRINT_CONFIG.with_name("models.yaml")
 
 
 def request(path: str):
@@ -40,7 +42,7 @@ def initialize_blueprint_config() -> None:
     user_config_module._user_config = None
     state_module._avalon_state = None
     config = initialize_user_config(BLUEPRINT_CONFIG)
-    initialize_avalon_state(config)
+    initialize_avalon_state(config, load_models_config(BLUEPRINT_MODELS_CONFIG))
 
 
 def assert_avatar_asset_url(
@@ -159,7 +161,7 @@ def test_ui_config_uses_current_avatar() -> None:
     )
 
     state_module._avalon_state = None
-    state = initialize_avalon_state(config)
+    state = initialize_avalon_state(config, load_models_config(BLUEPRINT_MODELS_CONFIG))
     assert state.set_current_avatar("second") is True
 
     response = request("/api/v1/ui/config")

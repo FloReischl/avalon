@@ -10,11 +10,12 @@ from app.config import LlmConfig, settings
 from app.runtime.ollama import OllamaRuntime, _normalize_qwen_text_tool_call
 
 
+STANDARD_LLM = LlmConfig(key="standard", model="test:standard", tool_support=True)
+
+
 class FakeRuntimeState:
     def __init__(self) -> None:
-        self.current_llm = next(
-            llm for llm in settings.llm_models if llm.key == "standard"
-        )
+        self.current_llm = STANDARD_LLM
         self.begin_calls = 0
         self.end_calls = 0
         self.llm_switch_active = False
@@ -44,7 +45,7 @@ async def test_health_returns_true_when_model_is_available(
 ) -> None:
     httpx_mock.add_response(
         method="POST",
-        match_json={"model": settings.ollama_model},
+        match_json={"model": STANDARD_LLM.model},
         url=f"http://{settings.ollama_host}/api/show",
         json={"details": {"format": "gguf"}},
     )
@@ -61,7 +62,7 @@ async def test_health_returns_false_when_model_is_missing(
     httpx_mock.add_response(
         method="POST",
         url=f"http://{settings.ollama_host}/api/show",
-        match_json={"model": settings.ollama_model},
+        match_json={"model": STANDARD_LLM.model},
         status_code=404,
         json={"error": "model not found"},
     )
@@ -147,7 +148,7 @@ async def test_warm_up_uses_stateless_text_generation(
         method="POST",
         url=f"http://{settings.ollama_host}/api/chat",
         match_json={
-            "model": settings.ollama_model,
+            "model": STANDARD_LLM.model,
             "messages": [{"role": "user", "content": "Hallo"}],
             "stream": False,
             "keep_alive": "1h",
@@ -241,7 +242,7 @@ async def test_generate_text_returns_response(
         method="POST",
         url=f"http://{settings.ollama_host}/api/chat",
         match_json={
-            "model": settings.ollama_model,
+            "model": STANDARD_LLM.model,
             "messages": [{"role": "user", "content": "Hallo"}],
             "stream": False,
             "keep_alive": "1h",
@@ -303,7 +304,7 @@ async def test_generate_text_stream_includes_context_and_returns_chunks_in_order
         method="POST",
         url=f"http://{settings.ollama_host}/api/chat",
         match_json={
-            "model": settings.ollama_model,
+            "model": STANDARD_LLM.model,
             "messages": messages,
             "stream": True,
             "keep_alive": "1h",

@@ -1,15 +1,20 @@
 from types import SimpleNamespace
+from pathlib import Path
 
 import pytest
 
-from app.config import settings
+from app.models_config import load_models_config
 from app.runtime.ollama import OllamaRuntime
 
 @pytest.mark.integration
 @pytest.mark.asyncio
 async def test_ollama_runtime_integration():
     standard = next(
-        llm for llm in settings.llm_models if llm.key == "standard"
+        llm
+        for llm in load_models_config(
+            Path(__file__).resolve().parents[2] / "data/blueprints/user.avalon/models.yaml"
+        ).llm_models
+        if llm.key == "standard"
     )
     state = SimpleNamespace(
         current_llm=standard,
@@ -37,5 +42,3 @@ async def test_ollama_runtime_integration():
         ],
     )
     assert streamed_response.strip(), "The streamed response from Ollama is empty or only contains whitespace."
-
-

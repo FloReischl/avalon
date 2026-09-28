@@ -12,7 +12,17 @@ from pathlib import Path
 import pytest
 
 from app.config import settings
+from app.models_config import load_models_config
 from app.runtime.ollama import OllamaRuntime
+
+
+STANDARD_MODEL = next(
+    llm.model
+    for llm in load_models_config(
+        Path(__file__).resolve().parents[2] / "data/blueprints/user.avalon/models.yaml"
+    ).llm_models
+    if llm.key == "standard"
+)
 
 
 def _chunk(data: bytes) -> bytes:
@@ -69,7 +79,7 @@ async def _measure_request(
     ]
     prefix = json.dumps(
         {
-            "model": settings.ollama_model,
+            "model": STANDARD_MODEL,
             "stream": True,
             "temperature": 0,
             "max_tokens": 64,

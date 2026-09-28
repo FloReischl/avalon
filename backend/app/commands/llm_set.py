@@ -1,6 +1,5 @@
 import logging
 
-from app.config import settings
 from app.runtime.ollama import OllamaRuntime
 from app.state import AvalonState
 
@@ -30,14 +29,7 @@ class LlmCommand:
         if self._state.llm_switch_active:
             return "LLM switch is already active."
 
-        target = next(
-            (
-                llm
-                for llm in settings.llm_models
-                if llm.key == key
-            ),
-            None,
-        )
+        target = self._state.get_llm(key)
 
         if target is None:
             return f"Unknown LLM: '{key}'."
@@ -83,6 +75,6 @@ class LlmCommand:
                     f"Failed to select configured LLM '{target.key}'."
                 )
 
-            return f"'{target.key}' activated."
+            return f"'{target.key}' ({target.model}) activated."
         finally:
             self._state.end_llm_switch()

@@ -9,6 +9,7 @@ from httpx import ASGITransport, AsyncClient
 import app.state as state_module
 import app.user_config as user_config_module
 from app.main import create_app
+from app.models_config import load_models_config
 from app.state import initialize_avalon_state
 from app.user_config import initialize_user_config
 
@@ -21,6 +22,7 @@ BLUEPRINT_CONFIG = (
     / "user.avalon"
     / "config.yaml"
 )
+BLUEPRINT_MODELS_CONFIG = BLUEPRINT_CONFIG.with_name("models.yaml")
 
 
 def request(path: str):
@@ -40,7 +42,7 @@ def initialize_blueprint_config() -> None:
     user_config_module._user_config = None
     state_module._avalon_state = None
     config = initialize_user_config(BLUEPRINT_CONFIG)
-    initialize_avalon_state(config)
+    initialize_avalon_state(config, load_models_config(BLUEPRINT_MODELS_CONFIG))
 
 
 def test_standard_avatar_image_is_served() -> None:
@@ -96,7 +98,7 @@ def test_avatar_assets_use_current_avatar() -> None:
     )
 
     state_module._avalon_state = None
-    state = initialize_avalon_state(config)
+    state = initialize_avalon_state(config, load_models_config(BLUEPRINT_MODELS_CONFIG))
     assert state.set_current_avatar("second") is True
 
     expected = (
@@ -130,7 +132,7 @@ def test_avatar_greeting_is_served_from_current_avatar() -> None:
     )
 
     state_module._avalon_state = None
-    state = initialize_avalon_state(config)
+    state = initialize_avalon_state(config, load_models_config(BLUEPRINT_MODELS_CONFIG))
     assert state.set_current_avatar("second") is True
 
     expected = (
@@ -163,7 +165,7 @@ def test_missing_avatar_greeting_returns_not_found_and_logs(
     )
 
     state_module._avalon_state = None
-    initialize_avalon_state(updated)
+    initialize_avalon_state(updated, load_models_config(BLUEPRINT_MODELS_CONFIG))
 
     with caplog.at_level(logging.ERROR):
         response = request("/api/v1/assets/avatar/greeting")

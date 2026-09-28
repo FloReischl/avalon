@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from app.config import LlmConfig, settings
+from app.config import LlmConfig
+from app.models_config import ModelsConfig
 from app.user_config import AvatarConfig, UserConfig
 from app.services.audio_call import AudioCallState
 
@@ -13,11 +14,12 @@ def get_audio_call_state() -> AudioCallState:
 class AvalonState:
     """Process-local mutable runtime state for Avalon."""
 
-    def __init__(self, user_config: UserConfig) -> None:
+    def __init__(self, user_config: UserConfig, models_config: ModelsConfig) -> None:
         self._user_config = user_config
+        self._llm_models = models_config.llm_models
         self._current_avatar = user_config.standard_avatar
         self._current_llm = next(
-            llm for llm in settings.llm_models if llm.key == "standard"
+            llm for llm in self._llm_models if llm.key == "standard"
         )
         self._llm_inference_count = 0
         self._llm_switch_active = False
@@ -33,6 +35,10 @@ class AvalonState:
     @property
     def current_llm(self) -> LlmConfig:
         return self._current_llm
+
+    def get_llm(self, key: str) -> LlmConfig | None:
+        """Look up one configured LLM by its exact key."""
+        return next((llm for llm in self._llm_models if llm.key == key), None)
 
     @property
     def llm_inference_active(self) -> bool:
@@ -58,14 +64,7 @@ class AvalonState:
 
     def set_current_llm(self, key: str) -> bool:
         """Select one configured LLM without mutating static configuration."""
-        llm = next(
-            (
-                llm
-                for llm in settings.llm_models
-                if llm.key == key
-            ),
-            None,
-        )
+        llm = self.get_llm(key)
 
         if llm is None:
             return False
@@ -102,12 +101,15 @@ class AvalonState:
 _avalon_state: AvalonState | None = None
 
 
-def initialize_avalon_state(user_config: UserConfig) -> AvalonState:
+def initialize_avalon_state(
+    user_config: UserConfig,
+    models_config: ModelsConfig,
+) -> AvalonState:
     """Initialize process-local Avalon runtime state exactly once."""
     global _avalon_state
 
     if _avalon_state is None:
-        _avalon_state = AvalonState(user_config)
+        _avalon_state = AvalonState(user_config, models_config)
 
     return _avalon_state
 

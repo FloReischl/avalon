@@ -57,7 +57,7 @@ def test_mcp_is_available_at_backend_mcp_path(monkeypatch):
         lambda: SimpleNamespace(chat=object()),
     )
     monkeypatch.setattr(main_module, "load_agents_config", lambda: SimpleNamespace(agents=[]))
-    monkeypatch.setattr(main_module, "initialize_avalon_state", lambda _: None)
+    monkeypatch.setattr(main_module, "initialize_avalon_state", lambda *_: None)
     monkeypatch.setattr(main_module, "run_migrations", lambda: None)
     monkeypatch.setattr(
         main_module,
@@ -68,7 +68,7 @@ def test_mcp_is_available_at_backend_mcp_path(monkeypatch):
         ),
     )
 
-    async def validate_llms(_: object) -> None:
+    async def validate_llms(*_: object) -> None:
         pass
 
     monkeypatch.setattr(main_module, "validate_configured_llms", validate_llms)

@@ -11,7 +11,8 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.router import api_router
-from app.config import settings
+from app.config import LlmConfig, settings
+from app.models_config import initialize_models_config
 from app.mcp.server import create_mcp_server
 from app.mcp.security import current_principal_id, principal_from_authorization
 from app.persistence.migrations import run_migrations
@@ -26,10 +27,13 @@ from app.agents_config import load_agents_config
 logger = logging.getLogger(__name__)
 
 
-async def validate_configured_llms(runtime: OllamaRuntime) -> None:
+async def validate_configured_llms(
+    runtime: OllamaRuntime,
+    llm_models: tuple[LlmConfig, ...],
+) -> None:
     """Validate configured Ollama models required by this process."""
     standard = next(
-        llm for llm in settings.llm_models if llm.key == "standard"
+        llm for llm in llm_models if llm.key == "standard"
     )
 
     if not await runtime.model_exists(standard.model):
@@ -42,7 +46,7 @@ async def validate_configured_llms(runtime: OllamaRuntime) -> None:
             f"Required LLM '{standard.key}' is unavailable: {standard.model}"
         )
 
-    for llm in settings.llm_models:
+    for llm in llm_models:
         if llm.key == "standard":
             continue
 
@@ -60,9 +64,10 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
     async with application.state.mcp.session_manager.run():
         try:
             user_config = initialize_user_config()
+            models_config = initialize_models_config()
             agents_config = load_agents_config()
-            initialize_avalon_state(user_config)
-            await validate_configured_llms(OllamaRuntime())
+            initialize_avalon_state(user_config, models_config)
+            await validate_configured_llms(OllamaRuntime(), models_config.llm_models)
             run_migrations()
             engine = create_database_engine()
             try:

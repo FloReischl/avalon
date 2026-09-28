@@ -1,14 +1,18 @@
 import pytest
 
 from app.commands.llm_set import LlmCommand
-from app.config import settings
+from app.config import LlmConfig
+
+
+MODELS = (
+    LlmConfig(key="standard", model="test:standard", tool_support=True),
+    LlmConfig(key="optional", model="test:optional", tool_support=False),
+)
 
 
 class FakeState:
     def __init__(self) -> None:
-        self.current_llm = next(
-            llm for llm in settings.llm_models if llm.key == "standard"
-        )
+        self.current_llm = MODELS[0]
         self.llm_inference_active = False
         self.llm_switch_active = False
 
@@ -23,19 +27,15 @@ class FakeState:
         self.llm_switch_active = False
 
     def set_current_llm(self, key: str) -> bool:
-        llm = next(
-            (
-                llm
-                for llm in settings.llm_models
-                if llm.key == key
-            ),
-            None,
-        )
+        llm = self.get_llm(key)
         if llm is None:
             return False
 
         self.current_llm = llm
         return True
+
+    def get_llm(self, key: str):
+        return next((llm for llm in MODELS if llm.key == key), None)
 
 
 class FakeRuntime:
@@ -60,14 +60,7 @@ class FakeRuntime:
 
 
 def optional_llm():
-    standard = next(
-        llm for llm in settings.llm_models if llm.key == "standard"
-    )
-    return next(
-        llm
-        for llm in settings.llm_models
-        if llm.key != "standard" and llm.model != standard.model
-    )
+    return MODELS[1]
 
 
 @pytest.mark.asyncio
