@@ -9,7 +9,7 @@ from typing import Any, Callable
 from app.commands import CommandRegistry, CommandRequest, parse_command
 from app.persistence.chat_repository import ChatRepository
 from app.user_config import get_user_config
-from app.user_config import AvatarConfig
+from app.avatars_config import AvatarConfig
 from app.runtime.base import ModelRuntime
 from app.services.context_compression import (
     ContextCompressionService,

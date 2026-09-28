@@ -20,7 +20,7 @@ from app.stt.whisper import (
     FasterWhisperSttService,
     merge_transcripts,
 )
-from app.user_config import AvatarConfig
+from app.avatars_config import AvatarConfig
 
 STT_COMPLETION_TIMEOUT_SECONDS = 30.0
 

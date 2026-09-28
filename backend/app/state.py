@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from app.config import LlmConfig
+from app.avatars_config import AvatarConfig, AvatarsConfig
 from app.models_config import ModelsConfig
-from app.user_config import AvatarConfig, UserConfig
+from app.user_config import UserConfig
 from app.services.audio_call import AudioCallState
 
 _audio_call_state = AudioCallState()
@@ -14,10 +15,16 @@ def get_audio_call_state() -> AudioCallState:
 class AvalonState:
     """Process-local mutable runtime state for Avalon."""
 
-    def __init__(self, user_config: UserConfig, models_config: ModelsConfig) -> None:
+    def __init__(
+        self,
+        user_config: UserConfig,
+        avatars_config: AvatarsConfig,
+        models_config: ModelsConfig,
+    ) -> None:
         self._user_config = user_config
+        self._avatars_config = avatars_config
         self._llm_models = models_config.llm_models
-        self._current_avatar = user_config.standard_avatar
+        self._current_avatar = avatars_config.standard_avatar
         self._current_llm = next(
             llm for llm in self._llm_models if llm.key == "standard"
         )
@@ -85,7 +92,7 @@ class AvalonState:
         avatar = next(
             (
                 avatar
-                for avatar in self._user_config.avatars
+                for avatar in self._avatars_config.avatars
                 if avatar.key == key
             ),
             None,
@@ -103,13 +110,14 @@ _avalon_state: AvalonState | None = None
 
 def initialize_avalon_state(
     user_config: UserConfig,
+    avatars_config: AvatarsConfig,
     models_config: ModelsConfig,
 ) -> AvalonState:
     """Initialize process-local Avalon runtime state exactly once."""
     global _avalon_state
 
     if _avalon_state is None:
-        _avalon_state = AvalonState(user_config, models_config)
+        _avalon_state = AvalonState(user_config, avatars_config, models_config)
 
     return _avalon_state
 

@@ -110,7 +110,8 @@ Arbeitsindex für Frieda: Impact-Analyse, Implementierungsplanung, Abhängigkeit
 - `routes/tts.py`: Synthese und Playback-Lifecycle; `TtsService`, Factory.
 - `routes/ui.py`: `GET /ui/config`, nur frontend-sichere effektive Standardavatar-Daten; fertige absolute Asset-URLs mit Prozess-Cache-Token, keine Persona/Instruktionen/Pfade/TTS.
 - `routes/assets.py`: Bilder `GET /assets/avatar/images/{key}`, Greeting `GET /assets/avatar/greeting`; nur validierter effektiver Avatar, keine Client-Pfade; fehlendes Greeting protokollieren/404.
-- `backend/app/user_config.py`: `~/.avalon/config.yaml` einmal laden, immutable; unbekannte Felder ablehnen, eindeutige Avatar-Keys/Standardavatar/Animationen/Sprite-Regionen, Asset-Pfadgrenzen und Bilddateien validieren. Persona/Instruktionen pro Avatar; Greeting lazy/fehlend erlaubt. Relative Artefakte relativ zum Projekt; aktive Kokoro-Artefakte beim Start prüfen, inaktives Chatterbox-Referenzaudio nicht.
+- `backend/app/user_config.py`: `~/.avalon/config.yaml` einmal laden, immutable; unbekannte Felder ablehnen. Relative Artefakte relativ zum Projekt; aktive Kokoro-Artefakte beim Start prüfen, inaktives Chatterbox-Referenzaudio nicht.
+- `backend/app/avatars_config.py`: `~/.avalon/avatars.yaml` einmal laden, immutable; eindeutige Avatar-Keys/Standardavatar/Animationen/Sprite-Regionen, Asset-Pfadgrenzen und Bilddateien validieren. Persona/Instructions pro Avatar; Greeting lazy/fehlend erlaubt.
 - `agents.yaml`: autoritative Agent-Konfiguration einschließlich Permission-Catalog-Referenzen und Principal-Permissions; Permission-Scopes dürfen strukturierte YAML-Werte enthalten und werden ohne Capability-spezifische Interpretation persistiert.
 
 ### Backend: Dienste und Persistenz

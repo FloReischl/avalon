@@ -4,6 +4,7 @@ import pytest
 
 from app.models_config import ModelsConfig
 from app.state import AvalonState
+from app.avatars_config import load_avatars_config
 from app.user_config import load_user_config
 
 
@@ -15,18 +16,19 @@ BLUEPRINT_CONFIG = (
     / "user.avalon"
     / "config.yaml"
 )
+BLUEPRINT_AVATARS_CONFIG = BLUEPRINT_CONFIG.with_name("avatars.yaml")
 
 
 def config_with_second_avatar():
-    config = load_user_config(BLUEPRINT_CONFIG)
-    second_avatar = config.standard_avatar.model_copy(
+    avatars_config = load_avatars_config(BLUEPRINT_AVATARS_CONFIG)
+    second_avatar = avatars_config.standard_avatar.model_copy(
         update={"key": "second"},
         deep=True,
     )
-    return config.model_copy(
+    return avatars_config.model_copy(
         update={
             "avatars": [
-                config.standard_avatar,
+                avatars_config.standard_avatar,
                 second_avatar,
             ]
         },
@@ -43,19 +45,27 @@ def models_config() -> ModelsConfig:
     )
 
 
+def make_state(avatars_config=None) -> AvalonState:
+    return AvalonState(
+        load_user_config(BLUEPRINT_CONFIG),
+        avatars_config or load_avatars_config(BLUEPRINT_AVATARS_CONFIG),
+        models_config(),
+    )
+
+
 def test_avalon_state_starts_with_standard_avatar() -> None:
     config = load_user_config(BLUEPRINT_CONFIG)
+    avatars_config = load_avatars_config(BLUEPRINT_AVATARS_CONFIG)
 
-    state = AvalonState(config, models_config())
+    state = AvalonState(config, avatars_config, models_config())
 
     assert state.user_config is config
-    assert state.current_avatar is config.standard_avatar
+    assert state.current_avatar is avatars_config.standard_avatar
 
 
 def test_avalon_state_starts_with_standard_llm() -> None:
-    config = load_user_config(BLUEPRINT_CONFIG)
     catalog = models_config()
-    state = AvalonState(config, catalog)
+    state = AvalonState(load_user_config(BLUEPRINT_CONFIG), load_avatars_config(BLUEPRINT_AVATARS_CONFIG), catalog)
 
     standard = next(llm for llm in catalog.llm_models if llm.key == "standard")
 
@@ -64,8 +74,7 @@ def test_avalon_state_starts_with_standard_llm() -> None:
 
 
 def test_avalon_state_switches_current_llm() -> None:
-    config = load_user_config(BLUEPRINT_CONFIG)
-    state = AvalonState(config, models_config())
+    state = make_state()
 
     changed = state.set_current_llm("uncensored")
 
@@ -74,8 +83,7 @@ def test_avalon_state_switches_current_llm() -> None:
 
 
 def test_avalon_state_rejects_unknown_llm_without_state_change() -> None:
-    config = load_user_config(BLUEPRINT_CONFIG)
-    state = AvalonState(config, models_config())
+    state = make_state()
     selected = state.current_llm
 
     changed = state.set_current_llm("missing")
@@ -85,8 +93,7 @@ def test_avalon_state_rejects_unknown_llm_without_state_change() -> None:
 
 
 def test_llm_lookup_is_case_sensitive() -> None:
-    config = load_user_config(BLUEPRINT_CONFIG)
-    state = AvalonState(config, models_config())
+    state = make_state()
 
     changed = state.set_current_llm("UNCENSORED")
 
@@ -95,8 +102,7 @@ def test_llm_lookup_is_case_sensitive() -> None:
 
 
 def test_avalon_state_guards_llm_switch_state() -> None:
-    config = load_user_config(BLUEPRINT_CONFIG)
-    state = AvalonState(config, models_config())
+    state = make_state()
 
     state.begin_llm_switch()
 
@@ -108,8 +114,7 @@ def test_avalon_state_guards_llm_switch_state() -> None:
 
 
 def test_avalon_state_rejects_llm_switch_during_inference() -> None:
-    config = load_user_config(BLUEPRINT_CONFIG)
-    state = AvalonState(config, models_config())
+    state = make_state()
 
     state.begin_llm_inference()
 
@@ -120,8 +125,7 @@ def test_avalon_state_rejects_llm_switch_during_inference() -> None:
 
 
 def test_avalon_state_tracks_concurrent_llm_inferences() -> None:
-    config = load_user_config(BLUEPRINT_CONFIG)
-    state = AvalonState(config, models_config())
+    state = make_state()
 
     state.begin_llm_inference()
     state.begin_llm_inference()
@@ -136,16 +140,14 @@ def test_avalon_state_tracks_concurrent_llm_inferences() -> None:
 
 
 def test_avalon_state_rejects_llm_inference_counter_underflow() -> None:
-    config = load_user_config(BLUEPRINT_CONFIG)
-    state = AvalonState(config, models_config())
+    state = make_state()
 
     with pytest.raises(RuntimeError, match="LLM inference counter underflow"):
         state.end_llm_inference()
 
 
 def test_avalon_state_switches_current_avatar() -> None:
-    config = config_with_second_avatar()
-    state = AvalonState(config, models_config())
+    state = make_state(config_with_second_avatar())
 
     changed = state.set_current_avatar("second")
 
@@ -154,8 +156,7 @@ def test_avalon_state_switches_current_avatar() -> None:
 
 
 def test_avalon_state_rejects_unknown_avatar_without_state_change() -> None:
-    config = config_with_second_avatar()
-    state = AvalonState(config, models_config())
+    state = make_state(config_with_second_avatar())
 
     assert state.set_current_avatar("second") is True
     selected = state.current_avatar
@@ -167,8 +168,7 @@ def test_avalon_state_rejects_unknown_avatar_without_state_change() -> None:
 
 
 def test_avatar_lookup_is_case_sensitive() -> None:
-    config = config_with_second_avatar()
-    state = AvalonState(config, models_config())
+    state = make_state(config_with_second_avatar())
 
     changed = state.set_current_avatar("SECOND")
 

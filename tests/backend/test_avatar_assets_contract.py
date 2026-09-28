@@ -7,10 +7,12 @@ from pathlib import Path
 from httpx import ASGITransport, AsyncClient
 
 import app.state as state_module
+import app.avatars_config as avatars_config_module
 import app.user_config as user_config_module
 from app.main import create_app
 from app.models_config import load_models_config
 from app.state import initialize_avalon_state
+from app.avatars_config import initialize_avatars_config
 from app.user_config import initialize_user_config
 
 
@@ -23,6 +25,7 @@ BLUEPRINT_CONFIG = (
     / "config.yaml"
 )
 BLUEPRINT_MODELS_CONFIG = BLUEPRINT_CONFIG.with_name("models.yaml")
+BLUEPRINT_AVATARS_CONFIG = BLUEPRINT_CONFIG.with_name("avatars.yaml")
 
 
 def request(path: str):
@@ -40,9 +43,11 @@ def request(path: str):
 
 def initialize_blueprint_config() -> None:
     user_config_module._user_config = None
+    avatars_config_module._avatars_config = None
     state_module._avalon_state = None
     config = initialize_user_config(BLUEPRINT_CONFIG)
-    initialize_avalon_state(config, load_models_config(BLUEPRINT_MODELS_CONFIG))
+    avatars_config = initialize_avatars_config(BLUEPRINT_AVATARS_CONFIG)
+    initialize_avalon_state(config, avatars_config, load_models_config(BLUEPRINT_MODELS_CONFIG))
 
 
 def test_standard_avatar_image_is_served() -> None:
@@ -57,7 +62,7 @@ def test_standard_avatar_image_is_served() -> None:
 def test_configured_animation_image_is_served() -> None:
     initialize_blueprint_config()
     animation_key = (
-        user_config_module.get_user_config()
+        avatars_config_module.get_avatars_config()
         .standard_avatar
         .images
         .animations[0]
@@ -87,7 +92,7 @@ def test_avatar_assets_use_current_avatar() -> None:
         },
         deep=True,
     )
-    config = user_config_module.get_user_config().model_copy(
+    avatars_config = avatars_config_module.get_avatars_config().model_copy(
         update={
             "avatars": [
                 standard,
@@ -98,7 +103,7 @@ def test_avatar_assets_use_current_avatar() -> None:
     )
 
     state_module._avalon_state = None
-    state = initialize_avalon_state(config, load_models_config(BLUEPRINT_MODELS_CONFIG))
+    state = initialize_avalon_state(user_config_module.get_user_config(), avatars_config, load_models_config(BLUEPRINT_MODELS_CONFIG))
     assert state.set_current_avatar("second") is True
 
     expected = (
@@ -121,7 +126,7 @@ def test_avatar_greeting_is_served_from_current_avatar() -> None:
         },
         deep=True,
     )
-    config = user_config_module.get_user_config().model_copy(
+    avatars_config = avatars_config_module.get_avatars_config().model_copy(
         update={
             "avatars": [
                 standard,
@@ -132,7 +137,7 @@ def test_avatar_greeting_is_served_from_current_avatar() -> None:
     )
 
     state_module._avalon_state = None
-    state = initialize_avalon_state(config, load_models_config(BLUEPRINT_MODELS_CONFIG))
+    state = initialize_avalon_state(user_config_module.get_user_config(), avatars_config, load_models_config(BLUEPRINT_MODELS_CONFIG))
     assert state.set_current_avatar("second") is True
 
     expected = (
@@ -149,23 +154,23 @@ def test_missing_avatar_greeting_returns_not_found_and_logs(
     caplog,
 ) -> None:
     initialize_blueprint_config()
-    config = user_config_module.get_user_config()
-    standard = config.standard_avatar.model_copy(
+    avatars_config = avatars_config_module.get_avatars_config()
+    standard = avatars_config.standard_avatar.model_copy(
         update={"greeting_audio": "missing-greeting.wav"},
         deep=True,
     )
-    updated = config.model_copy(
+    updated = avatars_config.model_copy(
         update={
             "avatars": [
                 standard if avatar.key == "standard" else avatar
-                for avatar in config.avatars
+                for avatar in avatars_config.avatars
             ]
         },
         deep=True,
     )
 
     state_module._avalon_state = None
-    initialize_avalon_state(updated, load_models_config(BLUEPRINT_MODELS_CONFIG))
+    initialize_avalon_state(user_config_module.get_user_config(), updated, load_models_config(BLUEPRINT_MODELS_CONFIG))
 
     with caplog.at_level(logging.ERROR):
         response = request("/api/v1/assets/avatar/greeting")

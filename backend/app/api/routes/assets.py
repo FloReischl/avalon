@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import FileResponse
 
 from app.state import get_avalon_state
-from app.user_config import resolve_avatar_asset_path
+from app.avatars_config import resolve_avatar_asset_path
 
 
 logger = logging.getLogger(__name__)

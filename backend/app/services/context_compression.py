@@ -14,7 +14,7 @@ from app.config import settings
 from app.persistence.chat_repository import ChatRepository
 from app.persistence.models import Message
 from app.runtime.base import ModelRuntime
-from app.user_config import AvatarConfig
+from app.avatars_config import AvatarConfig
 
 
 logger = logging.getLogger(__name__)

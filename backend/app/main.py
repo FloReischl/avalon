@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.router import api_router
 from app.config import LlmConfig, settings
+from app.avatars_config import initialize_avatars_config
 from app.models_config import initialize_models_config
 from app.mcp.server import create_mcp_server
 from app.mcp.security import current_principal_id, principal_from_authorization
@@ -64,9 +65,10 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
     async with application.state.mcp.session_manager.run():
         try:
             user_config = initialize_user_config()
+            avatars_config = initialize_avatars_config()
             models_config = initialize_models_config()
             agents_config = load_agents_config()
-            initialize_avalon_state(user_config, models_config)
+            initialize_avalon_state(user_config, avatars_config, models_config)
             await validate_configured_llms(OllamaRuntime(), models_config.llm_models)
             run_migrations()
             engine = create_database_engine()
