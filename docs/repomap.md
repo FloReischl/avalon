@@ -97,6 +97,7 @@ Arbeitsindex für Frieda: Impact-Analyse, Implementierungsplanung, Abhängigkeit
 - `backend/app/api/router.py`: Health root; UI, Assets, Runtime, Chat, Chatmanagement, Authorization, Audio/Call, TTS unter `/api/v1`.
 - `backend/app/authorization`: `PermissionGuard`, konkrete Permission-Checks/Formatter, Authorization-Request-Manager, Typen/Exceptions und Runtime-Wiring.
 - `backend/app/persistence/authorization_repository.py`: Principals, Permission-Katalog/-Rahmen und Grants; Alembic `0005_add_authorization_schema.py`.
+- Agent-Permissions aus `agents.yaml` werden beim App-Start validiert und transactional in die Authorization-DB reconciliiert. Fehlende Principals/Agents und Permission-Catalog-Einträge werden angelegt; Principal-Permissions werden angelegt, aktualisiert, reaktiviert oder via `is_active=false` deaktiviert. `scope` bleibt semantisch opaque und wird als kanonisches JSON persistiert. Der Reconcile ist atomar und idempotent.
 - `backend/app/services/tool_runner.py`: capability-agnostischer LLM-Tool-Loop; bezieht principal-spezifische Tooldefinitionen über MCP, cached sie statisch und dispatcht Tool-Calls generisch über MCP. Turn-lokaler Result-Cache verhindert wiederholte Ausführung identischer Tool-Calls.
 - `backend/app/api/routes/authorization.py`: Pending-Requests, Confirm/Abort und SSE-Invalidierungen für die globale Permission-Inbox.
 - `backend/app/api/schemas.py`: öffentliche Verträge. `ChatRequest(chat_id?: positive int, message: non-empty)`, `ConversationMessage(role user|assistant, content)`, `AudioResponseRequest(messages, chat_id?)`, `HealthResponse`, Chat summary/detail (inkl. `pinned`, `compression_error_code`), Rename (max. 200), Pin, TTS, Playback-ended, UI-Konfiguration/Avatar/Sprite-Regionen.
@@ -109,6 +110,7 @@ Arbeitsindex für Frieda: Impact-Analyse, Implementierungsplanung, Abhängigkeit
 - `routes/ui.py`: `GET /ui/config`, nur frontend-sichere effektive Standardavatar-Daten; fertige absolute Asset-URLs mit Prozess-Cache-Token, keine Persona/Instruktionen/Pfade/TTS.
 - `routes/assets.py`: Bilder `GET /assets/avatar/images/{key}`, Greeting `GET /assets/avatar/greeting`; nur validierter effektiver Avatar, keine Client-Pfade; fehlendes Greeting protokollieren/404.
 - `backend/app/user_config.py`: `~/.avalon/config.yaml` einmal laden, immutable; unbekannte Felder ablehnen, eindeutige Avatar-Keys/Standardavatar/Animationen/Sprite-Regionen, Asset-Pfadgrenzen und Bilddateien validieren. Persona/Instruktionen pro Avatar; Greeting lazy/fehlend erlaubt. Relative Artefakte relativ zum Projekt; aktive Kokoro-Artefakte beim Start prüfen, inaktives Chatterbox-Referenzaudio nicht.
+- `agents.yaml`: autoritative Agent-Konfiguration einschließlich Permission-Catalog-Referenzen und Principal-Permissions; Permission-Scopes dürfen strukturierte YAML-Werte enthalten und werden ohne Capability-spezifische Interpretation persistiert.
 
 ### Backend: Dienste und Persistenz
 
