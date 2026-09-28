@@ -75,6 +75,7 @@ def test_reconcile_updates_and_deactivates_removed_chat_permissions(repository) 
         principal = session.scalar(select(Principal).where(Principal.key == "chat-default"))
         assert principal is not None
         principal_id = principal.id
+        content_permission_id = permissions[1].id
 
     assert repo.get_principal_permission_catalog_ids(principal_id) == {
         next(
@@ -83,6 +84,15 @@ def test_reconcile_updates_and_deactivates_removed_chat_permissions(repository) 
             if permission.is_active
         )
     }
+
+    repo.reconcile_chat_permissions(
+        _config([_permission("search", expiry=3600), _permission("get-content")])
+    )
+
+    with session_factory() as session:
+        reactivated = session.get(PrincipalPermission, content_permission_id)
+        assert reactivated is not None
+        assert reactivated.is_active is True
 
 
 def test_reconcile_rejects_an_existing_non_chat_principal(repository) -> None:
