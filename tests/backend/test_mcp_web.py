@@ -38,11 +38,14 @@ def test_mcp_server_exposes_music_and_web_tools():
 
 
 def test_mcp_discovery_filters_only_principal_permissions(monkeypatch):
+    lookups = []
+
     class FakeRepository:
         def __init__(self, _):
             pass
 
         def get_principal_capability_names(self, principal_id):
+            lookups.append(principal_id)
             assert principal_id == 7
             return {"web.search"}
 
@@ -55,13 +58,52 @@ def test_mcp_discovery_filters_only_principal_permissions(monkeypatch):
     monkeypatch.setattr(mcp_server_module, "create_session_factory", lambda _: object())
     token = current_principal_id.set(7)
     try:
-        tools = asyncio.run(
-            create_mcp_server(FakeMusicService(), FakeWebSearchService()).list_tools()
-        )
+        mcp = create_mcp_server(FakeMusicService(), FakeWebSearchService())
+        tools = asyncio.run(mcp.list_tools())
+        assert [tool.name for tool in asyncio.run(mcp.list_tools())] == ["web.search"]
     finally:
         current_principal_id.reset(token)
 
     assert [tool.name for tool in tools] == ["web.search"]
+    assert lookups == [7]
+
+
+def test_mcp_call_uses_central_permission_guard(monkeypatch):
+    calls = []
+
+    class FakeEngine:
+        def dispose(self):
+            pass
+
+    class FakeRepository:
+        def __init__(self, _):
+            pass
+
+    class FakeGuard:
+        def __init__(self, *_):
+            pass
+
+        async def execute(self, principal_id, context, key, items, capability, source_label):
+            calls.append((principal_id, context, key, items, source_label))
+            return await capability(items)
+
+    monkeypatch.setattr(mcp_server_module, "AuthorizationRepository", FakeRepository)
+    monkeypatch.setattr(mcp_server_module, "PermissionGuard", FakeGuard)
+    monkeypatch.setattr(mcp_server_module, "create_database_engine", FakeEngine)
+    monkeypatch.setattr(mcp_server_module, "create_session_factory", lambda _: object())
+    service = FakeWebSearchService()
+    token = current_principal_id.set(7)
+    try:
+        asyncio.run(
+            create_mcp_server(FakeMusicService(), service).call_tool(
+                "web.search", {"query": "Avalon"}
+            )
+        )
+    finally:
+        current_principal_id.reset(token)
+
+    assert calls == [(7, "web", "search", [{"query": "Avalon"}], "MCP")]
+    assert service.queries == ["Avalon"]
 
 
 def test_web_tool_logs_full_query_and_delegates(caplog):

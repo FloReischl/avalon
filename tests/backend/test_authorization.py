@@ -151,12 +151,14 @@ class FakeMcpClient:
 
 @pytest.mark.asyncio
 async def test_tool_runner_returns_final_text_after_authorized_tool_result():
+    ToolRunner._tool_definition_cache = {}
     runner = ToolRunner(FakeToolRuntime(), lambda principal_id: FakeMcpClient())
     assert [chunk async for chunk in runner.stream_response(3, [{"role": "user", "content": "Suche Avalon"}], "Chat: Suche")] == ["Hier ist das Ergebnis."]
 
 
 @pytest.mark.asyncio
 async def test_tool_runner_reuses_a_duplicate_web_search_result_within_one_turn():
+    ToolRunner._tool_definition_cache = {}
     duplicate_call = {
         "tool_calls": [
             {"function": {"name": "web.search", "arguments": {"query": "Avalon"}}}
@@ -181,6 +183,32 @@ async def test_tool_runner_reuses_a_duplicate_web_search_result_within_one_turn(
         )
     ] == ["Fertig."]
     assert client.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_tool_runner_caches_discovery_for_a_principal():
+    ToolRunner._tool_definition_cache = {}
+
+    class Runtime:
+        async def generate_tool_response(self, messages, tools):
+            return {"content": "Fertig."}
+
+    class Client:
+        def __init__(self):
+            self.list_calls = 0
+
+        async def list_tools(self):
+            self.list_calls += 1
+            return []
+
+        async def call_tool(self, name, arguments):
+            raise AssertionError("not reached")
+
+    client = Client()
+    for _ in range(2):
+        runner = ToolRunner(Runtime(), lambda principal_id: client)
+        assert [chunk async for chunk in runner.stream_response(3, [], "Chat")] == ["Fertig."]
+    assert client.list_calls == 1
 
 
 @pytest.mark.asyncio

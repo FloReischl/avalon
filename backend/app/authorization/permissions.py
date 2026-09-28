@@ -23,6 +23,16 @@ class Permission(Protocol):
     def format(self, item: object) -> str:
         ...
 
+    def items(self, arguments: dict[str, object]) -> list[object]:
+        """Translate one MCP tool call into permission-specific items."""
+        ...
+
+    def approved_arguments(
+        self, approved_items: list[object], original_arguments: dict[str, object]
+    ) -> dict[str, object] | None:
+        """Return capability arguments, or ``None`` for an empty approval."""
+        ...
+
 
 class PermissionRegistry:
     """Map catalog identifiers to concrete local implementations."""
@@ -67,6 +77,22 @@ class WebSearchPermission:
         if not isinstance(item, dict) or not isinstance(item.get("query"), str):
             raise ValueError("web.search items require a string query.")
         return f"Websuche bei DuckDuckGo: {item['query']}"
+
+    def items(self, arguments: dict[str, object]) -> list[object]:
+        query = arguments.get("query")
+        if not isinstance(query, str):
+            raise ValueError("web.search requires a string query.")
+        return [{"query": query}]
+
+    def approved_arguments(
+        self, approved_items: list[object], original_arguments: dict[str, object]
+    ) -> dict[str, object] | None:
+        del original_arguments
+        if not approved_items:
+            return None
+        query = approved_items[0]
+        assert isinstance(query, dict)
+        return {"query": query["query"]}
 
 
 def build_permission_registry() -> PermissionRegistry:

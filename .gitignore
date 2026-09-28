@@ -35,6 +35,8 @@ data/patch.p2c
 data/code2prompt-adrs.md
 data/code2prompt-file-list.md
 data/frieda-files.md
+data/codex.md
+data/codex-findings.md
 data/diff.patch
 
 # TTS (text-to-speech)

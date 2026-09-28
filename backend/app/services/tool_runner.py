@@ -14,6 +14,8 @@ class McpToolClient(Protocol):
 class ToolRunner:
     """Resolve LLM tool calls through MCP without capability knowledge."""
 
+    _tool_definition_cache: dict[int, list[dict[str, object]]] = {}
+
     def __init__(self, runtime, mcp_client_factory) -> None:
         self._runtime = runtime
         self._mcp_client_factory = mcp_client_factory
@@ -23,10 +25,7 @@ class ToolRunner:
     ) -> AsyncIterator[str]:
         del source_label
         client = self._mcp_client_factory(principal_id)
-        try:
-            tools = await client.list_tools()
-        except Exception as exc:
-            raise RuntimeError("MCP tools/list failed.") from exc
+        tools = await self._tools_for_principal(principal_id, client)
         tool_messages: list[dict[str, object]] = list(messages)
         tool_result_cache: dict[str, object] = {}
         for _ in range(5):
@@ -53,6 +52,17 @@ class ToolRunner:
                     {"role": "tool", "content": json.dumps(tool_result_cache[cache_key], ensure_ascii=False)}
                 )
         raise RuntimeError("Tool calling exceeded five iterations.")
+
+    @classmethod
+    async def _tools_for_principal(
+        cls, principal_id: int, client: McpToolClient
+    ) -> list[dict[str, object]]:
+        if principal_id not in cls._tool_definition_cache:
+            try:
+                cls._tool_definition_cache[principal_id] = await client.list_tools()
+            except Exception as exc:
+                raise RuntimeError("MCP tools/list failed.") from exc
+        return cls._tool_definition_cache[principal_id]
 
     @staticmethod
     def _parse_call(call: object) -> tuple[str, dict[str, object]]:
