@@ -101,3 +101,21 @@ def test_proactive_permissions_for_normal_chat_use_default_principal(tmp_path) -
         assert [permission.id for permission in permissions] == [default_permission_id]
     finally:
         engine.dispose()
+
+
+def test_proactive_revoke_removes_existing_grant_and_handles_noop(tmp_path) -> None:
+    repository, engine, duration_id, _, _, _ = build_repository(tmp_path)
+    try:
+        now = datetime.now()
+        # No-op when no grant exists
+        repository.revoke_proactive_grant(duration_id, now)
+        assert repository.get_active_grant(duration_id, now) is None
+
+        # Create grant then revoke
+        repository.save_proactive_grant(duration_id, "duration", now + timedelta(hours=1), now)
+        assert repository.get_active_grant(duration_id, now) is not None
+
+        repository.revoke_proactive_grant(duration_id, now)
+        assert repository.get_active_grant(duration_id, now) is None
+    finally:
+        engine.dispose()

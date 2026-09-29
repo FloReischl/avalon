@@ -297,6 +297,24 @@ class AuthorizationRepository:
             session.refresh(grant)
             return grant
 
+    def revoke_proactive_grant(
+        self,
+        principal_permission_id: int,
+        now: datetime,
+    ) -> None:
+        """Remove any currently active grant for this proactive permission."""
+        with self._session_factory.begin() as session:
+            grants = session.scalars(
+                select(PermissionGrant)
+                .where(
+                    PermissionGrant.principal_permission_id == principal_permission_id,
+                    PermissionGrant.valid_from <= now,
+                    PermissionGrant.valid_to > now,
+                )
+            ).all()
+            for grant in grants:
+                session.delete(grant)
+
     def create_grant(
         self,
         principal_permission_id: int,

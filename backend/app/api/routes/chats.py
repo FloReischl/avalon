@@ -222,11 +222,16 @@ def save_proactive_permission(
     )
     if permission is None:
         raise HTTPException(status_code=404, detail="Permission does not belong to this chat.")
+    if permission.validity_type == "range":
+        raise HTTPException(status_code=422, detail="Range grants cannot be modified proactivity.")
     now = datetime.now()
     try:
-        repository.save_proactive_grant(
-            permission.id, permission.validity_type, request.expires_at, now
-        )
+        if request.granted:
+            repository.save_proactive_grant(
+                permission.id, permission.validity_type, request.expires_at, now
+            )
+        else:
+            repository.revoke_proactive_grant(permission.id, now)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return next(

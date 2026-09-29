@@ -25,7 +25,12 @@ function selectRequest(request: PendingAuthorizationRequest | undefined) {
   durationHours.value = request ? Math.max(1, Math.round(request.defaultExpiry / 3600)) : 10;
 }
 function localDateTime(value: Date): string {
-  return new Date(value.getTime() - value.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, "0");
+  const day = String(value.getDate()).padStart(2, "0");
+  const hours = String(value.getHours()).padStart(2, "0");
+  const minutes = String(value.getMinutes()).padStart(2, "0");
+  return `${year}-${month}-${day} ${hours}:${minutes}`;
 }
 function initializeProactiveSelection(permissions: ProactivePermission[]) {
   proactiveSelection.value = Object.fromEntries(permissions.map((permission) => [permission.id, {
@@ -61,8 +66,10 @@ async function saveProactive() {
   if (chatId === undefined) return;
   for (const permission of proactivePermissions.value) {
     const selection = proactiveSelection.value[permission.id];
-    if (permission.readOnly || !selection?.granted) continue;
-    await saveChatPermission(chatId, permission.id, permission.validityType === "duration" ? new Date(selection.expiresAt).toISOString() : undefined);
+    if (permission.readOnly) continue;
+    const granted = Boolean(selection?.granted);
+    const expiresAt = permission.validityType === "duration" && granted ? selection?.expiresAt : undefined;
+    await saveChatPermission(chatId, permission.id, granted, expiresAt);
   }
   await openProactivePermissions(chatId);
 }
@@ -90,7 +97,7 @@ onBeforeUnmount(() => { events?.close(); stopRefreshPolling(); unlistenProactive
     <section v-else class="proactive-permissions"><h1>Permissions des Chats</h1><p v-if="proactivePermissions.length === 0">Keine proaktiv verwaltbaren Permissions.</p>
       <PermissionDetails v-for="permission in proactivePermissions" :key="permission.id" :context="permission.context" :permission-key="permission.key" :validity-type="permission.validityType" :granted="Boolean(permission.grant)" :read-only="permission.readOnly">
         <template v-if="permission.readOnly"><p>Range-Grants können nur beim Capability-Request geändert werden.</p></template>
-        <template v-else><label><input v-model="proactiveSelection[permission.id].granted" type="checkbox"> Erteilen</label><label v-if="permission.validityType === 'duration'">Ablaufdatum und -zeit <input v-model="proactiveSelection[permission.id].expiresAt" type="datetime-local"></label></template>
+        <template v-else><label><input v-model="proactiveSelection[permission.id].granted" type="checkbox"> Erteilen</label><label v-if="permission.validityType === 'duration'">Ablaufdatum und -zeit <input v-model="proactiveSelection[permission.id].expiresAt" type="text" placeholder="YYYY-MM-DD HH:mm"></label></template>
       </PermissionDetails><footer><button @click="cancelProactive">Abbrechen</button><button @click="saveProactive">Speichern</button></footer>
     </section>
   </main>

@@ -265,11 +265,11 @@ export async function getChatPermissions(chatId: number): Promise<ProactivePermi
 }
 
 export async function saveChatPermission(
-  chatId: number, permissionId: number, expiresAt?: string,
+  chatId: number, permissionId: number, granted: boolean, expiresAt?: string,
 ): Promise<ProactivePermission> {
   const response = await fetch(
     `${BACKEND_BASE_URL}/api/v1/chats/${chatId}/permissions/${permissionId}`,
-    { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ expires_at: expiresAt }) },
+    { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ granted, expires_at: expiresAt }) },
   );
   if (!response.ok) throw new Error(`Chat permission update failed with ${response.status}`);
   return proactivePermissionFromPayload(await response.json() as Record<string, unknown>);

@@ -5,12 +5,14 @@ const {
   getChatPermissionsMock,
   getPendingAuthorizationRequestsMock,
   getProactivePermissionsChatIdMock,
+  saveChatPermissionMock,
   callbacks,
   eventCallbackIds,
 } = vi.hoisted(() => ({
   getChatPermissionsMock: vi.fn(),
   getPendingAuthorizationRequestsMock: vi.fn(),
   getProactivePermissionsChatIdMock: vi.fn(),
+  saveChatPermissionMock: vi.fn(),
   callbacks: new Map<number, (event: { payload: number }) => void>(),
   eventCallbackIds: new Map<string, number>(),
 }));
@@ -21,7 +23,7 @@ vi.mock("../../frontend/src/services/backend", () => ({
   confirmAuthorization: vi.fn(),
   getChatPermissions: getChatPermissionsMock,
   getPendingAuthorizationRequests: getPendingAuthorizationRequestsMock,
-  saveChatPermission: vi.fn(),
+  saveChatPermission: saveChatPermissionMock,
 }));
 
 vi.mock("../../frontend/src/services/permissionsWindow", () => ({
@@ -61,6 +63,7 @@ afterEach(() => {
   getChatPermissionsMock.mockReset();
   getPendingAuthorizationRequestsMock.mockReset();
   getProactivePermissionsChatIdMock.mockReset();
+  saveChatPermissionMock.mockReset();
 });
 
 describe("PermissionsWindow", () => {
@@ -90,5 +93,42 @@ describe("PermissionsWindow", () => {
 
     expect(getChatPermissionsMock).toHaveBeenCalledWith(42);
     expect(wrapper.text()).toContain("Permissions des Chats");
+  });
+
+  it("revokes permission when unchecked and saved", async () => {
+    getPendingAuthorizationRequestsMock.mockResolvedValue([]);
+    getProactivePermissionsChatIdMock.mockResolvedValue(42);
+    getChatPermissionsMock.mockResolvedValue([
+      {
+        id: 1,
+        context: "web",
+        key: "search",
+        validityType: "duration",
+        defaultExpiry: 3600,
+        grant: { id: 10, expiresAt: new Date(Date.now() + 3600_000).toISOString() },
+        readOnly: false,
+      },
+    ]);
+    saveChatPermissionMock.mockResolvedValue({
+      id: 1,
+      context: "web",
+      key: "search",
+      validityType: "duration",
+      defaultExpiry: 3600,
+      grant: null,
+      readOnly: false,
+    });
+
+    const wrapper = mount(PermissionsWindow);
+    await flushPromises();
+
+    const checkbox = wrapper.find('input[type="checkbox"]');
+    await checkbox.setValue(false);
+
+    const saveButton = wrapper.findAll("button").find((b) => b.text() === "Speichern")!;
+    await saveButton.trigger("click");
+    await flushPromises();
+
+    expect(saveChatPermissionMock).toHaveBeenCalledWith(42, 1, false, undefined);
   });
 });

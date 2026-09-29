@@ -94,6 +94,7 @@ class ProactivePermissionResponse(BaseModel):
 
 
 class ProactivePermissionUpdateRequest(BaseModel):
+    granted: bool = True
     expires_at: datetime | None = None
 
 
