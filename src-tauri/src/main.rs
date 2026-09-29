@@ -3,7 +3,13 @@ mod input_shape;
 
 use backend::{BackendProcess, BackendSnapshot};
 use input_shape::InputRect;
-use tauri::Manager;
+use std::sync::Mutex;
+use tauri::{Emitter, Manager};
+
+#[derive(Default)]
+struct PermissionsWindowState {
+    proactive_chat_id: Mutex<Option<i64>>,
+}
 
 #[tauri::command]
 fn get_backend_snapshot(
@@ -51,12 +57,43 @@ fn show_chat_window(app: tauri::AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn show_permissions_window(app: tauri::AppHandle) -> Result<(), String> {
+fn show_permissions_window(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, PermissionsWindowState>,
+) -> Result<(), String> {
+    *state.proactive_chat_id.lock().map_err(|error| error.to_string())? = None;
     let window = app
         .get_webview_window("permissions")
         .ok_or("Permissions window is unavailable")?;
     window.show().map_err(|error| error.to_string())?;
-    window.set_focus().map_err(|error| error.to_string())
+    window.set_focus().map_err(|error| error.to_string())?;
+    app
+        .emit_to("permissions", "reactive-permissions", ())
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn show_permissions_window_for_chat(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, PermissionsWindowState>,
+    chat_id: i64,
+) -> Result<(), String> {
+    *state.proactive_chat_id.lock().map_err(|error| error.to_string())? = Some(chat_id);
+    let window = app
+        .get_webview_window("permissions")
+        .ok_or("Permissions window is unavailable")?;
+    window.show().map_err(|error| error.to_string())?;
+    window.set_focus().map_err(|error| error.to_string())?;
+    app
+        .emit_to("permissions", "proactive-permissions-for-chat", chat_id)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn get_proactive_permissions_chat_id(
+    state: tauri::State<'_, PermissionsWindowState>,
+) -> Result<Option<i64>, String> {
+    Ok(*state.proactive_chat_id.lock().map_err(|error| error.to_string())?)
 }
 
 #[tauri::command]
@@ -72,12 +109,15 @@ fn main() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_opener::init())
         .manage(backend.clone())
+        .manage(PermissionsWindowState::default())
         .invoke_handler(tauri::generate_handler![
             get_backend_snapshot,
             set_window_input_regions,
             resize_avatar_window,
             show_chat_window,
             show_permissions_window,
+            show_permissions_window_for_chat,
+            get_proactive_permissions_chat_id,
             exit_app
         ])
         .setup(move |app| {

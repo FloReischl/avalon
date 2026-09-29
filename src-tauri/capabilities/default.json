@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Default capability for Avalon",
-  "windows": ["main", "chat"],
+  "windows": ["main", "chat", "permissions"],
   "permissions": [
     "core:default",
     "core:window:allow-start-dragging",

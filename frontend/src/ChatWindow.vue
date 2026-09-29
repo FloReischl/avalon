@@ -28,6 +28,7 @@ import {
   type Attachment,
 } from "./services/backend";
 import { exportChatToMarkdown } from "./services/chatExport";
+import { showPermissionsWindowForChat } from "./services/permissionsWindow";
 import { formatMessageTime } from "./services/messageTime";
 import { requestRuntimeWarmUp } from "./services/runtimeWarmup";
 import {
@@ -390,6 +391,16 @@ async function exportChat(chatId: number) {
 
     console.error("[chat-export] failed to export chat", error);
     errorMessage.value = "Chat konnte nicht exportiert werden.";
+  }
+}
+
+async function openPermissionsDialog(chatId: number) {
+  closeChatMenu();
+  try {
+    await showPermissionsWindowForChat(chatId);
+  } catch (error) {
+    console.error("[permissions] failed to show chat permissions", error);
+    errorMessage.value = "Permissions konnten nicht geöffnet werden.";
   }
 }
 
@@ -956,6 +967,17 @@ function handleInputKeydown(event: KeyboardEvent) {
                 >
                   Export
                 </button>
+                <div class="chat-menu-separator" role="separator" />
+                <button
+                  class="chat-menu-item"
+                  type="button"
+                  role="menuitem"
+                  :data-testid="`chat-permissions-${chat.id}`"
+                  @click="openPermissionsDialog(chat.id)"
+                >
+                  Permissions
+                </button>
+                <div class="chat-menu-separator" role="separator" />
                 <button
                   class="chat-menu-item chat-menu-item--danger"
                   type="button"
@@ -1066,6 +1088,17 @@ function handleInputKeydown(event: KeyboardEvent) {
                 >
                   Export
                 </button>
+                <div class="chat-menu-separator" role="separator" />
+                <button
+                  class="chat-menu-item"
+                  type="button"
+                  role="menuitem"
+                  :data-testid="`chat-permissions-${chat.id}`"
+                  @click="openPermissionsDialog(chat.id)"
+                >
+                  Permissions
+                </button>
+                <div class="chat-menu-separator" role="separator" />
                 <button
                   class="chat-menu-item chat-menu-item--danger"
                   type="button"

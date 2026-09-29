@@ -1,0 +1,94 @@
+import { flushPromises, mount } from "@vue/test-utils";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const {
+  getChatPermissionsMock,
+  getPendingAuthorizationRequestsMock,
+  getProactivePermissionsChatIdMock,
+  callbacks,
+  eventCallbackIds,
+} = vi.hoisted(() => ({
+  getChatPermissionsMock: vi.fn(),
+  getPendingAuthorizationRequestsMock: vi.fn(),
+  getProactivePermissionsChatIdMock: vi.fn(),
+  callbacks: new Map<number, (event: { payload: number }) => void>(),
+  eventCallbackIds: new Map<string, number>(),
+}));
+
+vi.mock("../../frontend/src/services/backend", () => ({
+  BACKEND_BASE_URL: "http://test",
+  abortAuthorization: vi.fn(),
+  confirmAuthorization: vi.fn(),
+  getChatPermissions: getChatPermissionsMock,
+  getPendingAuthorizationRequests: getPendingAuthorizationRequestsMock,
+  saveChatPermission: vi.fn(),
+}));
+
+vi.mock("../../frontend/src/services/permissionsWindow", () => ({
+  getProactivePermissionsChatId: getProactivePermissionsChatIdMock,
+}));
+
+import PermissionsWindow from "../../frontend/src/PermissionsWindow.vue";
+
+beforeEach(() => {
+  let nextCallbackId = 0;
+  callbacks.clear();
+  eventCallbackIds.clear();
+  Object.defineProperty(window, "__TAURI_INTERNALS__", {
+    configurable: true,
+    value: {
+      transformCallback(callback: (event: { payload: number }) => void) {
+        const callbackId = ++nextCallbackId;
+        callbacks.set(callbackId, callback);
+        return callbackId;
+      },
+      invoke(command: string, arguments_: { event?: string; handler?: number }) {
+        if (command === "plugin:event|listen" && arguments_.event && arguments_.handler) {
+          eventCallbackIds.set(arguments_.event, arguments_.handler);
+          return Promise.resolve(1);
+        }
+        return Promise.resolve();
+      },
+    },
+  });
+  Object.defineProperty(window, "__TAURI_EVENT_PLUGIN_INTERNALS__", {
+    configurable: true,
+    value: { unregisterListener: vi.fn() },
+  });
+});
+
+afterEach(() => {
+  getChatPermissionsMock.mockReset();
+  getPendingAuthorizationRequestsMock.mockReset();
+  getProactivePermissionsChatIdMock.mockReset();
+});
+
+describe("PermissionsWindow", () => {
+  it("switches to proactive mode for the chat selected by the desktop command", async () => {
+    getPendingAuthorizationRequestsMock.mockResolvedValue([]);
+    getProactivePermissionsChatIdMock.mockResolvedValue(42);
+    getChatPermissionsMock.mockResolvedValue([]);
+
+    const wrapper = mount(PermissionsWindow);
+    await flushPromises();
+
+    expect(getChatPermissionsMock).toHaveBeenCalledWith(42);
+    expect(wrapper.text()).toContain("Permissions des Chats");
+    expect(wrapper.text()).not.toContain("Keine offenen Permissions.");
+  });
+
+  it("switches to proactive mode when the open event arrives after mount", async () => {
+    getPendingAuthorizationRequestsMock.mockResolvedValue([]);
+    getProactivePermissionsChatIdMock.mockResolvedValue(null);
+    getChatPermissionsMock.mockResolvedValue([]);
+
+    const wrapper = mount(PermissionsWindow);
+    await flushPromises();
+    const callbackId = eventCallbackIds.get("proactive-permissions-for-chat");
+    callbacks.get(callbackId ?? -1)?.({ payload: 42 });
+    await flushPromises();
+
+    expect(getChatPermissionsMock).toHaveBeenCalledWith(42);
+    expect(wrapper.text()).toContain("Permissions des Chats");
+  });
+});

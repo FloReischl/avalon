@@ -32,6 +32,16 @@ export interface PendingAuthorizationRequest extends AuthorizationRequest {
   sourceLabel: string;
 }
 
+export interface ProactivePermission {
+  id: number;
+  context: string;
+  key: string;
+  validityType: "permanent" | "duration" | "range";
+  defaultExpiry: number;
+  grant?: { id: number; expiresAt: string } | null;
+  readOnly: boolean;
+}
+
 export interface ConversationMessage {
   role: "user" | "assistant";
   content: string;
@@ -236,6 +246,33 @@ export async function getPendingAuthorizationRequests(): Promise<PendingAuthoriz
     items: request.items as string[], validityType: request.validity_type as PendingAuthorizationRequest["validityType"],
     defaultExpiry: Number(request.default_expiry), sourceLabel: String(request.source_label),
   }));
+}
+
+function proactivePermissionFromPayload(permission: Record<string, unknown>): ProactivePermission {
+  const grant = permission.grant as Record<string, unknown> | null;
+  return {
+    id: Number(permission.id), context: String(permission.context), key: String(permission.key),
+    validityType: permission.validity_type as ProactivePermission["validityType"],
+    defaultExpiry: Number(permission.default_expiry), readOnly: Boolean(permission.read_only),
+    grant: grant ? { id: Number(grant.id), expiresAt: String(grant.expires_at) } : null,
+  };
+}
+
+export async function getChatPermissions(chatId: number): Promise<ProactivePermission[]> {
+  const response = await fetch(`${BACKEND_BASE_URL}/api/v1/chats/${chatId}/permissions`);
+  if (!response.ok) throw new Error(`Chat permissions request failed with ${response.status}`);
+  return (await response.json() as Array<Record<string, unknown>>).map(proactivePermissionFromPayload);
+}
+
+export async function saveChatPermission(
+  chatId: number, permissionId: number, expiresAt?: string,
+): Promise<ProactivePermission> {
+  const response = await fetch(
+    `${BACKEND_BASE_URL}/api/v1/chats/${chatId}/permissions/${permissionId}`,
+    { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ expires_at: expiresAt }) },
+  );
+  if (!response.ok) throw new Error(`Chat permission update failed with ${response.status}`);
+  return proactivePermissionFromPayload(await response.json() as Record<string, unknown>);
 }
 
 export async function startAudioRecording(): Promise<void> {

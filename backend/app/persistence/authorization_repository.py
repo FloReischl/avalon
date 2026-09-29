@@ -7,12 +7,14 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.persistence.models import (
     Agent,
+    Chat,
     PermissionCatalog,
     PermissionGrant,
     Principal,
     PrincipalPermission,
 )
 from app.agents_config import AgentConfig, AgentPermissionConfig, AgentsConfig
+from app.authorization.types import PERMANENT_VALID_TO_YEAR
 from app.user_config import ChatUserConfig
 
 
@@ -195,6 +197,105 @@ class AuthorizationRepository:
                     )
                 )
             )
+
+    def get_effective_principal_id_for_chat(
+        self, chat_id: int, default_chat_principal_key: str = "chat-default"
+    ) -> int | None:
+        """Resolve the authorization principal stored directly or via an agent."""
+        with self._session_factory() as session:
+            chat = session.get(Chat, chat_id)
+            if chat is None:
+                return None
+            if chat.principal_id is not None:
+                return chat.principal_id
+            if chat.agent_id is not None:
+                return session.scalar(
+                    select(Agent.principal_id).where(Agent.id == chat.agent_id)
+                )
+            return session.scalar(
+                select(Principal.id).where(Principal.key == default_chat_principal_key)
+            )
+
+    def get_active_grant(
+        self, principal_permission_id: int, now: datetime
+    ) -> PermissionGrant | None:
+        """Return the longest currently effective grant for display/editing."""
+        with self._session_factory() as session:
+            return session.scalar(
+                select(PermissionGrant)
+                .where(
+                    PermissionGrant.principal_permission_id == principal_permission_id,
+                    PermissionGrant.valid_from <= now,
+                    PermissionGrant.valid_to > now,
+                )
+                .order_by(PermissionGrant.valid_to.desc(), PermissionGrant.id.desc())
+            )
+
+    def get_active_principal_permissions(
+        self, principal_id: int
+    ) -> list[tuple[PrincipalPermission, PermissionCatalog]]:
+        """Return all currently configured permission definitions for one principal."""
+        with self._session_factory() as session:
+            return list(
+                session.execute(
+                    select(PrincipalPermission, PermissionCatalog)
+                    .join(PermissionCatalog)
+                    .where(
+                        PrincipalPermission.principal_id == principal_id,
+                        PrincipalPermission.is_active.is_(True),
+                    )
+                    .order_by(PermissionCatalog.context, PermissionCatalog.key)
+                )
+            )
+
+    def save_proactive_grant(
+        self,
+        principal_permission_id: int,
+        validity_type: str,
+        expires_at: datetime | None,
+        now: datetime,
+    ) -> PermissionGrant:
+        """Create or update the one displayed direct grant without a request."""
+        with self._session_factory.begin() as session:
+            permission = session.get(PrincipalPermission, principal_permission_id)
+            if permission is None or not permission.is_active:
+                raise KeyError("Principal permission does not exist.")
+            if permission.validity_type != validity_type:
+                raise ValueError("Permission validity type does not match.")
+            if validity_type == "range":
+                raise ValueError("Range grants require capability request items.")
+            if validity_type == "duration" and expires_at is None:
+                raise ValueError("Duration grants require expires_at.")
+            if validity_type == "permanent" and expires_at is not None:
+                raise ValueError("Permanent grants do not accept expires_at.")
+
+            grant = session.scalar(
+                select(PermissionGrant)
+                .where(
+                    PermissionGrant.principal_permission_id == principal_permission_id,
+                    PermissionGrant.valid_from <= now,
+                    PermissionGrant.valid_to > now,
+                )
+                .order_by(PermissionGrant.valid_to.desc(), PermissionGrant.id.desc())
+            )
+            valid_to = (
+                expires_at
+                if validity_type == "duration"
+                else datetime(PERMANENT_VALID_TO_YEAR, 1, 1)
+            )
+            if grant is None:
+                grant = PermissionGrant(
+                    principal_permission_id=principal_permission_id,
+                    valid_from=now,
+                    valid_to=valid_to,
+                    range=None,
+                )
+                session.add(grant)
+            else:
+                grant.valid_to = valid_to
+            session.flush()
+            session.refresh(grant)
+            return grant
 
     def create_grant(
         self,

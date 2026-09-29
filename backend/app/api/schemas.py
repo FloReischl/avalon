@@ -78,6 +78,25 @@ class PendingAuthorizationRequestResponse(BaseModel):
     source_label: str
 
 
+class ProactivePermissionGrantResponse(BaseModel):
+    id: int
+    expires_at: datetime
+
+
+class ProactivePermissionResponse(BaseModel):
+    id: int
+    context: str
+    key: str
+    validity_type: Literal["permanent", "duration", "range"]
+    default_expiry: int
+    grant: ProactivePermissionGrantResponse | None = None
+    read_only: bool = False
+
+
+class ProactivePermissionUpdateRequest(BaseModel):
+    expires_at: datetime | None = None
+
+
 class ConversationMessage(BaseModel):
     """One previous plain-text conversation message."""
 

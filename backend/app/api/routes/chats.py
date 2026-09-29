@@ -1,5 +1,7 @@
 """Persistent chat-management endpoints."""
 
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 
 from app.api.schemas import (
@@ -8,7 +10,11 @@ from app.api.schemas import (
     PersistentMessageResponse,
     RenameChatRequest,
     SetChatPinnedRequest,
+    ProactivePermissionResponse,
+    ProactivePermissionUpdateRequest,
 )
+from app.persistence.authorization_repository import AuthorizationRepository
+from app.user_config import get_user_config
 
 from app.persistence.chat_repository import ChatRepository
 from app.persistence.database import (
@@ -24,6 +30,15 @@ def get_chat_repository():
     engine = create_database_engine()
     repository = ChatRepository(create_session_factory(engine))
 
+    try:
+        yield repository
+    finally:
+        engine.dispose()
+
+
+def get_authorization_repository():
+    engine = create_database_engine()
+    repository = AuthorizationRepository(create_session_factory(engine))
     try:
         yield repository
     finally:
@@ -138,6 +153,89 @@ def set_chat_pinned(
         )
 
     return _summary_response(chat)
+
+
+def _proactive_permissions(
+    chat_id: int,
+    repository: AuthorizationRepository,
+    default_chat_principal_key: str = "chat-default",
+) -> list[ProactivePermissionResponse]:
+    principal_id = repository.get_effective_principal_id_for_chat(
+        chat_id, default_chat_principal_key
+    )
+    if principal_id is None:
+        raise HTTPException(status_code=404, detail=f"Chat {chat_id} does not exist.")
+    now = datetime.now()
+    result: list[ProactivePermissionResponse] = []
+    for permission, catalog in repository.get_active_principal_permissions(principal_id):
+        grant = repository.get_active_grant(permission.id, now)
+        if permission.validity_type == "range" and grant is None:
+            continue
+        result.append(
+            ProactivePermissionResponse(
+                id=permission.id,
+                context=catalog.context,
+                key=catalog.key,
+                validity_type=permission.validity_type,
+                default_expiry=permission.default_expiry,
+                grant=(
+                    {"id": grant.id, "expires_at": grant.valid_to}
+                    if grant is not None else None
+                ),
+                read_only=permission.validity_type == "range",
+            )
+        )
+    return result
+
+
+@router.get("/{chat_id}/permissions", response_model=list[ProactivePermissionResponse])
+def list_proactive_permissions(
+    chat_id: int,
+    repository: AuthorizationRepository = Depends(get_authorization_repository),
+) -> list[ProactivePermissionResponse]:
+    """Show active grants/configured permissions for one chat's effective principal."""
+    return _proactive_permissions(
+        chat_id, repository, get_user_config().chat_default_principal_key
+    )
+
+
+@router.put("/{chat_id}/permissions/{permission_id}", response_model=ProactivePermissionResponse)
+def save_proactive_permission(
+    chat_id: int,
+    permission_id: int,
+    request: ProactivePermissionUpdateRequest,
+    repository: AuthorizationRepository = Depends(get_authorization_repository),
+) -> ProactivePermissionResponse:
+    """Directly persist a proactive duration or permanent grant for this chat."""
+    principal_id = repository.get_effective_principal_id_for_chat(
+        chat_id, get_user_config().chat_default_principal_key
+    )
+    if principal_id is None:
+        raise HTTPException(status_code=404, detail=f"Chat {chat_id} does not exist.")
+    permission = next(
+        (
+            definition
+            for definition, _ in repository.get_active_principal_permissions(principal_id)
+            if definition.id == permission_id
+        ),
+        None,
+    )
+    if permission is None:
+        raise HTTPException(status_code=404, detail="Permission does not belong to this chat.")
+    now = datetime.now()
+    try:
+        repository.save_proactive_grant(
+            permission.id, permission.validity_type, request.expires_at, now
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return next(
+        item
+        for item in _proactive_permissions(
+            chat_id, repository, get_user_config().chat_default_principal_key
+        )
+        if item.id == permission_id
+    )
 
 
 @router.delete("/{chat_id}", status_code=status.HTTP_204_NO_CONTENT)

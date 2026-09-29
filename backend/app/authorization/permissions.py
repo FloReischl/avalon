@@ -65,7 +65,7 @@ class WebSearchPermission:
         scope = json.loads(principal_permission.scope)
         if self._DOMAIN not in scope:
             return False
-        if grant.valid_from > now or grant.valid_to < now:
+        if grant.valid_from > now or grant.valid_to <= now:
             return False
         if principal_permission.validity_type == "range":
             if grant.range is None:
@@ -105,7 +105,7 @@ class WebGetContentPermission:
         items: list[object],
         now: datetime,
     ) -> bool:
-        if grant.valid_from > now or grant.valid_to < now:
+        if grant.valid_from > now or grant.valid_to <= now:
             return False
         if principal_permission.validity_type == "range":
             if grant.range is None:

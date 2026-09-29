@@ -37,6 +37,9 @@ data/code2prompt-file-list.md
 data/frieda-files.md
 data/codex-instructions.md
 data/codex-findings.md
+data/agent-instructions.md
+data/agent-findings.md
+data/agent-output.md
 data/diff.patch
 
 # TTS (text-to-speech)

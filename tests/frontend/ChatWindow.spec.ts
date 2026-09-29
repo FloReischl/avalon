@@ -1290,6 +1290,9 @@ describe("ChatWindow", () => {
       wrapper.get('[data-testid="chat-export-42"]').text(),
     ).toBe("Export");
     expect(
+      wrapper.get('[data-testid="chat-permissions-42"]').text(),
+    ).toBe("Permissions");
+    expect(
       wrapper.get('[data-testid="chat-export-42"]').attributes("disabled"),
     ).toBeUndefined();
     expect(
