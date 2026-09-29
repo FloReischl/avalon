@@ -1,5 +1,15 @@
 todo
 
+- attachments
+  - search
+  - chunk
+  - add/remove/update
+  - view
+- minors
+  - export to clipboard
+  - chat title
+  - save avatar size
+  - chat messages "Du" (Frieda?) raus
 - external agents
   - authenticate
 - agents
