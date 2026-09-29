@@ -19,7 +19,9 @@ todo
   - agents/mcp monitor
   - log window
 - input-send with ENTER, if no '\n' contained
-- chat kontext komprimieren
+- chat kontext
+  - komprimieren
+  - langzeit
 - animations
 - nsfw mode (slow llm, hq audio)
 - chat
