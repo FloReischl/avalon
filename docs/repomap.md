@@ -30,6 +30,7 @@ Arbeitsindex für Frieda: Impact-Analyse, Implementierungsplanung, Abhängigkeit
 - Aktueller Zeitpunkt/Lokation sowie Persona/Instruktionen des effektiven Standardavatars sind eine Systemmessage für Assistenten-Text, nie für STT oder automatische Titel.
 - Assistant-Text nur komplett erfolgreich persistieren; Abbruch/Fehler-Teilausgabe nie. Nach exakt zwei kompletten Textrunden ein Titelversuch; manuelle Titel unterdrücken ihn dauerhaft.
 - Chats: Pin, Umbenennen, physisch löschen, Markdown exportieren. Reihenfolge im Backend nach Aktivität; UI separiert angeheftete Chats. Löschen des sichtbaren Chats => leeres New Chat.
+- Attachments sind unabhängige, unveränderliche File-Artefakte in `~/.avalon/attachments/`; die n:m-Relation zu Messages hat keine weiteren Fachfelder. Sie werden per Copy-in einzeln für bestehende Messages erstellt, beim Löschen einer Message nicht entfernt und niemals automatisch in LLM-Kontext übernommen.
 - Audio-UI: Placeholder `🎤 Sprachnachricht` bleibt transient; erst das vollständige STT-Ergebnis wird normale persistierte User-Nachricht und Kontext. STT-Fehler/Timeout/leeres Ergebnis starten kein LLM und hinterlassen keine partielle User-Nachricht. Assistant-Generierung startet danach über den normalen Text-LLM-Pfad.
 - Mehrere persistierte Chats können parallele Textstreams haben; Stop betrifft nur den sichtbaren laufenden Chat.
 
@@ -101,11 +102,12 @@ Arbeitsindex für Frieda: Impact-Analyse, Implementierungsplanung, Abhängigkeit
 - Agent-Permissions aus `agents.yaml` sowie Default-Chat-Permissions aus `config.yaml:chat.permissions` werden beim App-Start validiert und transactional in die Authorization-DB reconciliiert. Fehlende Principals/Agents und Permission-Catalog-Einträge werden angelegt; Principal-Permissions werden angelegt, aktualisiert, reaktiviert oder via `is_active=false` deaktiviert. `scope` bleibt semantisch opaque und wird als kanonisches JSON persistiert. Der Reconcile ist atomar und idempotent; die jeweilige Konfiguration ist für die Permissions des Principals führend.
 - `backend/app/services/tool_runner.py`: capability-agnostischer LLM-Tool-Loop; bezieht principal-spezifische Tooldefinitionen über MCP, cached sie statisch und dispatcht Tool-Calls generisch über MCP. Turn-lokaler Result-Cache verhindert wiederholte Ausführung identischer Tool-Calls.
 - `backend/app/api/routes/authorization.py`: Pending-Requests, Confirm/Abort und SSE-Invalidierungen für die globale Permission-Inbox.
-- `backend/app/api/schemas.py`: öffentliche Verträge. `ChatRequest(chat_id?: positive int, message: non-empty)`, `ConversationMessage(role user|assistant, content)`, `AudioResponseRequest(messages, chat_id?)`, `HealthResponse`, Chat summary/detail (inkl. `pinned`, `compression_error_code`), Rename (max. 200), Pin, TTS, Playback-ended, UI-Konfiguration/Avatar/Sprite-Regionen.
+- `backend/app/api/schemas.py`: öffentliche Verträge. `ChatRequest(chat_id?: positive int, message: non-empty)`, `ConversationMessage(role user|assistant, content)`, `AudioResponseRequest(messages, chat_id?)`, `HealthResponse`, Chat summary/detail (inkl. `pinned`, `compression_error_code`, Message-Attachments), Rename (max. 200), Pin, TTS, Playback-ended, UI-Konfiguration/Avatar/Sprite-Regionen.
 - `routes/health.py`: `health() -> HealthResponse`.
 - `routes/runtime.py`: `POST /api/v1/runtime/warm-up`, stateless best-effort, Inhalt verwerfen.
 - `routes/chat.py`: request-scoped ChatService mit Ollama/Persistenz und ToolRunner; `format_sse_event`, Chat-/Authorization-SSE und Fehlerabbildung; Cancellation unverändert.
 - `routes/chats.py`: `GET /chats`, `GET /chats/{id}`, `PATCH /chats/{id}`, `PATCH /chats/{id}/pinned`, `DELETE /chats/{id}`.
+- `routes/attachments.py`: `POST /messages/{message_id}/attachments` (Multipart-Copy-in) und `GET /attachments/{id}/download`.
 - `routes/audio.py`: Call status/start/end/turn-complete/speech-consume; recording start/abort/stop; dialog turn. Nutzt `AudioChatService`, `AudioCallState`, `ChatRepository`.
 - `routes/tts.py`: Synthese und Playback-Lifecycle; `TtsService`, Factory.
 - `routes/ui.py`: `GET /ui/config`, nur frontend-sichere effektive Standardavatar-Daten; fertige absolute Asset-URLs mit Prozess-Cache-Token, keine Persona/Instruktionen/Pfade/TTS.
@@ -119,7 +121,8 @@ Arbeitsindex für Frieda: Impact-Analyse, Implementierungsplanung, Abhängigkeit
 - `services/chat.py:ChatService`: `start_turn`, `stream_response`, `finalize_turn`; atomarer Chat+erste Usermessage, Commands, Kontextaufbau, Systemmessage, vollständige Assistant-Persistenz, einmaliger Auto-Titel. Abstrakt vom Runtime-Adapter; Langzeitgedächtnis fehlt.
 - `services/context_compression.py`: `ContextCompressionService`, `CompressedContext`, `build_active_context`; char-basierte Schätzung, aktuelle Runden schützen, falls nötig einbeziehen, konkretes Outputbudget bei jedem Versuch neu berechnen, geringwertige Summaries deterministisch entfernen, versioniertes CAS, terminaler Fehler nur wenn Stars allein nicht passen.
 - `persistence/chat_repository.py`: atomarer Erstturn, monoton steigende Nachrichten-`seq`, Aktivitätsliste, CRUD/Pin/Auto-Titel-Claim, atomarer Kompressionszustand per erwarteter Version.
-- `persistence/models.py`: SQLAlchemy `Chat` (Titel, manuell, Pin, komprimierter Kontext, Seq/Version/Fehler) und `Message` (Chat, Rolle, Inhalt, Seq, Zeit).
+- `persistence/models.py`: SQLAlchemy `Chat` (Titel, manuell, Pin, komprimierter Kontext, Seq/Version/Fehler), `Message` (Chat, Rolle, Inhalt, Seq, Zeit), immutable `Attachment` und `MessageAttachment`.
+- `persistence/attachment_repository.py`, `services/attachments.py`: transaktionelles Persistieren/Verknüpfen und Copy-in-Storage mit UUID-Dateinamen, inhaltsbasierter MIME-Ermittlung via lokalem `file`-Tool (Fallback `application/octet-stream`) und 50-MB-Limit.
 - `services/audio_text_chat.py:AudioTextChatService`: orchestriert PTT/Dialog als STT-first-Pipeline; Streaming-Chunks seriell transkribieren/mergen, finalen Usertext vor normalem Text-LLM persistieren, Post-Recording-STT-Timeout/Fehler/Empty behandeln, temporäre Audioartefakte bereinigen. PTT startet Capture vor parallelem Whisper-Warm-up.
 - `services/audio_call.py:AudioCallState`: genau ein globaler Call, gebundene Chat-ID, `turn_active`, eine pending Assistant-Speech; Ende leert Assoziation/Pending.
 - `services/tts.py`: `TtsBusyError`, `TtsResult(playback_id,audio)`, single-flight inkl. Cancellation, Playback-ID, Idle-Unload.
@@ -180,6 +183,7 @@ Arbeitsindex für Frieda: Impact-Analyse, Implementierungsplanung, Abhängigkeit
 | --- | --- |
 | Öffentlicher Chatvertrag | `api/schemas.py`, `routes/chat.py`, `services/chat.py`, `frontend/src/types/chat.ts`, `services/backend.ts`, `useTransientChat.ts`, Chat-Backend/Frontend-Tests |
 | Chatpersistenz | `main.py`, Chat-Schemas/Route/Service, `persistence/database.py`, `models.py`, Alembic `0001`–`0004`, Frontend Backend/Hook/Window und Tests |
+| Attachments | `models.py`, `attachment_repository.py`, `services/attachments.py`, Alembic `0007`, Attachment-Route/Schemas, Chat-Detail-Route, `backend.ts`/Hook/ChatWindow und Backend-/Frontend-Tests |
 | Kontextkompression | `services/context_compression.py`, Chat/Audio-Service, Modelle/Repository/Config, Chat/Audio-Routen und -Schemas, ChatWindow/Hook/backend/types, Kompressions-/Chat-/Audio-Tests |
 | Runtime-Vertrag | `runtime/base.py`, `ollama.py`, `llama_cpp.py`, `services/chat.py`, Runtime/Ollama/Integrationstests; Runtime bleibt text-only |
 | Ollama oder LLM-Auswahl | `ollama.py`, `config.py`, `state.py`, Commands Factory/Registry/`llm_set.py`, Chat/Main und LLM/State/Ollama/Main-Tests |

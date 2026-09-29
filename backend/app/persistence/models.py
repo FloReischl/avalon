@@ -199,3 +199,42 @@ class Message(Base):
     )
 
     chat: Mapped[Chat] = relationship(back_populates="messages")
+    attachments: Mapped[list["Attachment"]] = relationship(
+        secondary="message_attachments",
+        back_populates="messages",
+    )
+
+
+class Attachment(Base):
+    """One immutable file artifact managed by Avalon."""
+
+    __tablename__ = "attachments"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    file_name: Mapped[str] = mapped_column(String(300), nullable=False, unique=True)
+    original_file_name: Mapped[str] = mapped_column(Text, nullable=False)
+    mime_type: Mapped[str] = mapped_column(String(255), nullable=False)
+    size: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        nullable=False,
+        server_default=func.current_timestamp(),
+    )
+
+    messages: Mapped[list[Message]] = relationship(
+        secondary="message_attachments",
+        back_populates="attachments",
+    )
+
+
+class MessageAttachment(Base):
+    """A relation between a message and an immutable attachment."""
+
+    __tablename__ = "message_attachments"
+
+    message_id: Mapped[int] = mapped_column(
+        ForeignKey("messages.id", ondelete="CASCADE"), primary_key=True
+    )
+    attachment_id: Mapped[int] = mapped_column(
+        ForeignKey("attachments.id", ondelete="RESTRICT"), primary_key=True
+    )

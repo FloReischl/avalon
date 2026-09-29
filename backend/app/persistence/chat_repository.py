@@ -1,9 +1,9 @@
 """Persistent chat and message operations."""
 
 from sqlalchemy import func, select, update
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import Session, selectinload, sessionmaker
 
-from app.persistence.models import Chat, Message, Principal
+from app.persistence.models import Attachment, Chat, Message, Principal
 
 
 class ChatRepository:
@@ -132,6 +132,23 @@ class ChatRepository:
                 .order_by(Message.created_at, Message.id)
             )
             return list(session.scalars(statement))
+
+    def get_attachments_for_messages(
+        self, message_ids: list[int]
+    ) -> dict[int, list[Attachment]]:
+        """Return attachment metadata grouped by message id."""
+        if not message_ids:
+            return {}
+        with self._session_factory() as session:
+            messages = session.scalars(
+                select(Message)
+                .where(Message.id.in_(message_ids))
+                .options(selectinload(Message.attachments))
+            )
+            return {
+                message.id: list(message.attachments)
+                for message in messages
+            }
 
     def get_context_messages(
         self,

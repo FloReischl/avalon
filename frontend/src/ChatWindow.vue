@@ -24,6 +24,8 @@ import {
   synthesizeSpeech,
   startAudioCall,
   getAudioCallStatus,
+  BACKEND_BASE_URL,
+  type Attachment,
 } from "./services/backend";
 import { exportChatToMarkdown } from "./services/chatExport";
 import { formatMessageTime } from "./services/messageTime";
@@ -86,9 +88,18 @@ const isTtsPlaying = ref(false);
 const skipDialogTts = ref(false);
 const callTurnActive = ref(false);
 const boundCallActive = ref(false);
+const selectedAttachments = ref<Attachment[] | undefined>();
 let unlistenAudioCall: (() => void) | undefined;
 
 const isBoundCallTurnActive = computed(() => callTurnActive.value);
+
+function openAttachments(attachments: Attachment[]) {
+  selectedAttachments.value = attachments;
+}
+
+function closeAttachments() {
+  selectedAttachments.value = undefined;
+}
 
 async function refreshCallStatus() {
   try {
@@ -1164,6 +1175,41 @@ function handleInputKeydown(event: KeyboardEvent) {
       </section>
     </div>
 
+    <div
+      v-if="selectedAttachments !== undefined"
+      class="modal-backdrop"
+      data-testid="message-attachments-dialog"
+      @pointerdown.self="closeAttachments"
+    >
+      <section
+        class="chat-dialog attachments-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="message-attachments-title"
+      >
+        <h2 id="message-attachments-title">Anhänge</h2>
+        <ul class="attachment-list">
+          <li v-for="attachment in selectedAttachments" :key="attachment.id">
+            <span>{{ attachment.original_file_name }}</span>
+            <a
+              class="message-action-button icon-button"
+              :href="`${BACKEND_BASE_URL}/api/v1/attachments/${attachment.id}/download`"
+              :download="attachment.original_file_name"
+              :aria-label="`${attachment.original_file_name} herunterladen`"
+              title="Herunterladen"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 3v12M7 10l5 5 5-5M5 20h14" />
+              </svg>
+            </a>
+          </li>
+        </ul>
+        <div class="chat-dialog-actions">
+          <button type="button" @click="closeAttachments">Schließen</button>
+        </div>
+      </section>
+    </div>
+
     <section class="chat-main">
       <section
         v-show="!isComposerExpanded"
@@ -1214,6 +1260,20 @@ function handleInputKeydown(event: KeyboardEvent) {
             >
               {{ formatMessageTime(message) }}
             </span>
+
+            <button
+              class="message-action-button icon-button"
+              type="button"
+              data-testid="message-attachments"
+              aria-label="Anhänge anzeigen"
+              title="Anhänge anzeigen"
+              :disabled="!message.attachments?.length"
+              @click="openAttachments(message.attachments ?? [])"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M8.5 12.5 14.8 6.2a3.5 3.5 0 1 1 5 5l-7.8 7.8a5 5 0 0 1-7.1-7.1l7.3-7.3" />
+              </svg>
+            </button>
 
             <button
               class="message-action-button icon-button"
@@ -1714,6 +1774,35 @@ function handleInputKeydown(event: KeyboardEvent) {
 
 .chat-dialog p {
   margin: 0 0 1rem;
+}
+
+.attachments-dialog {
+  width: min(32rem, calc(100vw - 3rem));
+}
+
+.attachment-list {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.attachment-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.attachment-list span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attachment-list a {
+  margin-left: auto;
 }
 
 .chat-dialog-input {

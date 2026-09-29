@@ -92,6 +92,17 @@ class PersistentMessageResponse(BaseModel):
     role: Literal["user", "assistant"]
     content: str
     created_at: datetime
+    attachments: list["AttachmentResponse"] = Field(default_factory=list)
+
+
+class AttachmentResponse(BaseModel):
+    """Metadata for one immutable attachment exposed to the UI."""
+
+    id: int
+    original_file_name: str
+    mime_type: str
+    size: int
+    created_at: datetime
 
 
 class ChatSummaryResponse(BaseModel):

@@ -58,6 +58,9 @@ class FakeChatRepository:
     def get_messages(self, chat_id: int):
         return self.messages.get(chat_id, [])
 
+    def get_attachments_for_messages(self, message_ids: list[int]):
+        return {message_id: [] for message_id in message_ids}
+
     def rename_chat(self, chat_id: int, title: str):
         chat = self.chats.get(chat_id)
         if chat is None:

@@ -50,6 +50,15 @@ export interface PersistentMessage {
   role: "user" | "assistant";
   content: string;
   created_at: string;
+  attachments: Attachment[];
+}
+
+export interface Attachment {
+  id: number;
+  original_file_name: string;
+  mime_type: string;
+  size: number;
+  created_at: string;
 }
 
 export interface ChatDetail extends ChatSummary {

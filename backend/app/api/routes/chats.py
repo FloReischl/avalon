@@ -66,6 +66,9 @@ def get_chat(
         )
 
     messages = repository.get_messages(chat_id)
+    attachments_by_message = repository.get_attachments_for_messages(
+        [message.id for message in messages]
+    )
 
     return ChatDetailResponse(
         id=chat.id,
@@ -80,6 +83,16 @@ def get_chat(
                 role=message.role,
                 content=message.content,
                 created_at=message.created_at,
+                attachments=[
+                    {
+                        "id": attachment.id,
+                        "original_file_name": attachment.original_file_name,
+                        "mime_type": attachment.mime_type,
+                        "size": attachment.size,
+                        "created_at": attachment.created_at,
+                    }
+                    for attachment in attachments_by_message.get(message.id, [])
+                ],
             )
             for message in messages
         ],

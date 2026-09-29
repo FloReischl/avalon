@@ -273,10 +273,12 @@ export function useTransientChat(
     state.messages.splice(
       0,
       state.messages.length,
-      ...detail.messages.map(({ role, content, created_at }) => ({
+      ...detail.messages.map(({ id, role, content, created_at, attachments }) => ({
+        id,
         role,
         content,
         created_at,
+        attachments,
       })),
     );
     applyCompressionStatus(state, detail.compression_error_code);
@@ -311,10 +313,12 @@ export function useTransientChat(
 
     const state = createChatState(
       detail.id,
-      detail.messages.map(({ role, content, created_at }) => ({
+      detail.messages.map(({ id, role, content, created_at, attachments }) => ({
+        id,
         role,
         content,
         created_at,
+        attachments,
       })),
     );
     applyCompressionStatus(state, detail.compression_error_code);
