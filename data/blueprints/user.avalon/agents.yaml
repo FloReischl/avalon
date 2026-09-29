@@ -35,6 +35,21 @@ agents:
       scope:
       - source: /tmp/avalon/audio
         destination: ~/Documents/podcasts
+- name: Kenny
+  key: workflow-test
+  persona: Du bist Kenny. Ein Test Agent.
+  instructions: |
+    - Ein Agent zum Testen von Workflows.
+    - Du führst Anweisung maximal korrekt aus. 
+    - Fehler im Input versuchst du nicht zu kompensieren, sondern gibst du mit einem Lächeln an den Sender zurück.
+  permissions:
+  - permission_catalog:
+      context: workflow
+      key: execute
+    principal_permission:
+      scope: ["test-workflow"]
+      validity_type: permanent
+
 
 # - name: orange
 #   key: coder

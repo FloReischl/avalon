@@ -15,6 +15,8 @@ todo
 - agents
   - communication.create-audio
   - file.copy
+- workflows
+  - final response with trigger llm
 - admin
   - agents/mcp monitor
   - log window
