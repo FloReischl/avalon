@@ -9,7 +9,13 @@ class AvatarCommand:
     def __init__(self, state: AvalonState) -> None:
         self._state = state
 
-    async def execute(self, payload: str) -> str:
+    async def execute(
+        self,
+        payload: str,
+        context=None,
+    ) -> str:
+        del context
+
         if not self._state.set_current_avatar(payload):
             return "invalid avatar key"
 

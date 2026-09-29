@@ -90,13 +90,19 @@ def test_chat_service_creates_tool_runner_only_for_tool_capable_llm(
                 "test", "example:model", tool_support=tool_support
             ),
             "current_avatar": None,
+            "agents": (),
         },
     )()
+
     monkeypatch.setattr(chat_route, "create_database_engine", lambda: FakeEngine())
     monkeypatch.setattr(chat_route, "create_session_factory", lambda engine: object())
     monkeypatch.setattr(chat_route, "ChatRepository", lambda factory: object())
     monkeypatch.setattr(chat_route, "get_avalon_state", lambda: state)
-    monkeypatch.setattr(chat_route, "build_command_registry", lambda state: object())
+    monkeypatch.setattr(
+        chat_route,
+        "build_command_registry",
+        lambda state, repository: object(),
+    )
 
     service_factory = chat_route.get_chat_service()
     service = next(service_factory)

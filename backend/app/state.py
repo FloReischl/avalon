@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from app.config import LlmConfig
+from app.agents_config import AgentConfig, AgentsConfig
 from app.avatars_config import AvatarConfig, AvatarsConfig
 from app.models_config import ModelsConfig
+
 from app.user_config import UserConfig
 from app.services.audio_call import AudioCallState
 
@@ -20,10 +22,14 @@ class AvalonState:
         user_config: UserConfig,
         avatars_config: AvatarsConfig,
         models_config: ModelsConfig,
+        agents_config: AgentsConfig | None = None,
     ) -> None:
         self._user_config = user_config
         self._avatars_config = avatars_config
+        self._agents_config = agents_config or AgentsConfig()
+
         self._llm_models = models_config.llm_models
+
         self._current_avatar = avatars_config.standard_avatar
         self._current_llm = next(
             llm for llm in self._llm_models if llm.key == "standard"
@@ -40,7 +46,23 @@ class AvalonState:
         return self._current_avatar
 
     @property
+    def agents(self) -> tuple[AgentConfig, ...]:
+        return tuple(self._agents_config.agents)
+
+    def get_agent(self, key: str) -> AgentConfig | None:
+        normalized = key.casefold()
+        return next(
+            (
+                agent
+                for agent in self._agents_config.agents
+                if agent.key.casefold() == normalized
+            ),
+            None,
+        )
+
+    @property
     def current_llm(self) -> LlmConfig:
+
         return self._current_llm
 
     def get_llm(self, key: str) -> LlmConfig | None:
@@ -112,12 +134,20 @@ def initialize_avalon_state(
     user_config: UserConfig,
     avatars_config: AvatarsConfig,
     models_config: ModelsConfig,
+    agents_config: AgentsConfig | None = None,
 ) -> AvalonState:
+
     """Initialize process-local Avalon runtime state exactly once."""
     global _avalon_state
 
     if _avalon_state is None:
-        _avalon_state = AvalonState(user_config, avatars_config, models_config)
+        _avalon_state = AvalonState(
+            user_config,
+            avatars_config,
+            models_config,
+            agents_config,
+        )
+
 
     return _avalon_state
 

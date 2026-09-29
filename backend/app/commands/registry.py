@@ -1,7 +1,8 @@
 import logging
 
-from .base import Command
+from .base import Command, CommandContext
 from .parser import CommandRequest
+
 
 
 logger = logging.getLogger(__name__)
@@ -22,7 +23,11 @@ class CommandRegistry:
     def contains(self, request: CommandRequest) -> bool:
         return request.key.lower() in self._commands
 
-    async def execute(self, request: CommandRequest) -> str:
+    async def execute(
+        self,
+        request: CommandRequest,
+        context: CommandContext | None = None,
+    ) -> str:
         if not request.key:
             return "missing command identifier"
 
@@ -31,7 +36,8 @@ class CommandRegistry:
             return f"unknown command: {request.key}"
 
         try:
-            return await command.execute(request.payload)
+            return await command.execute(request.payload, context)
         except Exception as exc:
+
             logger.exception("Command '%s' failed", request.key)
             return f"command failed!\n\nmessage: {exc}"

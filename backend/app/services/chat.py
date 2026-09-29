@@ -6,8 +6,10 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Callable
 
-from app.commands import CommandRegistry, CommandRequest, parse_command
+from app.agents_config import AgentConfig
+from app.commands import CommandContext, CommandRegistry, CommandRequest, parse_command
 from app.persistence.chat_repository import ChatRepository
+
 from app.user_config import get_user_config
 from app.avatars_config import AvatarConfig
 from app.runtime.base import ModelRuntime
@@ -50,16 +52,21 @@ class ChatService:
         compression_service: ContextCompressionService | None = None,
         task_scheduler: Callable[[Any], Any] | None = None,
         tool_runner: ToolRunner | None = None,
+        agents: tuple[AgentConfig, ...] = (),
     ) -> None:
+
         self._runtime = runtime
         self._repository = repository
         self._avatar = avatar
+        self._agents = agents
         self._command_registry = command_registry or CommandRegistry()
         self._compression_service = compression_service or ContextCompressionService(
             runtime,
             repository,
             avatar,
+            agents,
         )
+
         self._task_scheduler = task_scheduler or asyncio.create_task
         self._compression_tasks: set[asyncio.Task[object]] = set()
         self._tool_runner = tool_runner
@@ -115,8 +122,9 @@ class ChatService:
             context,
             parse_compressed_context(chat.compressed_context),
             chat.compressed_through_seq,
-            self._avatar,
+            self._context_identity(chat.agent_id),
         )
+
         return ChatTurn(
             chat_id=chat_id,
             messages=messages,
@@ -139,8 +147,10 @@ class ChatService:
 
         if turn.command_request is not None:
             command_response = await self._command_registry.execute(
-                turn.command_request
+                turn.command_request,
+                CommandContext(chat_id=turn.chat_id),
             )
+
             yield command_response
             self._repository.add_message(
                 turn.chat_id,
@@ -152,11 +162,14 @@ class ChatService:
         response_chunks: list[str] = []
 
         if self._tool_runner is not None:
-            chat = self._repository.get_chat(turn.chat_id)
-            assert chat is not None and chat.principal_id is not None
-            chunks = self._tool_runner.stream_response(
-                chat.principal_id, turn.messages, turn.authorization_source_label
+            principal_id = self._repository.get_effective_principal_id(
+                turn.chat_id
             )
+            assert principal_id is not None
+            chunks = self._tool_runner.stream_response(
+                principal_id, turn.messages, turn.authorization_source_label
+            )
+
         else:
             chunks = self._runtime.generate_text_stream(turn.messages)
 
@@ -172,8 +185,32 @@ class ChatService:
                 response,
             )
 
+    def _context_identity(self, agent_id: int | None):
+        if agent_id is None:
+            return self._avatar
+
+        persisted_agent = self._repository.get_agent_by_id(agent_id)
+        if persisted_agent is None:
+            raise RuntimeError(f"Agent {agent_id} does not exist.")
+
+        normalized = persisted_agent.key.casefold()
+        configured_agent = next(
+            (
+                agent
+                for agent in self._agents
+                if agent.key.casefold() == normalized
+            ),
+            None,
+        )
+        if configured_agent is None:
+            raise RuntimeError(
+                f"Agent '{persisted_agent.key}' is not configured."
+            )
+        return configured_agent
+
     async def finalize_turn(self, turn: ChatTurn) -> None:
         """Run optional post-response work after the client receives done."""
+
         self._schedule_compression(turn.chat_id)
 
         if turn.command_response is None and turn.command_request is None:

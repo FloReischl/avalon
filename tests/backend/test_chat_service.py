@@ -7,7 +7,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.commands import CommandRegistry
+from app.commands import CommandContext, CommandRegistry
+
 from app.persistence.chat_repository import ChatRepository
 from app.persistence.database import (
     create_database_engine,
@@ -89,7 +90,13 @@ async def test_command_turn_persists_request_and_response_without_runtime(
     class EchoCommand:
         key = "test_echo"
 
-        async def execute(self, payload: str) -> str:
+        async def execute(
+            self,
+            payload: str,
+            context: CommandContext | None = None,
+        ) -> str:
+            assert context is not None
+            assert context.chat_id > 0
             return f"echo: {payload}"
 
     registry = CommandRegistry()

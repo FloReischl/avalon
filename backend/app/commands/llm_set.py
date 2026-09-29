@@ -3,6 +3,9 @@ import logging
 from app.runtime.ollama import OllamaRuntime
 from app.state import AvalonState
 
+from .base import CommandContext
+
+
 
 logger = logging.getLogger(__name__)
 
@@ -20,8 +23,14 @@ class LlmCommand:
         self._state = state
         self._runtime = runtime
 
-    async def execute(self, payload: str) -> str:
+    async def execute(
+        self,
+        payload: str,
+        context: CommandContext | None = None,
+    ) -> str:
+        del context
         key = payload.strip()
+
 
         if self._state.llm_inference_active:
             return "LLM inference is active."

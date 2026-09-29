@@ -2,7 +2,8 @@ import logging
 
 import pytest
 
-from app.commands import CommandRegistry, CommandRequest, parse_command
+from app.commands import CommandContext, CommandRegistry, CommandRequest, parse_command
+
 
 
 class StubCommand:
@@ -12,9 +13,15 @@ class StubCommand:
         self.response = response
         self.payloads: list[str] = []
 
-    async def execute(self, payload: str) -> str:
+    async def execute(
+        self,
+        payload: str,
+        context: CommandContext | None = None,
+    ) -> str:
+        del context
         self.payloads.append(payload)
         return self.response
+
 
 
 def test_parse_command_with_payload():
@@ -133,7 +140,12 @@ async def test_registry_logs_command_failure_and_returns_error_message(caplog):
     class FailingCommand:
         key = "fail"
 
-        async def execute(self, payload: str) -> str:
+        async def execute(
+            self,
+            payload: str,
+            context: CommandContext | None = None,
+        ) -> str:
+            del payload, context
             raise RuntimeError("kaputt")
 
     registry = CommandRegistry()

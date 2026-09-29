@@ -54,9 +54,10 @@ class AgentsConfig(StrictAgentsConfigModel):
 
     @model_validator(mode="after")
     def validate_identities(self) -> Self:
-        agent_keys = [agent.key for agent in self.agents]
+        agent_keys = [agent.key.casefold() for agent in self.agents]
         if len(agent_keys) != len(set(agent_keys)):
-            raise ValueError("Agent keys must be unique.")
+            raise ValueError("Agent keys must be unique case-insensitively.")
+
         for agent in self.agents:
             identities = [
                 (

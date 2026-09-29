@@ -70,7 +70,13 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
             models_config = initialize_models_config()
             agents_config = load_agents_config()
             initialize_workflows_config()
-            initialize_avalon_state(user_config, avatars_config, models_config)
+            initialize_avalon_state(
+                user_config,
+                avatars_config,
+                models_config,
+                agents_config,
+            )
+
             await validate_configured_llms(OllamaRuntime(), models_config.llm_models)
             run_migrations()
             engine = create_database_engine()

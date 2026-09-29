@@ -1,4 +1,4 @@
-from .base import Command
+from .base import Command, CommandContext
 from .parser import CommandRequest, parse_command
 from .registry import CommandRegistry
 

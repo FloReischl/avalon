@@ -3,7 +3,8 @@
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session, selectinload, sessionmaker
 
-from app.persistence.models import Attachment, Chat, Message, Principal
+from app.persistence.models import Agent, Attachment, Chat, Message, Principal
+
 
 
 class ChatRepository:
@@ -123,7 +124,53 @@ class ChatRepository:
                 session.refresh(principal)
             return principal
 
+    def get_agent_by_key(self, key: str) -> Agent | None:
+        """Resolve one reconciled agent by its configured key."""
+        with self._session_factory() as session:
+            return session.scalar(select(Agent).where(Agent.key == key))
+
+    def get_agent_by_id(self, agent_id: int) -> Agent | None:
+        """Resolve one reconciled agent by persistent id."""
+        with self._session_factory() as session:
+            return session.get(Agent, agent_id)
+
+    def assign_agent(self, chat_id: int, agent_id: int) -> bool:
+        """Atomically replace a chat principal with one agent identity."""
+        with self._session_factory() as session:
+            result = session.execute(
+                update(Chat)
+                .where(Chat.id == chat_id)
+                .values(principal_id=None, agent_id=agent_id)
+            )
+            session.commit()
+            return result.rowcount == 1
+
+    def unload_agent(self, chat_id: int, principal_id: int) -> bool:
+        """Atomically restore the normal chat authorization identity."""
+        with self._session_factory() as session:
+            result = session.execute(
+                update(Chat)
+                .where(Chat.id == chat_id)
+                .values(principal_id=principal_id, agent_id=None)
+            )
+            session.commit()
+            return result.rowcount == 1
+
+    def get_effective_principal_id(self, chat_id: int) -> int | None:
+        """Resolve the principal currently authorizing one chat."""
+        with self._session_factory() as session:
+            chat = session.get(Chat, chat_id)
+            if chat is None:
+                return None
+            if chat.principal_id is not None:
+                return chat.principal_id
+            if chat.agent_id is None:
+                return None
+            agent = session.get(Agent, chat.agent_id)
+            return None if agent is None else agent.principal_id
+
     def get_messages(self, chat_id: int) -> list[Message]:
+
         """Return the complete chat history in chronological order."""
         with self._session_factory() as session:
             statement = (

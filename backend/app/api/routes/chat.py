@@ -48,8 +48,10 @@ def get_chat_service():
             OllamaRuntime(),
             repository,
             state.current_avatar,
-            build_command_registry(state),
+            build_command_registry(state, repository),
             tool_runner=tool_runner,
+            agents=state.agents,
+
         )
     finally:
         engine.dispose()

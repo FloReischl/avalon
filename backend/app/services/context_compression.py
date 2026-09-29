@@ -10,8 +10,10 @@ from math import ceil
 from typing import Any, Protocol
 from zoneinfo import ZoneInfo
 
+from app.agents_config import AgentConfig
 from app.config import settings
 from app.persistence.chat_repository import ChatRepository
+
 from app.persistence.models import Message
 from app.runtime.base import ModelRuntime
 from app.avatars_config import AvatarConfig
@@ -187,10 +189,13 @@ class ContextCompressionService:
         runtime: ModelRuntime,
         repository: ChatRepository,
         avatar: AvatarConfig | None = None,
+        agents: tuple[AgentConfig, ...] = (),
     ) -> None:
         self._runtime = runtime
         self._repository = repository
         self._avatar = avatar
+        self._agents = agents
+
 
     async def compress_if_needed(self, chat_id: int) -> None:
         """Run one best-effort, optimistic-locking compression job."""
@@ -200,12 +205,14 @@ class ContextCompressionService:
 
         messages = self._repository.get_messages(chat_id)
         existing = parse_compressed_context(chat.compressed_context)
+        identity = self._context_identity(chat.agent_id)
         active_context = build_active_context(
             messages,
             existing,
             chat.compressed_through_seq,
-            self._avatar,
+            identity,
         )
+
         if estimate_tokens(serialize_messages(active_context)) <= settings.context_compression_trigger_tokens:
             return
 
@@ -227,7 +234,9 @@ class ContextCompressionService:
             existing_through_seq=chat.compressed_through_seq,
             eligible=eligible,
             protected=protected,
+            identity=identity,
         )
+
 
     async def _compress_snapshot(
         self,
@@ -238,7 +247,9 @@ class ContextCompressionService:
         existing_through_seq: int,
         eligible: list[Message],
         protected: list[Message],
+        identity: AvatarLike | None,
     ) -> None:
+
         include_protected = False
         last_budget_error: CompressionBudgetError | None = None
 
@@ -250,8 +261,9 @@ class ContextCompressionService:
             final_protected = [] if include_protected else protected
             max_compressed_chars = _available_compression_chars(
                 final_protected,
-                self._avatar,
+                identity,
             )
+
 
             try:
                 candidate = await self._generate_context(
@@ -270,9 +282,10 @@ class ContextCompressionService:
                 candidate = _fit_to_target_budget(
                     candidate,
                     final_protected,
-                    self._avatar,
+                    identity,
                     max_compressed_chars,
                 )
+
             except CompressionBudgetError as exc:
                 last_budget_error = exc
                 include_protected = True
@@ -298,9 +311,33 @@ class ContextCompressionService:
             ):
                 logger.error("[compression] unfulfillable context budget for chat %s", chat_id)
 
+    def _context_identity(self, agent_id: int | None) -> AvatarLike | None:
+        if agent_id is None:
+            return self._avatar
+
+        persisted_agent = self._repository.get_agent_by_id(agent_id)
+        if persisted_agent is None:
+            raise RuntimeError(f"Agent {agent_id} does not exist.")
+
+        normalized = persisted_agent.key.casefold()
+        configured_agent = next(
+            (
+                agent
+                for agent in self._agents
+                if agent.key.casefold() == normalized
+            ),
+            None,
+        )
+        if configured_agent is None:
+            raise RuntimeError(
+                f"Agent '{persisted_agent.key}' is not configured."
+            )
+        return configured_agent
+
     async def _generate_context(
         self,
         existing: CompressedContext,
+
         messages: list[Message],
         max_chars: int,
     ) -> CompressedContext:
