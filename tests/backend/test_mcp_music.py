@@ -29,6 +29,7 @@ def test_mcp_server_exposes_music_and_web_tools():
         "music.play_tracks",
         "web.search",
         "web.get-content",
+        "workflow.execute",
     ]
 
 
@@ -57,6 +58,7 @@ def test_mcp_is_available_at_backend_mcp_path(monkeypatch):
         lambda: SimpleNamespace(chat=object()),
     )
     monkeypatch.setattr(main_module, "load_agents_config", lambda: SimpleNamespace(agents=[]))
+    monkeypatch.setattr(main_module, "initialize_workflows_config", lambda: object())
     monkeypatch.setattr(main_module, "initialize_avalon_state", lambda *_: None)
     monkeypatch.setattr(main_module, "run_migrations", lambda: None)
     monkeypatch.setattr(

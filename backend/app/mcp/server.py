@@ -12,6 +12,7 @@ from app.authorization.runtime import get_authorization_request_manager
 from app.config import settings
 from app.mcp.music import register_music_tools
 from app.mcp.web import register_web_tools
+from app.mcp.workflow import register_workflow_tools
 from app.persistence.music_repository import MusicRepository
 from app.services.music import MusicService
 from app.services.web_search import WebSearchService
@@ -19,6 +20,7 @@ from app.services.web_content import WebContentService
 from app.persistence.authorization_repository import AuthorizationRepository
 from app.persistence.database import create_database_engine, create_session_factory
 from app.mcp.security import current_principal_id
+from app.services.workflows import WorkflowService
 
 
 class AuthorizedMcpServer(MCPServer):
@@ -115,6 +117,7 @@ def create_mcp_server(
     service: MusicService | None = None,
     web_search_service: WebSearchService | None = None,
     web_content_service: WebContentService | None = None,
+    workflow_service: WorkflowService | None = None,
 ) -> MCPServer:
     """Create the MCP server mounted by the FastAPI backend."""
     mcp = AuthorizedMcpServer("Avalon Backend")
@@ -127,4 +130,5 @@ def create_mcp_server(
         web_search_service or WebSearchService(),
         web_content_service or WebContentService(),
     )
+    register_workflow_tools(mcp, workflow_service or WorkflowService())
     return mcp

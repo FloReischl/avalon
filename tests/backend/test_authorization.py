@@ -1,6 +1,7 @@
 """Focused tests for the first authorization vertical slice."""
 
 import asyncio
+import json
 from datetime import datetime, timedelta
 from types import SimpleNamespace
 
@@ -41,6 +42,67 @@ def definition():
         validity_type="duration",
         default_expiry=36_000,
     )
+
+
+def workflow_definition(scope: object):
+    return SimpleNamespace(
+        id=8,
+        scope=json.dumps(scope),
+        validity_type="permanent",
+        default_expiry=0,
+    )
+
+
+def active_grant():
+    return SimpleNamespace(
+        valid_from=datetime.now() - timedelta(seconds=1),
+        valid_to=datetime.now() + timedelta(seconds=1),
+        range=None,
+    )
+
+
+@pytest.mark.asyncio
+async def test_workflow_scope_allows_only_its_registered_key():
+    guard = PermissionGuard(
+        FakeAuthorizationRepository(workflow_definition(["test-workflow"]), [active_grant()]),
+        build_permission_registry(),
+        AuthorizationRequestManager(),
+    )
+    executed = []
+
+    async def capability(items):
+        executed.extend(items)
+
+    await guard.execute(1, "workflow", "execute", ["test-workflow"], capability)
+
+    assert executed == ["test-workflow"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("scope", [[], ["other-workflow"]])
+async def test_workflow_scope_denies_unlisted_or_empty_keys(scope):
+    guard = PermissionGuard(
+        FakeAuthorizationRepository(workflow_definition(scope), [active_grant()]),
+        build_permission_registry(),
+        AuthorizationRequestManager(),
+    )
+    executed = False
+
+    async def capability(items):
+        nonlocal executed
+        del items
+        executed = True
+
+    with pytest.raises(PermissionDenied, match="principal scope"):
+        await guard.execute(1, "workflow", "execute", ["test-workflow"], capability)
+
+    assert not executed
+
+
+def test_web_content_has_no_static_scope_restriction():
+    permission = build_permission_registry().get("web", "get-content")
+
+    assert permission.allows(SimpleNamespace(scope="[]"), [{"url": "https://example.test"}])
 
 
 @pytest.mark.asyncio

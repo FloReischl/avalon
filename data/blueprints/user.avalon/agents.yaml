@@ -49,6 +49,7 @@ agents:
     principal_permission:
       scope: ["test-workflow"]
       validity_type: permanent
+      default_expiry: 0
 
 
 # - name: orange

@@ -20,6 +20,10 @@ class Permission(Protocol):
     ) -> bool:
         ...
 
+    def allows(self, principal_permission: PrincipalPermission, items: list[object]) -> bool:
+        """Return whether the static principal scope permits these items."""
+        ...
+
     def format(self, item: object) -> str:
         ...
 
@@ -55,6 +59,11 @@ class WebSearchPermission:
 
     _DOMAIN = "duckduckgo.com"
 
+    def allows(self, principal_permission: PrincipalPermission, items: list[object]) -> bool:
+        del items
+        scope = json.loads(principal_permission.scope)
+        return isinstance(scope, list) and self._DOMAIN in scope
+
     def check(
         self,
         principal_permission: PrincipalPermission,
@@ -62,8 +71,7 @@ class WebSearchPermission:
         items: list[object],
         now: datetime,
     ) -> bool:
-        scope = json.loads(principal_permission.scope)
-        if self._DOMAIN not in scope:
+        if not self.allows(principal_permission, items):
             return False
         if grant.valid_from > now or grant.valid_to <= now:
             return False
@@ -97,6 +105,10 @@ class WebSearchPermission:
 
 class WebGetContentPermission:
     """Authorize individual web-content retrieval requests by URL."""
+
+    def allows(self, principal_permission: PrincipalPermission, items: list[object]) -> bool:
+        del principal_permission, items
+        return True
 
     def check(
         self,
@@ -135,9 +147,60 @@ class WebGetContentPermission:
         return {"url": item["url"]}
 
 
+class WorkflowExecutePermission:
+    """Authorize workflow execution by the configured workflow-key allowlist."""
+
+    def allows(self, principal_permission: PrincipalPermission, items: list[object]) -> bool:
+        scope = json.loads(principal_permission.scope)
+        return (
+            isinstance(scope, list)
+            and all(isinstance(item, str) and item in scope for item in items)
+        )
+
+    def check(
+        self,
+        principal_permission: PrincipalPermission,
+        grant: PermissionGrant,
+        items: list[object],
+        now: datetime,
+    ) -> bool:
+        if not self.allows(principal_permission, items):
+            return False
+        if grant.valid_from > now or grant.valid_to <= now:
+            return False
+        if principal_permission.validity_type == "range":
+            if grant.range is None:
+                return False
+            return all(item in json.loads(grant.range) for item in items)
+        return True
+
+    def format(self, item: object) -> str:
+        if not isinstance(item, str):
+            raise ValueError("workflow.execute items require a string workflow key.")
+        return f"Workflow ausführen: {item}"
+
+    def items(self, arguments: dict[str, object]) -> list[object]:
+        workflow_key = arguments.get("workflow_key")
+        if not isinstance(workflow_key, str) or not workflow_key.strip():
+            raise ValueError("workflow.execute requires a non-empty workflow_key.")
+        if "payload" not in arguments:
+            raise ValueError("workflow.execute requires payload.")
+        return [workflow_key]
+
+    def approved_arguments(
+        self, approved_items: list[object], original_arguments: dict[str, object]
+    ) -> dict[str, object] | None:
+        if not approved_items:
+            return None
+        workflow_key = approved_items[0]
+        assert isinstance(workflow_key, str)
+        return {"workflow_key": workflow_key, "payload": original_arguments["payload"]}
+
+
 def build_permission_registry() -> PermissionRegistry:
     """Build the registry available in the first authorization slice."""
     registry = PermissionRegistry()
     registry.register("web", "search", WebSearchPermission())
     registry.register("web", "get-content", WebGetContentPermission())
+    registry.register("workflow", "execute", WorkflowExecutePermission())
     return registry

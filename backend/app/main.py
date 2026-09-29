@@ -23,6 +23,7 @@ from app.runtime.ollama import OllamaRuntime
 from app.state import initialize_avalon_state
 from app.user_config import initialize_user_config
 from app.agents_config import load_agents_config
+from app.workflows_config import initialize_workflows_config
 
 
 logger = logging.getLogger(__name__)
@@ -68,6 +69,7 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
             avatars_config = initialize_avatars_config()
             models_config = initialize_models_config()
             agents_config = load_agents_config()
+            initialize_workflows_config()
             initialize_avalon_state(user_config, avatars_config, models_config)
             await validate_configured_llms(OllamaRuntime(), models_config.llm_models)
             run_migrations()

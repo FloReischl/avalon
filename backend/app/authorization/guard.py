@@ -52,6 +52,8 @@ class PermissionGuard:
         if definition is None:
             raise PermissionDenied(f"{context}/{key} is not grantable for principal.")
         permission = self._registry.get(context, key)
+        if not permission.allows(definition, items):
+            raise PermissionDenied(f"{context}/{key} is not allowed by principal scope.")
         now = self._clock()
         for grant in self._repository.get_grants(definition.id):
             if permission.check(definition, grant, items, now):

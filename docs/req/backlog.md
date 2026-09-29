@@ -17,6 +17,7 @@ todo
   - file.copy
 - workflows
   - final response with trigger llm
+  - config to db
 - admin
   - agents/mcp monitor
   - log window

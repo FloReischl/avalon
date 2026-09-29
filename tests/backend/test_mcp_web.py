@@ -50,6 +50,7 @@ def test_mcp_server_exposes_music_and_web_tools():
         "music.play_tracks",
         "web.search",
         "web.get-content",
+        "workflow.execute",
     ]
 
 
