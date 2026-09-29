@@ -9,7 +9,7 @@ Arbeitsindex für Frieda: Impact-Analyse, Implementierungsplanung, Abhängigkeit
 - **Frontend:** Vue 3, TypeScript, Vite in `frontend`; Roots: Avatar `frontend/src/App.vue`, Chat `frontend/src/ChatWindow.vue`; HTTP zum Backend.
 - **Backend:** Python, FastAPI, MCP Python SDK v2 in `backend/app`; API, MCP, Application, SQLite-Persistenz, Runtime-Adapter, Audio, TTS, Konfiguration.
 - **Transport:** loopback-only `127.0.0.1:8095`, JSON, SSE mit JSON-`data`, keine Authentisierung; API `/api/v1`, MCP `/mcp`.
-- **MCP-Fähigkeiten:** `music.play_tracks`, `web.search`, `web.get-content`.
+- **MCP-Fähigkeiten:** `music.play_tracks`, `web.search`, `web.get-content`, `workflow.execute`.
 - **Authorization:** Principals + `principal_permissions` begrenzen mögliche Rechte; konkrete Grants werden persistent gespeichert. Capability-Aufrufe laufen über `PermissionGuard`; fehlende Grants können einen Human-in-the-loop-Request erzeugen, ohne Authorization-Details dem LLM offenzulegen.
 
 ### Desktop- und Fensterverhalten
@@ -33,6 +33,7 @@ Arbeitsindex für Frieda: Impact-Analyse, Implementierungsplanung, Abhängigkeit
 - Attachments sind unabhängige, unveränderliche File-Artefakte in `~/.avalon/attachments/`; die n:m-Relation zu Messages hat keine weiteren Fachfelder. Sie werden per Copy-in einzeln für bestehende Messages erstellt, beim Löschen einer Message nicht entfernt und niemals automatisch in LLM-Kontext übernommen.
 - Audio-UI: Placeholder `🎤 Sprachnachricht` bleibt transient; erst das vollständige STT-Ergebnis wird normale persistierte User-Nachricht und Kontext. STT-Fehler/Timeout/leeres Ergebnis starten kein LLM und hinterlassen keine partielle User-Nachricht. Assistant-Generierung startet danach über den normalen Text-LLM-Pfad.
 - Mehrere persistierte Chats können parallele Textstreams haben; Stop betrifft nur den sichtbaren laufenden Chat.
+- Ein persistierter Chat kann per `/agent invite <key|name-prefix> [-force]` einem konfigurierten Agenten zugeordnet und per `/agent unload` wieder auf den Default-Chat-Principal zurückgesetzt werden. Der aktive Agent bestimmt Persona/Instructions sowie den effektiven Authorization-Principal des Chats; Kontextkompression verwendet dieselbe Identität. Agent-Keys sind case-insensitiv eindeutig.
 
 ## Kernflüsse
 
@@ -89,6 +90,8 @@ Arbeitsindex für Frieda: Impact-Analyse, Implementierungsplanung, Abhängigkeit
 - `web.search(query)` (`backend/app/mcp/web.py:register_web_tools`) delegiert an `WebSearchService`; vollständige Query vor Ausführung loggen.
 - `WebSearchService` nutzt `ddgs`/DuckDuckGo außerhalb des asyncio-Event-Loops: Region `de-de`, SafeSearch off, max. 5 Treffer, 10-s Timeout, keine Retries. Ergebnis `title`, `url`, `snippet`; keine Treffer `[]`, Provider-/Formatfehler propagieren.
 - `web.get-content(url)` lädt HTTP/HTTPS-Inhalte mit Redirect-Validierung, 10-s Timeout und ohne Retries. Nur finale 2xx-Antworten mit `text/html` oder `text/plain`; HTML wird als LLM-tauglicher Hauptinhalt extrahiert. Ergebnis `url`, `content`, `truncated`; Content maximal 20.000 Zeichen. Private/Loopback-/Link-local-Ziele sind erlaubt.
+- `workflow.execute(workflow_key, payload)` (`backend/app/mcp/workflow.py`) startet ausschließlich registrierte Workflows. `workflows.yaml` wird beim Backendstart geladen/validiert und löst den logischen Workflow-Key serverseitig auf einen Python-Dateipfad auf. `WorkflowService` startet diesen out-of-process mit `sys.executable`, übergibt den JSON-Payload via stdin und wartet auf den Exit-Code.
+- `workflow.execute` ist kein generischer Python-Executor: `WorkflowExecutePermission` verlangt exakt einen Workflow-Key und dessen explizite Aufnahme in den `principal_permission.scope`; leere Items, leerer/nicht passender Scope oder unbekannte Workflow-Keys erlauben keinen Prozessstart.
 
 ## Module
 
@@ -128,7 +131,8 @@ Arbeitsindex für Frieda: Impact-Analyse, Implementierungsplanung, Abhängigkeit
 - `services/audio_text_chat.py:AudioTextChatService`: orchestriert PTT/Dialog als STT-first-Pipeline; Streaming-Chunks seriell transkribieren/mergen, finalen Usertext vor normalem Text-LLM persistieren, Post-Recording-STT-Timeout/Fehler/Empty behandeln, temporäre Audioartefakte bereinigen. PTT startet Capture vor parallelem Whisper-Warm-up.
 - `services/audio_call.py:AudioCallState`: genau ein globaler Call, gebundene Chat-ID, `turn_active`, eine pending Assistant-Speech; Ende leert Assoziation/Pending.
 - `services/tts.py`: `TtsBusyError`, `TtsResult(playback_id,audio)`, single-flight inkl. Cancellation, Playback-ID, Idle-Unload.
-- `mcp/server.py`: MCP Streamable-HTTP-Komposition, Tool-Registrierung und zentrale Authorization-Grenze; principal-spezifische Discovery über `permission_catalog`/`principal_permissions`, Capability-Aufrufe über dieselbe Permission-Auflösung und `PermissionGuard`. `mcp/music.py`: Musik-Grenze über `MusicService`; `mcp/web.py`: reine Websuch-Grenze über `WebSearchService`.
+- `mcp/server.py`: MCP Streamable-HTTP-Komposition, Tool-Registrierung und zentrale Authorization-Grenze; principal-spezifische Discovery über `permission_catalog`/`principal_permissions`, Capability-Aufrufe über dieselbe Permission-Auflösung und `PermissionGuard`. `mcp/music.py`: Musik-Grenze über `MusicService`; `mcp/web.py`: reine Websuch-Grenze über `WebSearchService`; `mcp/workflow.py`: registrierte Workflow-Ausführung über `WorkflowService`.
+- `workflows_config.py`, `services/workflows.py`: statische Workflow-Registry aus `workflows.yaml`; Workflow-Key → serverseitiger Python-Pfad; JSON-Payload via stdin an separaten Prozess, Non-zero Exit als `WorkflowExecutionError`.
 
 ### Backend: Runtime, Audio und TTS-Adapter
 
@@ -196,7 +200,8 @@ Arbeitsindex für Frieda: Impact-Analyse, Implementierungsplanung, Abhängigkeit
 | Frontend-Chat | ChatWindow, Hook, Backend, Types, Markdown-Komponenten, Links, ChatWindow-Service/Main, Frontendtests, Chat-Schemas/Route |
 | Desktop-Shell | Tauri Main/Backend/Config/Icon, Desktop Entry/Installer, Frontend Main/App/ChatWindow/Window-Services/Styles, App-Tests |
 | Native Inputregionen | `input_shape.rs`, Tauri Main, Frontend InputShape/App/Styles, App-Tests; Alpha-Regionen/CORS und post-resize Geometrie erhalten |
-| MCP/Capabilities | `main.py`, `mcp/server.py`, `mcp/music.py`, `mcp/web.py`, `services/tool_runner.py`, `authorization`, `persistence/authorization_repository.py`, `services/web_search.py`, MusicService/Repository/Playlist/Player, `pyproject.toml`, MCP-/ToolRunner-/Authorization-/Web-/Musik-Tests, optionale Integrationen/Spikes |
+| MCP/Capabilities | `main.py`, `mcp/server.py`, `mcp/music.py`, `mcp/web.py`, `mcp/workflow.py`, `services/tool_runner.py`, `authorization`, `persistence/authorization_repository.py`, `services/web_search.py`, `services/workflows.py`, `workflows_config.py`, MusicService/Repository/Playlist/Player, `pyproject.toml`, MCP-/ToolRunner-/Authorization-/Web-/Musik-/Workflow-Tests, optionale Integrationen/Spikes |
+| Agenten im Chat | `agents_config.py`, `state.py`, `commands/agent.py`, Command-Registry/-Factory, `services/chat.py`, `services/context_compression.py`, `persistence/chat_repository.py`, Agent-/Chat-/Command-/Kompressions-/Authorization-Tests |
 
 ## Architekturgrenzen und Status
 

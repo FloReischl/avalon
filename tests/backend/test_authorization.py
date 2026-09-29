@@ -99,6 +99,26 @@ async def test_workflow_scope_denies_unlisted_or_empty_keys(scope):
     assert not executed
 
 
+@pytest.mark.asyncio
+async def test_workflow_scope_denies_empty_items() -> None:
+    guard = PermissionGuard(
+        FakeAuthorizationRepository(workflow_definition(["test-workflow"]), [active_grant()]),
+        build_permission_registry(),
+        AuthorizationRequestManager(),
+    )
+    executed = False
+
+    async def capability(items):
+        nonlocal executed
+        del items
+        executed = True
+
+    with pytest.raises(PermissionDenied, match="principal scope"):
+        await guard.execute(1, "workflow", "execute", [], capability)
+
+    assert not executed
+
+
 def test_web_content_has_no_static_scope_restriction():
     permission = build_permission_registry().get("web", "get-content")
 

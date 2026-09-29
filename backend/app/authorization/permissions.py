@@ -154,7 +154,9 @@ class WorkflowExecutePermission:
         scope = json.loads(principal_permission.scope)
         return (
             isinstance(scope, list)
-            and all(isinstance(item, str) and item in scope for item in items)
+            and len(items) == 1
+            and isinstance(items[0], str)
+            and items[0] in scope
         )
 
     def check(
