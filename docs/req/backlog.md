@@ -18,6 +18,8 @@ todo
 - workflows
   - final response with trigger llm
   - config to db
+  - security token enhancements
+  - abort handling
 - admin
   - agents/mcp monitor
   - log window
