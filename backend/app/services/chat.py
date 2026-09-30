@@ -117,7 +117,7 @@ class ChatService:
 
         chat = self._repository.get_chat(chat_id)
         assert chat is not None
-        context = self._repository.get_messages(chat_id)
+        context = self._repository.get_text_messages(chat_id)
         messages = build_active_context(
             context,
             parse_compressed_context(chat.compressed_context),
@@ -179,14 +179,14 @@ class ChatService:
 
         response = "".join(response_chunks)
         if response:
-            if not self._repository.update_open_workflow_message(turn.chat_id, response):
-                self._repository.add_message(turn.chat_id, "assistant", response)
+            self._repository.add_message(turn.chat_id, "assistant", response)
 
     def persist_stream_error(self, turn: ChatTurn, error: Exception) -> None:
-        """Keep useful raw local diagnostics in the assistant message for failed turns."""
-        message = str(error) or error.__class__.__name__
-        if not self._repository.update_open_workflow_message(turn.chat_id, message):
-            self._repository.add_message(turn.chat_id, "assistant", message)
+        """Persist one safe visible error without leaking technical diagnostics."""
+        del error
+        self._repository.add_message(
+            turn.chat_id, "assistant", "Die Antwort konnte nicht erzeugt werden."
+        )
 
     def _context_identity(self, agent_id: int | None):
         if agent_id is None:
@@ -234,7 +234,7 @@ class ChatService:
 
     async def _try_auto_title(self, chat_id: int) -> None:
         """Attempt automatic title generation after roundtrip two."""
-        messages = self._repository.get_messages(chat_id)
+        messages = self._repository.get_text_messages(chat_id)
 
         if len(messages) != 4:
             return

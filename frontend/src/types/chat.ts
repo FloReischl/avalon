@@ -2,10 +2,11 @@ import type { Attachment, WorkflowExecution } from "../services/backend";
 
 export interface ChatMessage {
   id?: number;
+  kind?: "text" | "progress" | "audio";
   role: "user" | "assistant";
   content: string;
-  kind?: "text" | "audio";
   created_at?: string;
   attachments?: Attachment[];
-  workflow_execution?: WorkflowExecution | null;
+  progress_messages?: string[];
+  workflow_execution?: WorkflowExecution;
 }

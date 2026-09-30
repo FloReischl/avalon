@@ -65,6 +65,9 @@ class FakeChatService:
         """Accept optional post-response finalization."""
         del turn
 
+    def persist_stream_error(self, turn: ChatTurn, error: Exception) -> None:
+        del turn, error
+
 
 @pytest.mark.parametrize(
     ("tool_support", "has_tool_runner"),

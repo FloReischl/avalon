@@ -6,22 +6,25 @@ import WorkflowDecorator from "../../frontend/src/components/WorkflowDecorator.v
 describe("WorkflowDecorator", () => {
   it("shows the running fallback without progress", () => {
     const wrapper = mount(WorkflowDecorator, {
-      props: { execution: { id: 1, state: "running", progress_content: null } },
+      props: { execution: { id: 1, workflow_key: "morning-news", state: "running" }, messages: [] },
     });
-    expect(wrapper.text()).toContain("Workflow läuft …");
+    expect(wrapper.text()).toContain("Workflow morning-news läuft …");
   });
 
   it("shows the completed fallback without progress", () => {
     const wrapper = mount(WorkflowDecorator, {
-      props: { execution: { id: 1, state: "completed", progress_content: null } },
+      props: { execution: { id: 1, workflow_key: "morning-news", state: "completed" }, messages: [] },
     });
-    expect(wrapper.text()).toContain("Workflow abgeschlossen");
+    expect(wrapper.text()).toContain("Workflow morning-news abgeschlossen");
   });
 
   it.each(["running", "completed"] as const)(
     "shows all progress entries for %s", (state) => {
       const wrapper = mount(WorkflowDecorator, {
-        props: { execution: { id: 1, state, progress_content: ["Podcast 1 fertig", "Podcast 2 läuft"] } },
+        props: {
+          execution: { id: 1, workflow_key: "morning-news", state },
+          messages: ["Podcast 1 fertig", "Podcast 2 läuft"],
+        },
       });
       expect(wrapper.findAll("li").map((item) => item.text())).toEqual([
         "Podcast 1 fertig", "Podcast 2 läuft",

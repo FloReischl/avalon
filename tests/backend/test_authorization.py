@@ -234,8 +234,8 @@ class FakeMcpClient:
 @pytest.mark.asyncio
 async def test_tool_runner_returns_final_text_after_authorized_tool_result():
     ToolRunner._tool_definition_cache = {}
-    runner = ToolRunner(FakeToolRuntime(), lambda principal_id: FakeMcpClient())
-    assert [chunk async for chunk in runner.stream_response(3, [{"role": "user", "content": "Suche Avalon"}], "Chat: Suche")] == ["Hier ist das Ergebnis."]
+    runner = ToolRunner(FakeToolRuntime(), lambda principal_id, chat_id: FakeMcpClient())
+    assert [chunk async for chunk in runner.stream_response(3, [{"role": "user", "content": "Suche Avalon"}], "Chat: Suche", 1)] == ["Hier ist das Ergebnis."]
 
 
 @pytest.mark.asyncio
@@ -256,12 +256,12 @@ async def test_tool_runner_reuses_a_duplicate_web_search_result_within_one_turn(
             yield self.responses.pop(0)
 
     client = FakeMcpClient()
-    runner = ToolRunner(RepeatingToolRuntime(), lambda principal_id: client)
+    runner = ToolRunner(RepeatingToolRuntime(), lambda principal_id, chat_id: client)
 
     assert [
         chunk
         async for chunk in runner.stream_response(
-            3, [{"role": "user", "content": "Suche Avalon"}], "Chat: Suche"
+            3, [{"role": "user", "content": "Suche Avalon"}], "Chat: Suche", 1
         )
     ] == ["Fertig."]
     assert client.calls == 1
@@ -288,8 +288,8 @@ async def test_tool_runner_caches_discovery_for_a_principal():
 
     client = Client()
     for _ in range(2):
-        runner = ToolRunner(Runtime(), lambda principal_id: client)
-        assert [chunk async for chunk in runner.stream_response(3, [], "Chat")] == ["Fertig."]
+        runner = ToolRunner(Runtime(), lambda principal_id, chat_id: client)
+        assert [chunk async for chunk in runner.stream_response(3, [], "Chat", 1)] == ["Fertig."]
     assert client.list_calls == 1
 
 

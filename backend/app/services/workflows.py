@@ -37,7 +37,7 @@ class WorkflowService:
         engine = create_database_engine()
         return WorkflowExecutionRepository(create_session_factory(engine)), engine
 
-    async def execute(self, workflow_key: str, payload: JsonValue, chat_id: int, backend_url: str, principal_id: int | None = None) -> int:
+    async def execute(self, workflow_key: str, payload: JsonValue, chat_id: int, invocation_id: str, backend_url: str, principal_id: int | None = None) -> int:
         config = self._config or get_workflows_config()
         try:
             workflow = config.get(workflow_key)
@@ -50,7 +50,10 @@ class WorkflowService:
                 engine.dispose()
             raise WorkflowExecutionError("Workflow execution context does not belong to principal.")
         token = secrets.token_urlsafe(32)
-        execution = repository.create(chat_id, hashlib.sha256(token.encode()).hexdigest())
+        execution = repository.create(
+            chat_id, invocation_id, workflow_key,
+            hashlib.sha256(token.encode()).hexdigest(),
+        )
         self._publish(execution)
         envelope = {"avalon": {"workflow_execution_id": execution.id, "backend_url": backend_url, "runtime_token": token}, "payload": payload}
         try:
@@ -94,4 +97,10 @@ class WorkflowService:
 
     @staticmethod
     def _publish(execution) -> None:
-        get_workflow_event_manager().publish(WorkflowExecutionEvent(execution.id, execution.state, json.loads(execution.progress_content) if execution.progress_content else None))
+        get_workflow_event_manager().publish(
+            WorkflowExecutionEvent(
+                execution.id,
+                execution.state,
+                json.loads(execution.progress_message.messages),
+            )
+        )

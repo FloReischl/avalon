@@ -2,6 +2,7 @@
 
 import base64
 import json
+import uuid
 from collections.abc import Awaitable, Callable
 from typing import TypeVar
 
@@ -28,6 +29,7 @@ class HttpMcpToolClient:
     def __init__(self, principal_id: int, chat_id: int | None = None) -> None:
         self._principal_id = principal_id
         self._chat_id = chat_id
+        self._invocation_id = str(uuid.uuid4())
 
     async def _request(self, operation: Callable[[Client], Awaitable[Result]]) -> Result:
         headers = {"Authorization": f"Bearer {_internal_token(self._principal_id)}"}
@@ -45,6 +47,11 @@ class HttpMcpToolClient:
         return [{"type": "function", "function": {"name": tool.name, "description": tool.description or "", "parameters": tool.input_schema}} for tool in response.tools]
 
     async def call_tool(self, name: str, arguments: dict[str, object]) -> object:
-        meta = None if self._chat_id is None else {"avalon/execution_context": {"chat_id": self._chat_id}}
+        meta = None if self._chat_id is None else {
+            "avalon/execution_context": {
+                "chat_id": self._chat_id,
+                "invocation_id": self._invocation_id,
+            }
+        }
         result = await self._request(lambda client: client.call_tool(name, arguments, meta=meta))
         return result.model_dump(mode="json", exclude_none=True)

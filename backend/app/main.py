@@ -19,11 +19,13 @@ from app.mcp.security import current_principal_id, principal_from_authorization
 from app.persistence.migrations import run_migrations
 from app.persistence.authorization_repository import AuthorizationRepository
 from app.persistence.database import create_database_engine, create_session_factory
+from app.persistence.workflow_execution_repository import WorkflowExecutionRepository
 from app.runtime.ollama import OllamaRuntime
 from app.state import initialize_avalon_state
 from app.user_config import initialize_user_config
 from app.agents_config import load_agents_config
 from app.workflows_config import initialize_workflows_config
+from app.services.workflows import WorkflowService
 
 
 logger = logging.getLogger(__name__)
@@ -90,7 +92,10 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
             traceback.print_exc(file=sys.stderr)
             raise
 
-        yield
+        try:
+            yield
+        finally:
+            application.state.workflow_engine.dispose()
 
 
 class StderrExceptionMiddleware:
@@ -146,7 +151,15 @@ def create_app() -> FastAPI:
 
     )
     application.include_router(api_router)
-    mcp = create_mcp_server()
+    workflow_engine = create_database_engine()
+    mcp = create_mcp_server(
+        workflow_service=WorkflowService(
+            repository=WorkflowExecutionRepository(
+                create_session_factory(workflow_engine)
+            )
+        )
+    )
+    application.state.workflow_engine = workflow_engine
     application.state.mcp = mcp
     application.mount(
         "/mcp",

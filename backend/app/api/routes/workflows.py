@@ -51,7 +51,13 @@ def update_runtime(
     except (LookupError, ValueError) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     if updated is not None:
-        get_workflow_event_manager().publish(WorkflowExecutionEvent(updated.id, updated.state, json.loads(updated.progress_content) if updated.progress_content else None))
+        get_workflow_event_manager().publish(
+            WorkflowExecutionEvent(
+                updated.id,
+                updated.state,
+                json.loads(updated.progress_message.messages),
+            )
+        )
     return {"changed": updated is not None}
 
 

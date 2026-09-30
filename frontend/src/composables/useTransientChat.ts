@@ -19,6 +19,7 @@ import {
   type ChatStreamRequest,
   type ChatSummary,
   type ConversationMessage,
+  type PersistentMessage,
 } from "../services/backend";
 
 import type { ChatMessage } from "../types/chat";
@@ -61,6 +62,21 @@ const defaultChatManagementClient: ChatManagementClient = {
   setChatPinned: setBackendChatPinned,
   deleteChat: deleteBackendChat,
 };
+
+function toChatMessage(message: PersistentMessage): ChatMessage {
+  if (message.kind === "text") {
+    return message;
+  }
+  return {
+    id: message.id,
+    kind: "progress",
+    role: "assistant",
+    content: "",
+    created_at: message.created_at,
+    progress_messages: message.messages,
+    workflow_execution: message.workflow_execution,
+  };
+}
 
 interface ChatState {
 
@@ -273,14 +289,7 @@ export function useTransientChat(
     state.messages.splice(
       0,
       state.messages.length,
-      ...detail.messages.map(({ id, role, content, created_at, attachments, workflow_execution }) => ({
-        id,
-        role,
-        content,
-        created_at,
-        attachments,
-        workflow_execution,
-      })),
+      ...detail.messages.map(toChatMessage),
     );
     applyCompressionStatus(state, detail.compression_error_code);
   }
@@ -314,14 +323,7 @@ export function useTransientChat(
 
     const state = createChatState(
       detail.id,
-      detail.messages.map(({ id, role, content, created_at, attachments, workflow_execution }) => ({
-        id,
-        role,
-        content,
-        created_at,
-        attachments,
-        workflow_execution,
-      })),
+      detail.messages.map(toChatMessage),
     );
     applyCompressionStatus(state, detail.compression_error_code);
 

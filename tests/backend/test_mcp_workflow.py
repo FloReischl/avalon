@@ -16,8 +16,8 @@ class FakeWorkflowService:
     def __init__(self) -> None:
         self.calls: list[tuple[str, object]] = []
 
-    async def execute(self, workflow_key: str, payload: object, chat_id: int, backend_url: str, principal_id: int | None) -> int:
-        self.calls.append((workflow_key, payload, chat_id, backend_url, principal_id))
+    async def execute(self, workflow_key: str, payload: object, chat_id: int, invocation_id: str, backend_url: str, principal_id: int | None) -> int:
+        self.calls.append((workflow_key, payload, chat_id, invocation_id, backend_url, principal_id))
         return 31
 
 
@@ -28,10 +28,11 @@ def test_workflow_tool_logs_and_delegates_json_payload(caplog) -> None:
     payload = {"values": ["a", 2, False]}
 
     with caplog.at_level(logging.INFO, logger="app.mcp.workflow"):
-        context = Context(request_context=SimpleNamespace(meta={"avalon/execution_context": {"chat_id": 42}}))
+        context = Context(request_context=SimpleNamespace(meta={"avalon/execution_context": {"chat_id": 42, "invocation_id": "turn-1"}}))
         asyncio.run(mcp.call_tool("workflow.execute", {"workflow_key": "test-workflow", "payload": payload}, context))
 
     assert service.calls[0][:3] == ("test-workflow", payload, 42)
+    assert service.calls[0][3] == "turn-1"
     record = next(record for record in caplog.records if "tool=workflow.execute" in record.message)
     assert json.loads(record.message.split("request=", 1)[1]) == {
         "workflow_key": "test-workflow",

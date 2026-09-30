@@ -105,21 +105,28 @@ class ConversationMessage(BaseModel):
     content: str = Field(min_length=1)
 
 
-class PersistentMessageResponse(BaseModel):
-    """One persistent message returned by the chat-management API."""
-
+class TextMessageResponse(BaseModel):
     id: int
+    kind: Literal["text"] = "text"
     role: Literal["user", "assistant"]
     content: str
     created_at: datetime
     attachments: list["AttachmentResponse"] = Field(default_factory=list)
-    workflow_execution: "WorkflowExecutionResponse | None" = None
+
+
+class ProgressMessageResponse(BaseModel):
+    id: int
+    kind: Literal["progress"] = "progress"
+    created_at: datetime
+    updated_at: datetime
+    messages: list[str]
+    workflow_execution: "WorkflowExecutionResponse"
 
 
 class WorkflowExecutionResponse(BaseModel):
     id: int
+    workflow_key: str
     state: Literal["running", "pending", "completed", "failed", "aborted"]
-    progress_content: list[str] | None = None
 
 
 class AttachmentResponse(BaseModel):
@@ -145,7 +152,7 @@ class ChatSummaryResponse(BaseModel):
 class ChatDetailResponse(ChatSummaryResponse):
     """One persistent chat including its complete message history."""
 
-    messages: list[PersistentMessageResponse]
+    messages: list[TextMessageResponse | ProgressMessageResponse]
     compression_error_code: str | None = None
 
 

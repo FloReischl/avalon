@@ -1276,22 +1276,24 @@ function handleInputKeydown(event: KeyboardEvent) {
             class="message"
             :class="[
               `message-${message.role}`,
-              { 'message-audio': message.kind === 'audio' },
+              { 'message-audio': message.kind === 'audio', 'message-progress': message.kind === 'progress' },
             ]"
             :data-testid="`message-${message.role}`"
           >
-            <div class="message-role">
+            <div v-if="message.kind !== 'progress'" class="message-role">
               {{ message.role === "user" ? "Du" : uiConfig?.name ?? "" }}
             </div>
             <MarkdownMessage
+              v-if="message.kind !== 'progress'"
               :ref="(instance) => setMessageRenderer(index, instance)"
               class="message-content"
               :content="message.content"
               :preserve-line-breaks="message.role === 'user'"
             />
             <WorkflowDecorator
-              v-if="message.workflow_execution"
+              v-if="message.kind === 'progress' && message.workflow_execution"
               :execution="message.workflow_execution"
+              :messages="message.progress_messages ?? []"
             />
 
 

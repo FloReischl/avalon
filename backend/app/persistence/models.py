@@ -176,12 +176,13 @@ class Chat(Base):
 
 
 class Message(Base):
-    """One persistent user or assistant message."""
+    """One chronologically positioned conversation element."""
 
     __tablename__ = "messages"
     __table_args__ = (
         Index("ix_messages_chat_id_created_at", "chat_id", "created_at"),
         Index("ix_messages_chat_id_seq", "chat_id", "seq", unique=True),
+        UniqueConstraint("chat_id", "invocation_id"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -189,8 +190,8 @@ class Message(Base):
         ForeignKey("chats.id", ondelete="CASCADE"),
         nullable=False,
     )
-    role: Mapped[str] = mapped_column(String(16), nullable=False)
-    content: Mapped[str] = mapped_column(Text, nullable=False)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    invocation_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     seq: Mapped[int] = mapped_column(nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
@@ -199,17 +200,50 @@ class Message(Base):
     )
 
     chat: Mapped[Chat] = relationship(back_populates="messages")
+    __mapper_args__ = {"polymorphic_on": kind, "polymorphic_identity": "message"}
+
+
+class TextMessage(Message):
+    """A normal user or assistant text message."""
+
+    __tablename__ = "text_messages"
+
+    message_id: Mapped[int] = mapped_column(
+        ForeignKey("messages.id", ondelete="CASCADE"), primary_key=True
+    )
+    role: Mapped[str] = mapped_column(String(16), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
     attachments: Mapped[list["Attachment"]] = relationship(
         secondary="message_attachments",
         back_populates="messages",
     )
-    workflow_execution: Mapped["WorkflowExecution | None"] = relationship(
-        back_populates="message", uselist=False, cascade="all, delete-orphan"
+
+    __mapper_args__ = {"polymorphic_identity": "text"}
+
+
+class ProgressMessage(Message):
+    """The stable visible container for one workflow execution's progress."""
+
+    __tablename__ = "progress_messages"
+
+    message_id: Mapped[int] = mapped_column(
+        ForeignKey("messages.id", ondelete="CASCADE"), primary_key=True
     )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.current_timestamp(), onupdate=func.current_timestamp()
+    )
+    messages: Mapped[str] = mapped_column(
+        Text, nullable=False, default="[]", server_default="[]"
+    )
+    workflow_execution: Mapped["WorkflowExecution"] = relationship(
+        back_populates="progress_message", uselist=False, cascade="all, delete-orphan"
+    )
+
+    __mapper_args__ = {"polymorphic_identity": "progress"}
 
 
 class WorkflowExecution(Base):
-    """Persisted runtime anchor for one workflow-owned assistant message."""
+    """Persisted lifecycle truth for one workflow execution."""
 
     __tablename__ = "workflow_executions"
     __table_args__ = (
@@ -220,11 +254,11 @@ class WorkflowExecution(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    message_id: Mapped[int] = mapped_column(
-        ForeignKey("messages.id", ondelete="CASCADE"), nullable=False, unique=True
+    progress_message_id: Mapped[int] = mapped_column(
+        ForeignKey("progress_messages.message_id", ondelete="CASCADE"), nullable=False, unique=True
     )
+    workflow_key: Mapped[str] = mapped_column(String(100), nullable=False)
     state: Mapped[str] = mapped_column(String(16), nullable=False)
-    progress_content: Mapped[str | None] = mapped_column(Text, nullable=True)
     runtime_token_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.current_timestamp()
@@ -233,7 +267,9 @@ class WorkflowExecution(Base):
         DateTime, nullable=False, server_default=func.current_timestamp(), onupdate=func.current_timestamp()
     )
 
-    message: Mapped[Message] = relationship(back_populates="workflow_execution")
+    progress_message: Mapped[ProgressMessage] = relationship(
+        back_populates="workflow_execution"
+    )
 
 
 class Attachment(Base):
@@ -252,7 +288,7 @@ class Attachment(Base):
         server_default=func.current_timestamp(),
     )
 
-    messages: Mapped[list[Message]] = relationship(
+    messages: Mapped[list[TextMessage]] = relationship(
         secondary="message_attachments",
         back_populates="attachments",
     )

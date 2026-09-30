@@ -77,7 +77,7 @@ async def stream_chat_response(
     except Exception as exc:
         logger.error("[chat] response stream failed: %s", exc)
         service.persist_stream_error(turn, exc)
-        yield format_sse_event("error", {"message": str(exc) or exc.__class__.__name__})
+        yield format_sse_event("error", {})
         return
 
     yield format_sse_event("done", {})

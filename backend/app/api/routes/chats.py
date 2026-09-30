@@ -8,7 +8,8 @@ from fastapi import APIRouter, Depends, HTTPException, Response, status
 from app.api.schemas import (
     ChatDetailResponse,
     ChatSummaryResponse,
-    PersistentMessageResponse,
+    ProgressMessageResponse,
+    TextMessageResponse,
     RenameChatRequest,
     SetChatPinnedRequest,
     ProactivePermissionResponse,
@@ -18,6 +19,7 @@ from app.persistence.authorization_repository import AuthorizationRepository
 from app.user_config import get_user_config
 
 from app.persistence.chat_repository import ChatRepository
+from app.persistence.models import ProgressMessage, TextMessage
 from app.persistence.database import (
     create_database_engine,
     create_session_factory,
@@ -94,8 +96,9 @@ def get_chat(
         compression_error_code=chat.compression_error_code,
 
         messages=[
-            PersistentMessageResponse(
+            TextMessageResponse(
                 id=message.id,
+                kind="text",
                 role=message.role,
                 content=message.content,
                 created_at=message.created_at,
@@ -109,17 +112,22 @@ def get_chat(
                     }
                     for attachment in attachments_by_message.get(message.id, [])
                 ],
-                workflow_execution=(
-                    {
-                        "id": message.workflow_execution.id,
-                        "state": message.workflow_execution.state,
-                        "progress_content": json.loads(message.workflow_execution.progress_content)
-                        if message.workflow_execution.progress_content else None,
-                    }
-                    if message.workflow_execution is not None else None
-                ),
+            )
+            if isinstance(message, TextMessage)
+            else ProgressMessageResponse(
+                id=message.id,
+                kind="progress",
+                created_at=message.created_at,
+                updated_at=message.updated_at,
+                messages=json.loads(message.messages),
+                workflow_execution={
+                    "id": message.workflow_execution.id,
+                    "workflow_key": message.workflow_execution.workflow_key,
+                    "state": message.workflow_execution.state,
+                },
             )
             for message in messages
+            if isinstance(message, (TextMessage, ProgressMessage))
         ],
     )
 

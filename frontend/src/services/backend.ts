@@ -55,19 +55,30 @@ export interface ChatSummary {
 }
 
 
-export interface PersistentMessage {
+export interface TextMessage {
   id: number;
+  kind: "text";
   role: "user" | "assistant";
   content: string;
   created_at: string;
   attachments: Attachment[];
-  workflow_execution?: WorkflowExecution | null;
 }
+
+export interface ProgressMessage {
+  id: number;
+  kind: "progress";
+  created_at: string;
+  updated_at: string;
+  messages: string[];
+  workflow_execution: WorkflowExecution;
+}
+
+export type PersistentMessage = TextMessage | ProgressMessage;
 
 export interface WorkflowExecution {
   id: number;
+  workflow_key: string;
   state: "running" | "pending" | "completed" | "failed" | "aborted";
-  progress_content: string[] | null;
 }
 
 export interface Attachment {

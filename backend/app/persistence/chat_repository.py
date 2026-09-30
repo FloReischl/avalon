@@ -1,9 +1,11 @@
 """Persistent chat and message operations."""
 
 from sqlalchemy import func, select, update
-from sqlalchemy.orm import Session, selectinload, sessionmaker
+from sqlalchemy.orm import Session, selectinload, selectin_polymorphic, sessionmaker
 
-from app.persistence.models import Agent, Attachment, Chat, Message, Principal
+from app.persistence.models import (
+    Agent, Attachment, Chat, Message, Principal, ProgressMessage, TextMessage,
+)
 
 
 
@@ -49,7 +51,7 @@ class ChatRepository:
                 principal_id=self._resolve_principal_id(session, principal_id),
                 next_message_seq=2,
             )
-            message = Message(
+            message = TextMessage(
                 chat=chat,
                 role=role,
                 content=content,
@@ -79,7 +81,7 @@ class ChatRepository:
             if next_sequence is None:
                 raise ValueError(f"Chat {chat_id} does not exist.")
 
-            message = Message(
+            message = TextMessage(
                 chat_id=chat_id,
                 role=role,
                 content=content,
@@ -100,26 +102,10 @@ class ChatRepository:
             raise ValueError("Message content must not be empty.")
 
         with self._session_factory() as session:
-            message = session.get(Message, message_id)
+            message = session.get(TextMessage, message_id)
             if message is None:
                 return False
 
-            message.content = content
-            session.commit()
-            return True
-
-    def update_open_workflow_message(self, chat_id: int, content: str) -> bool:
-        """Finalize the newest workflow-owned placeholder message for a chat."""
-        if not content:
-            raise ValueError("Message content must not be empty.")
-        with self._session_factory() as session:
-            message = session.scalar(
-                select(Message)
-                .where(Message.chat_id == chat_id, Message.role == "assistant", Message.content == "")
-                .order_by(Message.id.desc())
-            )
-            if message is None:
-                return False
             message.content = content
             session.commit()
             return True
@@ -193,9 +179,22 @@ class ChatRepository:
                 select(Message)
                 .where(Message.chat_id == chat_id)
                 .order_by(Message.created_at, Message.id)
-                .options(selectinload(Message.workflow_execution))
+                .options(
+                    selectin_polymorphic(Message, [TextMessage, ProgressMessage]),
+                    selectinload(TextMessage.attachments),
+                    selectinload(ProgressMessage.workflow_execution),
+                )
             )
             return list(session.scalars(statement))
+
+    def get_text_messages(self, chat_id: int) -> list[TextMessage]:
+        """Return only normal text messages, for LLM context and titles."""
+        with self._session_factory() as session:
+            return list(session.scalars(
+                select(TextMessage)
+                .where(TextMessage.chat_id == chat_id)
+                .order_by(TextMessage.created_at, TextMessage.id)
+            ))
 
     def get_attachments_for_messages(
         self, message_ids: list[int]
@@ -205,9 +204,9 @@ class ChatRepository:
             return {}
         with self._session_factory() as session:
             messages = session.scalars(
-                select(Message)
-                .where(Message.id.in_(message_ids))
-                .options(selectinload(Message.attachments))
+                select(TextMessage)
+                .where(TextMessage.id.in_(message_ids))
+                .options(selectinload(TextMessage.attachments))
             )
             return {
                 message.id: list(message.attachments)
@@ -218,16 +217,16 @@ class ChatRepository:
         self,
         chat_id: int,
         limit: int = 100,
-    ) -> list[Message]:
-        """Return the latest messages in chronological order."""
+    ) -> list[TextMessage]:
+        """Return the latest normal text messages in chronological order."""
         if limit < 1:
             raise ValueError("Context message limit must be positive.")
 
         with self._session_factory() as session:
             statement = (
-                select(Message)
-                .where(Message.chat_id == chat_id)
-                .order_by(Message.created_at.desc(), Message.id.desc())
+                select(TextMessage)
+                .where(TextMessage.chat_id == chat_id)
+                .order_by(TextMessage.created_at.desc(), TextMessage.id.desc())
                 .limit(limit)
             )
             messages = list(session.scalars(statement))

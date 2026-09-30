@@ -31,12 +31,17 @@ def register_workflow_tools(mcp: MCPServer, service: WorkflowService) -> None:
         )
         meta = ctx.request_context.meta or {}
         execution_context = meta.get("avalon/execution_context")
-        if not isinstance(execution_context, dict) or not isinstance(execution_context.get("chat_id"), int):
+        if (
+            not isinstance(execution_context, dict)
+            or not isinstance(execution_context.get("chat_id"), int)
+            or not isinstance(execution_context.get("invocation_id"), str)
+        ):
             raise ValueError("workflow.execute requires Avalon execution context.")
         execution_id = await service.execute(
             workflow_key,
             payload,
             execution_context["chat_id"],
+            execution_context["invocation_id"],
             f"http://{settings.api_host}:{settings.api_port}",
             current_principal_id.get(),
         )

@@ -7,7 +7,7 @@ from httpx import ASGITransport, AsyncClient
 
 from app.api.routes.chats import get_chat, get_chat_repository
 from app.main import create_app
-from app.persistence.models import Chat, Message
+from app.persistence.models import Chat, TextMessage
 
 
 class FakeChatRepository:
@@ -31,14 +31,14 @@ class FakeChatRepository:
         }
         self.messages = {
             1: [
-                Message(
+                TextMessage(
                     id=10,
                     chat_id=1,
                     role="user",
                     content="Hallo",
                     created_at=datetime(2026, 9, 7, 20, 1, 0),
                 ),
-                Message(
+                TextMessage(
                     id=11,
                     chat_id=1,
                     role="assistant",
