@@ -42,6 +42,9 @@ data/agent-findings.md
 data/agent-output.md
 data/diff.patch
 
+# docs
+docs/backlog.md
+
 # TTS (text-to-speech)
 data/tts/generated
 data/tts/kokoro_victoria
