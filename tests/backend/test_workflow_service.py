@@ -33,12 +33,15 @@ async def test_executes_registered_workflow_with_json_stdin(tmp_path: Path) -> N
     chat = ChatRepository(factory).create_chat("Workflow")
     service = WorkflowService(workflow_config(), WorkflowExecutionRepository(factory))
 
-    await service.execute("test-workflow", payload, chat.id, "turn-1", "http://localhost")
+    execution_id = await service.execute(
+        "test-workflow", payload, chat.id, "turn-1", "http://localhost"
+    )
     await asyncio.sleep(0.1)
 
     try:
         output = OUTPUT_FILE.read_text(encoding="utf-8")
         assert json.dumps(payload, ensure_ascii=False, separators=(",", ":")) in output
+        assert WorkflowExecutionRepository(factory).get(execution_id).state == "completed"
     finally:
         engine.dispose()
 
