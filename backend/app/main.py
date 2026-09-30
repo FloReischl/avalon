@@ -19,6 +19,7 @@ from app.mcp.security import current_principal_id, principal_from_authorization
 from app.persistence.migrations import run_migrations
 from app.persistence.authorization_repository import AuthorizationRepository
 from app.persistence.database import create_database_engine, create_session_factory
+from app.persistence.chat_repository import ChatRepository
 from app.persistence.workflow_execution_repository import WorkflowExecutionRepository
 from app.runtime.ollama import OllamaRuntime
 from app.state import initialize_avalon_state
@@ -152,11 +153,11 @@ def create_app() -> FastAPI:
     )
     application.include_router(api_router)
     workflow_engine = create_database_engine()
+    workflow_session_factory = create_session_factory(workflow_engine)
     mcp = create_mcp_server(
         workflow_service=WorkflowService(
-            repository=WorkflowExecutionRepository(
-                create_session_factory(workflow_engine)
-            )
+            repository=WorkflowExecutionRepository(workflow_session_factory),
+            chat_repository=ChatRepository(workflow_session_factory),
         )
     )
     application.state.workflow_engine = workflow_engine

@@ -21,6 +21,7 @@ from app.persistence.authorization_repository import AuthorizationRepository
 from app.persistence.database import create_database_engine, create_session_factory
 from app.mcp.security import current_principal_id
 from app.services.workflows import WorkflowService
+from app.state import get_avalon_state
 
 
 class AuthorizedMcpServer(MCPServer):
@@ -130,5 +131,11 @@ def create_mcp_server(
         web_search_service or WebSearchService(),
         web_content_service or WebContentService(),
     )
-    register_workflow_tools(mcp, workflow_service or WorkflowService())
+    if workflow_service is None:
+        state = get_avalon_state()
+        workflow_service = WorkflowService(
+            avatar=state.current_avatar,
+            agents=state.agents,
+        )
+    register_workflow_tools(mcp, workflow_service)
     return mcp

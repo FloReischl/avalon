@@ -1,6 +1,7 @@
 import asyncio
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -30,8 +31,20 @@ async def test_executes_registered_workflow_with_json_stdin(tmp_path: Path) -> N
     run_migrations(database)
     engine = create_database_engine(database)
     factory = create_session_factory(engine)
-    chat = ChatRepository(factory).create_chat("Workflow")
-    service = WorkflowService(workflow_config(), WorkflowExecutionRepository(factory))
+    chat_repository = ChatRepository(factory)
+    chat = chat_repository.create_chat_with_message(
+        "Workflow", "user", "Starte den Workflow"
+    )
+    avatar = SimpleNamespace(
+        persona="Test Persona",
+        instructions="Test Instructions",
+    )
+    service = WorkflowService(
+        workflow_config(),
+        WorkflowExecutionRepository(factory),
+        chat_repository,
+        avatar,
+    )
 
     execution_id = await service.execute(
         "test-workflow", payload, chat.id, "turn-1", "http://localhost"
@@ -40,7 +53,19 @@ async def test_executes_registered_workflow_with_json_stdin(tmp_path: Path) -> N
 
     try:
         output = OUTPUT_FILE.read_text(encoding="utf-8")
-        assert json.dumps(payload, ensure_ascii=False, separators=(",", ":")) in output
+        envelope = json.loads(output)
+        assert envelope["payload"] == payload
+        assert envelope["avalon"]["workflow_execution_id"] == execution_id
+        assert envelope["avalon"]["backend_url"] == "http://localhost"
+        assert envelope["avalon"]["runtime_token"]
+        assert envelope["avalon"]["model_persona"] == "Test Persona"
+        assert envelope["avalon"]["model_instructions"] == "Test Instructions"
+        assert envelope["avalon"]["model_context"] == [
+            {"role": "user", "content": "Starte den Workflow"}
+        ]
+        assert envelope["avalon"]["current_datetime"].endswith(
+            "(Europe/Berlin)\nAktueller Ort: München, Deutschland"
+        )
         assert WorkflowExecutionRepository(factory).get(execution_id).state == "completed"
     finally:
         engine.dispose()
@@ -78,7 +103,12 @@ async def test_nonzero_workflow_exit_marks_execution_failed(tmp_path: Path) -> N
     chat = ChatRepository(factory).create_chat("Workflow")
     repository = WorkflowExecutionRepository(factory)
     try:
-        execution_id = await WorkflowService(workflow_config(failing), repository).execute(
+        execution_id = await WorkflowService(
+            workflow_config(failing),
+            repository,
+            ChatRepository(factory),
+            SimpleNamespace(persona="Test Persona", instructions="Test Instructions"),
+        ).execute(
             "test-workflow", ["payload"], chat.id, "turn-1", "http://localhost"
         )
         await asyncio.sleep(0.1)

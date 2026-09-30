@@ -137,32 +137,22 @@ class AvatarLike(Protocol):
     instructions: str
 
 
-def build_active_context(
+def build_current_datetime_context(now: datetime | None = None) -> str:
+    """Build the current date, time and location context exposed to models."""
+    return (
+        "Aktuelles Datum und Uhrzeit: "
+        f"{(now or datetime.now(ZoneInfo('Europe/Berlin'))).strftime('%Y-%m-%d %H:%M')} "
+        "(Europe/Berlin)\nAktueller Ort: München, Deutschland"
+    )
+
+
+def build_model_context(
     messages: list[Message],
     compressed_context: CompressedContext,
     compressed_through_seq: int,
-    avatar: AvatarLike | None,
-    now: datetime | None = None,
 ) -> list[dict[str, str]]:
-    """Build the complete normal-model input from persisted state."""
+    """Build the conversation-only model context from persisted state."""
     result: list[dict[str, str]] = []
-    result.append(
-        {
-            "role": "system",
-            "content": (
-                "Aktuelles Datum und Uhrzeit: "
-                f"{(now or datetime.now(ZoneInfo('Europe/Berlin'))).strftime('%Y-%m-%d %H:%M')} "
-                "(Europe/Berlin)\nAktueller Ort: München, Deutschland"
-            ),
-        }
-    )
-    if avatar is not None:
-        result.append(
-            {
-                "role": "system",
-                "content": f"{avatar.persona}\n\n{avatar.instructions}",
-            }
-        )
     if compressed_through_seq > 0:
         result.append(
             {
@@ -177,6 +167,34 @@ def build_active_context(
         }
         for message in messages
         if message.seq > compressed_through_seq
+    )
+    return result
+
+
+def build_active_context(
+    messages: list[Message],
+    compressed_context: CompressedContext,
+    compressed_through_seq: int,
+    avatar: AvatarLike | None,
+    now: datetime | None = None,
+) -> list[dict[str, str]]:
+    """Build the complete normal-model input from persisted state."""
+    result: list[dict[str, str]] = [
+        {"role": "system", "content": build_current_datetime_context(now)}
+    ]
+    if avatar is not None:
+        result.append(
+            {
+                "role": "system",
+                "content": f"{avatar.persona}\n\n{avatar.instructions}",
+            }
+        )
+    result.extend(
+        build_model_context(
+            messages,
+            compressed_context,
+            compressed_through_seq,
+        )
     )
     return result
 

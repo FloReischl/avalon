@@ -104,7 +104,12 @@ async def test_start_failure_appends_clear_system_progress(monkeypatch, reposito
         raise OSError("permission denied")
 
     monkeypatch.setattr("app.services.workflows.asyncio.create_subprocess_exec", fail_to_start)
-    service = WorkflowService(Config(), repo)
+    service = WorkflowService(
+        Config(),
+        repo,
+        ChatRepository(repo.session_factory),
+        type("Avatar", (), {"persona": "Test", "instructions": "Test"})(),
+    )
     monkeypatch.setattr(service, "_publish", lambda _execution: None)
 
     with pytest.raises(OSError, match="permission denied"):
