@@ -17,6 +17,8 @@ Avalon ist zugleich ein reales Softwareprojekt und ein Lernprojekt für AI Augme
 - Erst nach abgeschlossenen Anforderungen und Architektur wird die Umsetzung in kleine, klar abgegrenzte und prüfbare Arbeitspakete geschnitten.
 - Ergebnisse werden nach jedem Paket durch Geanie und Flo anhand von Diff, Tests und Akzeptanzkriterien geprüft.
 - Git Commits erfolgen nur nach ausdrücklichem Auftrag. Keine Pushes ohne explizite Anweisung.
+- Führe Tests immer über `.venv/bin/pytest` aus.
+- Neue Abhängigkeiten (uv, pip...) dürfen **nur** nach ausdrücklicher Freigabe durch den Benutzer erfolgen.
 
 ## Rollen von Geanie
 
