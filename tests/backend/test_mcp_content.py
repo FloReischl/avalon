@@ -7,7 +7,10 @@ import json
 import pytest
 
 from app.authorization.permissions import ContentCreateAudioPermission
+from app.authorization.exceptions import PermissionDenied
 from app.mcp.server import create_mcp_server
+from app.mcp.security import current_principal_id
+import app.mcp.server as mcp_server_module
 from app.persistence.models import PrincipalPermission
 
 
@@ -59,3 +62,50 @@ async def test_content_tool_delegates_to_service() -> None:
 
     await mcp.call_tool("content.create-audio", {"content": "Test content", "output_file": "/tmp/avalon/audio/test.mp3"})
     assert service.calls == [("Test content", "/tmp/avalon/audio/test.mp3")]
+
+
+@pytest.mark.asyncio
+async def test_mcp_call_denies_audio_creation_outside_scope(monkeypatch) -> None:
+    class FakeEngine:
+        def dispose(self):
+            pass
+
+    class FakeRepository:
+        def __init__(self, _):
+            pass
+
+        def get_principal_permission_catalog_ids(self, principal_id):
+            return {42}
+
+        def get_permission_catalog_id(self, context, key):
+            assert (context, key) == ("content", "create-audio")
+            return 42
+
+        def get_principal_permission_by_catalog_id(self, principal_id, catalog_id):
+            return PrincipalPermission(
+                principal_id=principal_id,
+                permission_catalog_id=catalog_id,
+                scope=json.dumps(["/tmp/allowed"]),
+                validity_type="duration",
+                default_expiry=7200,
+            )
+
+        def get_grants(self, definition_id):
+            return []
+
+    monkeypatch.setattr(mcp_server_module, "AuthorizationRepository", FakeRepository)
+    monkeypatch.setattr(mcp_server_module, "create_database_engine", FakeEngine)
+    monkeypatch.setattr(mcp_server_module, "create_session_factory", lambda _: object())
+
+    token = current_principal_id.set(7)
+    try:
+        service = FakeAudioCreationService()
+        mcp = create_mcp_server(audio_creation_service=service)
+        with pytest.raises(PermissionDenied, match="content/create-audio is not allowed by principal scope"):
+            await mcp.call_tool(
+                "content.create-audio",
+                {"content": "Hello", "output_file": "/tmp/forbidden/audio.mp3"},
+            )
+        assert service.calls == []
+    finally:
+        current_principal_id.reset(token)

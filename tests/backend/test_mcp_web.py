@@ -51,6 +51,7 @@ def test_mcp_server_exposes_music_and_web_tools():
         "web.search",
         "web.get-content",
         "workflow.execute",
+        "content.create-audio",
     ]
 
 

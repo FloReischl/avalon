@@ -94,3 +94,27 @@ async def test_create_audio_handles_ffmpeg_failure(tmp_path: Path, monkeypatch: 
         await service.create_audio("Hello", str(output_file))
 
     assert not output_file.exists()
+
+
+@pytest.mark.asyncio
+async def test_create_audio_preserves_existing_file_on_ffmpeg_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    output_file = tmp_path / "output.mp3"
+    output_file.write_bytes(b"original-valid-mp3")
+    fake_tts = FakeTTS(b"fake-wav-bytes")
+
+    class FakeProcess:
+        returncode = 1
+
+        async def communicate(self):
+            return b"", b"error"
+
+    async def fake_create_subprocess_exec(*args, **kwargs):
+        return FakeProcess()
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_create_subprocess_exec)
+
+    service = AudioCreationService(fake_tts)  # type: ignore[arg-type]
+    with pytest.raises(RuntimeError, match="ffmpeg failed"):
+        await service.create_audio("Hello", str(output_file))
+
+    assert output_file.read_bytes() == b"original-valid-mp3"
