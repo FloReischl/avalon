@@ -11,8 +11,6 @@ import sys
 
 from pydantic import JsonValue
 
-from app.agents_config import AgentConfig
-from app.avatars_config import AvatarConfig
 from app.workflows_config import WorkflowsConfig, get_workflows_config
 from app.persistence.chat_repository import ChatRepository
 from app.persistence.database import create_database_engine, create_session_factory
@@ -23,6 +21,7 @@ from app.services.context_compression import (
     parse_compressed_context,
 )
 from app.services.workflow_events import WorkflowExecutionEvent, get_workflow_event_manager
+from app.state import get_avalon_state
 
 
 logger = logging.getLogger(__name__)
@@ -40,14 +39,10 @@ class WorkflowService:
         config: WorkflowsConfig | None = None,
         repository: WorkflowExecutionRepository | None = None,
         chat_repository: ChatRepository | None = None,
-        avatar: AvatarConfig | None = None,
-        agents: tuple[AgentConfig, ...] = (),
     ) -> None:
         self._config = config
         self._repository = repository
         self._chat_repository = chat_repository
-        self._avatar = avatar
-        self._agents = agents
 
     def _repositories_for_call(
         self,
@@ -63,22 +58,16 @@ class WorkflowService:
         return WorkflowExecutionRepository(factory), ChatRepository(factory), engine
 
     def _context_identity(self, chat_repository: ChatRepository, agent_id: int | None):
+        state = get_avalon_state()
+
         if agent_id is None:
-            return self._avatar
+            return state.current_avatar
 
         persisted_agent = chat_repository.get_agent_by_id(agent_id)
         if persisted_agent is None:
             raise WorkflowExecutionError(f"Agent {agent_id} does not exist.")
 
-        normalized = persisted_agent.key.casefold()
-        configured_agent = next(
-            (
-                agent
-                for agent in self._agents
-                if agent.key.casefold() == normalized
-            ),
-            None,
-        )
+        configured_agent = state.get_agent(persisted_agent.key)
         if configured_agent is None:
             raise WorkflowExecutionError(
                 f"Agent '{persisted_agent.key}' is not configured."

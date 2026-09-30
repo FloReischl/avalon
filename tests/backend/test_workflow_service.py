@@ -43,7 +43,6 @@ async def test_executes_registered_workflow_with_json_stdin(tmp_path: Path) -> N
         workflow_config(),
         WorkflowExecutionRepository(factory),
         chat_repository,
-        avatar,
     )
 
     execution_id = await service.execute(
@@ -107,7 +106,6 @@ async def test_nonzero_workflow_exit_marks_execution_failed(tmp_path: Path) -> N
             workflow_config(failing),
             repository,
             ChatRepository(factory),
-            SimpleNamespace(persona="Test Persona", instructions="Test Instructions"),
         ).execute(
             "test-workflow", ["payload"], chat.id, "turn-1", "http://localhost"
         )
