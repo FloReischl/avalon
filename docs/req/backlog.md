@@ -11,6 +11,8 @@ todo
   - save avatar size
   - chat messages "Du" (Frieda?) raus
   - remove chats column `seq`
+  - change font in input text
+  - 🤖 icon for agent chats
 - external agents
   - authenticate
 - agents

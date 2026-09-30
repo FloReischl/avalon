@@ -20,7 +20,7 @@ agents:
       validity_type: duration
       default_expiry: 7200
   - permission_catalog:   # communicate.create-audio
-      context: communicate
+      context: content
       key: create-audio
     principal_permission:
       scope: [ "/tmp/avalon/audio"]
