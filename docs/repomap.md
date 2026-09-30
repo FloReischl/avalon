@@ -109,6 +109,8 @@ Arbeitsindex für Frieda: Impact-Analyse, Implementierungsplanung, Abhängigkeit
 - Agent-Permissions aus `agents.yaml` sowie Default-Chat-Permissions aus `config.yaml:chat.permissions` werden beim App-Start validiert und transactional in die Authorization-DB reconciliiert. Fehlende Principals/Agents und Permission-Catalog-Einträge werden angelegt; Principal-Permissions werden angelegt, aktualisiert, reaktiviert oder via `is_active=false` deaktiviert. `scope` bleibt semantisch opaque und wird als kanonisches JSON persistiert. Der Reconcile ist atomar und idempotent; die jeweilige Konfiguration ist für die Permissions des Principals führend.
 - `backend/app/services/tool_runner.py`: capability-agnostischer LLM-Tool-Loop; bezieht principal-spezifische Tooldefinitionen über MCP, cached sie statisch und dispatcht Tool-Calls generisch über MCP. Der interne MCP-Client ergänzt serverseitigen Invocation-Kontext (`chat_id`, `invocation_id`) als Request-`_meta`, ohne ihn dem LLM als Tool-Argument zu exponieren. Turn-lokaler Result-Cache verhindert wiederholte Ausführung identischer Tool-Calls.
 - `backend/app/api/routes/authorization.py`: Pending-Requests, Confirm/Abort und SSE-Invalidierungen für die globale Permission-Inbox.
+- `backend/app/api/routes/runtime.py` — runtime control endpoints (warm-up).
+- `backend/app/api/routes/llm.py` — stateless LLM inference; `POST /api/v1/llm/text` accepts caller-supplied `system`/`user`/`assistant` messages and returns non-streaming text without chat context, persistence, or tool calling.
 - `backend/app/api/schemas.py`: öffentliche Verträge. `ChatRequest(chat_id?: positive int, message: non-empty)`, `ConversationMessage(role user|assistant, content)`, `AudioResponseRequest(messages, chat_id?)`, `HealthResponse`, Chat summary/detail (inkl. `pinned`, `compression_error_code`, Message-Attachments), Rename (max. 200), Pin, TTS, Playback-ended, UI-Konfiguration/Avatar/Sprite-Regionen.
 - `routes/health.py`: `health() -> HealthResponse`.
 - `routes/runtime.py`: `POST /api/v1/runtime/warm-up`, stateless best-effort, Inhalt verwerfen.
@@ -139,14 +141,19 @@ Arbeitsindex für Frieda: Impact-Analyse, Implementierungsplanung, Abhängigkeit
 
 ### Backend: Runtime, Audio und TTS-Adapter
 
-- `runtime/base.py:ModelRuntime` Protocol ist text-only: async `health`, `warm_up`, `generate_text`; `generate_text_stream(messages)` für Chatantworten. STT gehört nicht zum Runtime-Vertrag.
-- `runtime/ollama.py:OllamaRuntime`: Prozess-State-LLM je Inferenz lazy auflösen; aktive Text-/Titel-Inferenz zählen und LLM-Switch während Inferenz blockieren. `/api/show` Modell/Health, natives `/api/chat` für Warm-up sowie komplette, streamende und Tool-Generierung; Tool-Turns können Content und native Tool-Calls streamen, non-streaming Tool-Generierung bleibt separat verfügbar. Qwen2.5-Coder-Tool-Calls, die Ollama als eindeutiges JSON im Assistant-Content statt als `tool_calls` liefert, werden vor Ausgabe gepuffert und eng auf Ollamas natives Tool-Call-Format normalisiert. `/api/generate` nur für Unload; kein Base64-/Native-Audio-Pfad.
-- `runtime/llama_cpp.py:LlamaCppRuntime`: geplanter text-only Stub.
-- `stt/whisper.py`: `FasterWhisperSttService`, `StreamingPcmChunker`, `AudioChunk`, `merge_transcripts`; Whisper `small` strikt CPU/int8, `de`, beam 5; 10/2-Chunking, serialisierte blockierende Inferenz außerhalb des asyncio-Event-Loops, Lazy-/Idle-Lifecycle und Call-Residency.
-- `audio/capture.py`: `CaptureError`, `CapturedAudio`, `_DialogTurnBuffer`, `PipeWireRecorder`; PTT/Dialog über 16-kHz-mono-S16-PCM, laufende volle STT-Fenster an Sink liefern, finalen Tail beim Stop erzeugen; Dialog ignoriert Stille vor Sprache und endet über konfigurierte Nachsprechstille; kein Duration-Limit; Abort/Cleanup und SIGINT→kill.
-- `tts/base.py:TextToSpeech.synthesize(text)->bytes`, `unload()`; `tts/factory.py:create_tts_engine(engine_name?)` wählt Kokoro/Chatterbox oder lehnt ab.
-- `tts/kokoro.py`: lazy Modell/Pipeline/Victoria, prüft lokale Artefakte, 24-kHz-WAV, unload gibt CUDA-Cache frei.
-- `tts/chatterbox.py`: gepinnter Snapshot lazy, konfiguriertes Referenzaudio/deutsch, CPU-Chunks zusammenführen, unload/CUDA-Cache.
+- `backend/app/runtime/base.py:ModelRuntime` Protocol ist text-only: async `health`, `warm_up`, `generate_text`; `generate_text_stream(messages)` für Chatantworten. STT gehört nicht zum Runtime-Vertrag.
+- `backend/app/runtime/ollama.py:OllamaRuntime`: Prozess-State-LLM je Inferenz lazy auflösen; aktive Text-/Titel-Inferenz zählen und LLM-Switch während Inferenz blockieren. `/api/show` Modell/Health, natives `/api/chat` für Warm-up sowie komplette, streamende und Tool-Generierung; Tool-Turns können Content und native Tool-Calls streamen, non-streaming Tool-Generierung bleibt separat verfügbar. Qwen2.5-Coder-Tool-Calls, die Ollama als eindeutiges JSON im Assistant-Content statt als `tool_calls` liefert, werden vor Ausgabe gepuffert und eng auf Ollamas natives Tool-Call-Format normalisiert. `/api/generate` nur für Unload; kein Base64-/Native-Audio-Pfad.
+
+- `backend/app/runtime/base.py:ModelRuntime` Protocol ist text-only: async `health`, `warm_up`, `generate_text`, `generate_text_messages(messages)`; `generate_text_stream(messages)` für Chatantworten. STT gehört nicht zum Runtime-Vertrag.
+- `backend/app/runtime/ollama.py:OllamaRuntime`: Prozess-State-LLM je Inferenz lazy auflösen; aktive Text-/Titel-Inferenz zählen und LLM-Switch während Inferenz blockieren. `/api/show` Modell/Health, natives `/api/chat` für Warm-up sowie komplette, message-basierte non-streaming, streamende und Tool-Generierung; `generate_text_messages(messages)` führt stateless non-streaming Inferenz gegen das aktive Modell aus. Tool-Turns können Content und native Tool-Calls streamen, non-streaming Tool-Generierung bleibt separat verfügbar. Qwen2.5-Coder-Tool-Calls, die Ollama als eindeutiges JSON im Assistant-Content statt als `tool_calls` liefert, werden vor Ausgabe gepuffert und eng auf Ollamas natives Tool-Call-Format normalisiert. `/api/generate` nur für Unload; kein Base64-/Native-Audio-Pfad.
+
+
+- `backend/app/runtime/llama_cpp.py:LlamaCppRuntime`: geplanter text-only Stub.
+- `backend/app/stt/whisper.py`: `FasterWhisperSttService`, `StreamingPcmChunker`, `AudioChunk`, `merge_transcripts`; Whisper `small` strikt CPU/int8, `de`, beam 5; 10/2-Chunking, serialisierte blockierende Inferenz außerhalb des asyncio-Event-Loops, Lazy-/Idle-Lifecycle und Call-Residency.
+- `backend/app/audio/capture.py`: `CaptureError`, `CapturedAudio`, `_DialogTurnBuffer`, `PipeWireRecorder`; PTT/Dialog über 16-kHz-mono-S16-PCM, laufende volle STT-Fenster an Sink liefern, finalen Tail beim Stop erzeugen; Dialog ignoriert Stille vor Sprache und endet über konfigurierte Nachsprechstille; kein Duration-Limit; Abort/Cleanup und SIGINT→kill.
+- `backend/app/tts/base.py:TextToSpeech.synthesize(text)->bytes`, `unload()`; `tts/factory.py:create_tts_engine(engine_name?)` wählt Kokoro/Chatterbox oder lehnt ab.
+- `backend/app/tts/kokoro.py`: lazy Modell/Pipeline/Victoria, prüft lokale Artefakte, 24-kHz-WAV, unload gibt CUDA-Cache frei.
+- `backend/app/tts/chatterbox.py`: gepinnter Snapshot lazy, konfiguriertes Referenzaudio/deutsch, CPU-Chunks zusammenführen, unload/CUDA-Cache.
 
 ### Frontend
 

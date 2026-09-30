@@ -10,6 +10,7 @@ todo
   - chat title
   - save avatar size
   - chat messages "Du" (Frieda?) raus
+  - remove chats column `seq`
 - external agents
   - authenticate
 - agents

@@ -16,6 +16,12 @@ class ModelRuntime(Protocol):
     async def generate_text(self, message: str) -> str:
         ...
 
+    async def generate_text_messages(
+        self,
+        messages: list[dict[str, str]],
+    ) -> str:
+        ...
+
     def generate_text_stream(
         self,
         messages: list[dict[str, str]],

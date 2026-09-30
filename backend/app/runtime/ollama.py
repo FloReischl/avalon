@@ -130,6 +130,14 @@ class OllamaRuntime(ModelRuntime):
         await self.generate_text("Hallo")
 
     async def generate_text(self, message: str) -> str:
+        return await self.generate_text_messages(
+            [{"role": "user", "content": message}]
+        )
+
+    async def generate_text_messages(
+        self,
+        messages: list[dict[str, str]],
+    ) -> str:
         async with self._inference_model() as model:
             try:
                 async with httpx.AsyncClient(timeout=120.0) as client:
@@ -137,7 +145,7 @@ class OllamaRuntime(ModelRuntime):
                         f"http://{settings.ollama_host}/api/chat",
                         json={
                             "model": model,
-                            "messages": [{"role": "user", "content": message}],
+                            "messages": messages,
                             "stream": False,
                             "keep_alive": OLLAMA_KEEP_ALIVE,
                         },

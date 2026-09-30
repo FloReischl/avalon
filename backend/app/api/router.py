@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 
-from app.api.routes import attachments, authorization, assets, audio, chat, chats, health, runtime, tts, ui, workflows
+from app.api.routes import attachments, authorization, assets, audio, chat, chats, health, llm, runtime, tts, ui, workflows
 
 
 api_router = APIRouter()
@@ -16,5 +16,6 @@ api_router.include_router(chats.router, prefix="/api/v1")
 api_router.include_router(attachments.router, prefix="/api/v1")
 api_router.include_router(audio.router, prefix="/api/v1")
 api_router.include_router(runtime.router, prefix="/api/v1")
+api_router.include_router(llm.router, prefix="/api/v1")
 api_router.include_router(tts.router, prefix="/api/v1")
 api_router.include_router(workflows.router, prefix="/api/v1")

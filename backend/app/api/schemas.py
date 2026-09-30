@@ -105,6 +105,25 @@ class ConversationMessage(BaseModel):
     content: str = Field(min_length=1)
 
 
+class LlmTextMessage(BaseModel):
+    """One message passed directly to the configured text model."""
+
+    role: Literal["system", "user", "assistant"]
+    content: str = Field(min_length=1)
+
+
+class LlmTextRequest(BaseModel):
+    """Stateless non-streaming text inference request."""
+
+    messages: list[LlmTextMessage] = Field(min_length=1)
+
+
+class LlmTextResponse(BaseModel):
+    """Stateless text inference result."""
+
+    content: str
+
+
 class TextMessageResponse(BaseModel):
     id: int
     kind: Literal["text"] = "text"

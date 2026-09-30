@@ -260,6 +260,31 @@ async def test_generate_text_returns_response(
 
 
 @pytest.mark.asyncio
+async def test_generate_text_messages_passes_messages_unchanged(
+    httpx_mock: HTTPXMock,
+) -> None:
+    messages = [
+        {"role": "system", "content": "Antworte knapp."},
+        {"role": "user", "content": "Hallo"},
+    ]
+    httpx_mock.add_response(
+        method="POST",
+        url=f"http://{settings.ollama_host}/api/chat",
+        match_json={
+            "model": STANDARD_LLM.model,
+            "messages": messages,
+            "stream": False,
+            "keep_alive": "1h",
+        },
+        json={"message": {"role": "assistant", "content": "Hallo Flo"}},
+    )
+
+    result = await OllamaRuntime().generate_text_messages(messages)
+
+    assert result == "Hallo Flo"
+
+
+@pytest.mark.asyncio
 async def test_generate_text_raises_runtime_error_when_ollama_is_unreachable(
     httpx_mock: HTTPXMock,
 ) -> None:
