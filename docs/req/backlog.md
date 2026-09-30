@@ -16,10 +16,12 @@ todo
   - communication.create-audio
   - file.copy
 - workflows
+  - create audio / copy file / llm no chat
   - final response with trigger llm
   - config to db
   - security token enhancements
   - abort handling
+  - final state handling
 - admin
   - agents/mcp monitor
   - log window
