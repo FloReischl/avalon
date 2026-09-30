@@ -21,10 +21,10 @@ class ToolRunner:
         self._mcp_client_factory = mcp_client_factory
 
     async def stream_response(
-        self, principal_id: int, messages: list[dict[str, str]], source_label: str
+        self, principal_id: int, messages: list[dict[str, str]], source_label: str, chat_id: int
     ) -> AsyncIterator[str]:
         del source_label
-        client = self._mcp_client_factory(principal_id)
+        client = self._mcp_client_factory(principal_id, chat_id)
         tools = await self._tools_for_principal(principal_id, client)
         tool_messages: list[dict[str, object]] = list(messages)
         tool_result_cache: dict[str, object] = {}

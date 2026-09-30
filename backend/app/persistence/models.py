@@ -203,6 +203,37 @@ class Message(Base):
         secondary="message_attachments",
         back_populates="messages",
     )
+    workflow_execution: Mapped["WorkflowExecution | None"] = relationship(
+        back_populates="message", uselist=False, cascade="all, delete-orphan"
+    )
+
+
+class WorkflowExecution(Base):
+    """Persisted runtime anchor for one workflow-owned assistant message."""
+
+    __tablename__ = "workflow_executions"
+    __table_args__ = (
+        CheckConstraint(
+            "state IN ('running', 'pending', 'completed', 'failed', 'aborted')",
+            name="ck_workflow_executions_state",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    message_id: Mapped[int] = mapped_column(
+        ForeignKey("messages.id", ondelete="CASCADE"), nullable=False, unique=True
+    )
+    state: Mapped[str] = mapped_column(String(16), nullable=False)
+    progress_content: Mapped[str | None] = mapped_column(Text, nullable=True)
+    runtime_token_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.current_timestamp()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.current_timestamp(), onupdate=func.current_timestamp()
+    )
+
+    message: Mapped[Message] = relationship(back_populates="workflow_execution")
 
 
 class Attachment(Base):

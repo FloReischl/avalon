@@ -112,6 +112,8 @@ body {
 }
 
 .avatar-balloon { display: flex; gap: .45rem; align-items: center; padding: .4rem .7rem; border-radius: 1rem; color: #f5f7fa; background: rgba(12, 13, 16, .82); }
+.workflow-decorator { margin-top: .5rem; padding: .55rem .7rem; border-left: 3px solid #6f9fff; border-radius: .25rem; color: #dce9ff; background: rgba(46, 83, 145, .22); font-size: .88rem; }
+.workflow-decorator ul { margin: .35rem 0 0; padding-left: 1.15rem; }
 .avatar-spinner { width: .85rem; height: .85rem; border: 2px solid rgba(245, 247, 250, .35); border-top-color: #f5f7fa; border-radius: 50%; animation: avatar-spin .8s linear infinite; }
 @keyframes avatar-spin { to { transform: rotate(360deg); } }
 

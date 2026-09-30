@@ -1,6 +1,7 @@
 """Persistent chat-management endpoints."""
 
 from datetime import datetime
+import json
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 
@@ -108,6 +109,15 @@ def get_chat(
                     }
                     for attachment in attachments_by_message.get(message.id, [])
                 ],
+                workflow_execution=(
+                    {
+                        "id": message.workflow_execution.id,
+                        "state": message.workflow_execution.state,
+                        "progress_content": json.loads(message.workflow_execution.progress_content)
+                        if message.workflow_execution.progress_content else None,
+                    }
+                    if message.workflow_execution is not None else None
+                ),
             )
             for message in messages
         ],

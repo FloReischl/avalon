@@ -113,6 +113,13 @@ class PersistentMessageResponse(BaseModel):
     content: str
     created_at: datetime
     attachments: list["AttachmentResponse"] = Field(default_factory=list)
+    workflow_execution: "WorkflowExecutionResponse | None" = None
+
+
+class WorkflowExecutionResponse(BaseModel):
+    id: int
+    state: Literal["running", "pending", "completed", "failed", "aborted"]
+    progress_content: list[str] | None = None
 
 
 class AttachmentResponse(BaseModel):
@@ -187,3 +194,8 @@ class TtsPlaybackEndedRequest(BaseModel):
     """Identify the playback that has stopped in the frontend."""
 
     playback_id: str = Field(min_length=1)
+
+
+class WorkflowRuntimeUpdateRequest(BaseModel):
+    state: Literal["running", "pending", "completed", "failed", "aborted"] | None = None
+    progress_content: list[str] | None = None

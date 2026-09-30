@@ -61,6 +61,13 @@ export interface PersistentMessage {
   content: string;
   created_at: string;
   attachments: Attachment[];
+  workflow_execution?: WorkflowExecution | null;
+}
+
+export interface WorkflowExecution {
+  id: number;
+  state: "running" | "pending" | "completed" | "failed" | "aborted";
+  progress_content: string[] | null;
 }
 
 export interface Attachment {
@@ -74,6 +81,13 @@ export interface Attachment {
 export interface ChatDetail extends ChatSummary {
   messages: PersistentMessage[];
   compression_error_code?: string | null;
+}
+
+export function listenToWorkflowExecutions(onChange: () => void): () => void {
+  const source = new EventSource(`${BACKEND_BASE_URL}/api/v1/workflow-executions/events`);
+  source.addEventListener("workflow_execution", onChange);
+  source.onerror = () => { /* EventSource reconnects itself. */ };
+  return () => source.close();
 }
 
 export interface TtsResponse {

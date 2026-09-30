@@ -1,8 +1,10 @@
 import asyncio
 import json
 import logging
+from types import SimpleNamespace
 
 from mcp.server import MCPServer
+from mcp.server.mcpserver.context import Context
 
 from app.mcp.workflow import register_workflow_tools
 from app.mcp.security import current_principal_id
@@ -14,8 +16,9 @@ class FakeWorkflowService:
     def __init__(self) -> None:
         self.calls: list[tuple[str, object]] = []
 
-    async def execute(self, workflow_key: str, payload: object) -> None:
-        self.calls.append((workflow_key, payload))
+    async def execute(self, workflow_key: str, payload: object, chat_id: int, backend_url: str, principal_id: int | None) -> int:
+        self.calls.append((workflow_key, payload, chat_id, backend_url, principal_id))
+        return 31
 
 
 def test_workflow_tool_logs_and_delegates_json_payload(caplog) -> None:
@@ -25,9 +28,10 @@ def test_workflow_tool_logs_and_delegates_json_payload(caplog) -> None:
     payload = {"values": ["a", 2, False]}
 
     with caplog.at_level(logging.INFO, logger="app.mcp.workflow"):
-        asyncio.run(mcp.call_tool("workflow.execute", {"workflow_key": "test-workflow", "payload": payload}))
+        context = Context(request_context=SimpleNamespace(meta={"avalon/execution_context": {"chat_id": 42}}))
+        asyncio.run(mcp.call_tool("workflow.execute", {"workflow_key": "test-workflow", "payload": payload}, context))
 
-    assert service.calls == [("test-workflow", payload)]
+    assert service.calls[0][:3] == ("test-workflow", payload, 42)
     record = next(record for record in caplog.records if "tool=workflow.execute" in record.message)
     assert json.loads(record.message.split("request=", 1)[1]) == {
         "workflow_key": "test-workflow",

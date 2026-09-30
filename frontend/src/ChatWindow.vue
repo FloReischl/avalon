@@ -11,6 +11,7 @@ import {
 
 import MarkdownComposer from "./components/MarkdownComposer.vue";
 import MarkdownMessage from "./components/MarkdownMessage.vue";
+import WorkflowDecorator from "./components/WorkflowDecorator.vue";
 
 import watermarkUrl from "./assets/watermark.png";
 
@@ -26,6 +27,7 @@ import {
   getAudioCallStatus,
   BACKEND_BASE_URL,
   type Attachment,
+  listenToWorkflowExecutions,
 } from "./services/backend";
 import { exportChatToMarkdown } from "./services/chatExport";
 import { showPermissionsWindowForChat } from "./services/permissionsWindow";
@@ -91,6 +93,7 @@ const callTurnActive = ref(false);
 const boundCallActive = ref(false);
 const selectedAttachments = ref<Attachment[] | undefined>();
 let unlistenAudioCall: (() => void) | undefined;
+let unlistenWorkflowExecutions: (() => void) | undefined;
 
 const isBoundCallTurnActive = computed(() => callTurnActive.value);
 
@@ -126,6 +129,7 @@ async function refreshCallStatus() {
   } catch (error) {
     console.error("[audio-call] failed to sync status", error);
   }
+
 }
 
 const isDialogRespondingOrSpeaking = computed(
@@ -452,6 +456,10 @@ onMounted(async () => {
   } catch (error) {
     console.error("[audio-call] failed to subscribe to call changes", error);
   }
+
+  unlistenWorkflowExecutions = listenToWorkflowExecutions(() => {
+    void refreshSelectedChat();
+  });
 });
 
 
@@ -474,6 +482,7 @@ onBeforeUnmount(() => {
   replaceCurrentTts();
   resetRecordingState();
   unlistenAudioCall?.();
+  unlistenWorkflowExecutions?.();
 });
 
 
@@ -1279,6 +1288,10 @@ function handleInputKeydown(event: KeyboardEvent) {
               class="message-content"
               :content="message.content"
               :preserve-line-breaks="message.role === 'user'"
+            />
+            <WorkflowDecorator
+              v-if="message.workflow_execution"
+              :execution="message.workflow_execution"
             />
 
 

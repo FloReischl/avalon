@@ -1,4 +1,4 @@
-import type { Attachment } from "../services/backend";
+import type { Attachment, WorkflowExecution } from "../services/backend";
 
 export interface ChatMessage {
   id?: number;
@@ -7,4 +7,5 @@ export interface ChatMessage {
   kind?: "text" | "audio";
   created_at?: string;
   attachments?: Attachment[];
+  workflow_execution?: WorkflowExecution | null;
 }

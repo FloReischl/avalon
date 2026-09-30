@@ -141,7 +141,7 @@ def create_app() -> FastAPI:
         allow_origins=[settings.frontend_dev_origin],
         allow_credentials=False,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
-        allow_headers=["Content-Type"],
+        allow_headers=["Content-Type", "Authorization"],
         expose_headers=["X-Avalon-TTS-Playback-ID"],
 
     )

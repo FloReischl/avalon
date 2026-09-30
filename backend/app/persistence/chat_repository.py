@@ -108,6 +108,22 @@ class ChatRepository:
             session.commit()
             return True
 
+    def update_open_workflow_message(self, chat_id: int, content: str) -> bool:
+        """Finalize the newest workflow-owned placeholder message for a chat."""
+        if not content:
+            raise ValueError("Message content must not be empty.")
+        with self._session_factory() as session:
+            message = session.scalar(
+                select(Message)
+                .where(Message.chat_id == chat_id, Message.role == "assistant", Message.content == "")
+                .order_by(Message.id.desc())
+            )
+            if message is None:
+                return False
+            message.content = content
+            session.commit()
+            return True
+
     def get_chat(self, chat_id: int) -> Chat | None:
         """Return one chat or None when it does not exist."""
         with self._session_factory() as session:
@@ -177,6 +193,7 @@ class ChatRepository:
                 select(Message)
                 .where(Message.chat_id == chat_id)
                 .order_by(Message.created_at, Message.id)
+                .options(selectinload(Message.workflow_execution))
             )
             return list(session.scalars(statement))
 

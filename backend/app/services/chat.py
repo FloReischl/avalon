@@ -167,7 +167,7 @@ class ChatService:
             )
             assert principal_id is not None
             chunks = self._tool_runner.stream_response(
-                principal_id, turn.messages, turn.authorization_source_label
+                principal_id, turn.messages, turn.authorization_source_label, turn.chat_id
             )
 
         else:
@@ -179,11 +179,14 @@ class ChatService:
 
         response = "".join(response_chunks)
         if response:
-            self._repository.add_message(
-                turn.chat_id,
-                "assistant",
-                response,
-            )
+            if not self._repository.update_open_workflow_message(turn.chat_id, response):
+                self._repository.add_message(turn.chat_id, "assistant", response)
+
+    def persist_stream_error(self, turn: ChatTurn, error: Exception) -> None:
+        """Keep useful raw local diagnostics in the assistant message for failed turns."""
+        message = str(error) or error.__class__.__name__
+        if not self._repository.update_open_workflow_message(turn.chat_id, message):
+            self._repository.add_message(turn.chat_id, "assistant", message)
 
     def _context_identity(self, agent_id: int | None):
         if agent_id is None:

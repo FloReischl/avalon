@@ -273,12 +273,13 @@ export function useTransientChat(
     state.messages.splice(
       0,
       state.messages.length,
-      ...detail.messages.map(({ id, role, content, created_at, attachments }) => ({
+      ...detail.messages.map(({ id, role, content, created_at, attachments, workflow_execution }) => ({
         id,
         role,
         content,
         created_at,
         attachments,
+        workflow_execution,
       })),
     );
     applyCompressionStatus(state, detail.compression_error_code);
@@ -313,12 +314,13 @@ export function useTransientChat(
 
     const state = createChatState(
       detail.id,
-      detail.messages.map(({ id, role, content, created_at, attachments }) => ({
+      detail.messages.map(({ id, role, content, created_at, attachments, workflow_execution }) => ({
         id,
         role,
         content,
         created_at,
         attachments,
+        workflow_execution,
       })),
     );
     applyCompressionStatus(state, detail.compression_error_code);
@@ -526,6 +528,7 @@ export function useTransientChat(
         runningChatIds.delete(state.chatId);
       }
 
+      await refreshSelectedChat();
       await refreshChats();
     }
   }
