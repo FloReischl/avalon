@@ -65,7 +65,9 @@ class WorkflowService:
             asyncio.create_task(self._monitor(process, execution.id, workflow_key, repository, engine))
             return execution.id
         except Exception as exc:
-            updated = repository.append_process_failure(execution.id, str(exc))
+            updated = repository.append_process_failure(
+                execution.id, f"Workflow failed to start: {exc}"
+            )
             if updated is not None:
                 self._publish(updated)
             if engine is not None:

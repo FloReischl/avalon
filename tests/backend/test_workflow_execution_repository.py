@@ -8,6 +8,7 @@ from app.persistence.chat_repository import ChatRepository
 from app.persistence.database import create_database_engine, create_session_factory
 from app.persistence.migrations import run_migrations
 from app.persistence.workflow_execution_repository import WorkflowExecutionRepository
+from app.services.workflows import WorkflowService
 
 
 @pytest.fixture
@@ -53,3 +54,42 @@ def test_progress_rejects_reset_to_null(repository) -> None:
 
     with pytest.raises(ValueError, match="cannot be reset"):
         repo.update(execution.id, state=None, progress_content=None, has_progress=True)
+
+
+def test_process_failure_appends_to_existing_progress(repository) -> None:
+    repo, chat = repository
+    execution = repo.create(chat.id, "hash")
+    repo.update(execution.id, state=None, progress_content=["Podcast 1 fertig"], has_progress=True)
+
+    failed = repo.append_process_failure(execution.id, "Workflow failed to start: permission denied")
+
+    assert failed is not None
+    assert failed.state == "failed"
+    assert failed.progress_content == (
+        '["Podcast 1 fertig", "Workflow failed to start: permission denied"]'
+    )
+
+
+@pytest.mark.asyncio
+async def test_start_failure_appends_clear_system_progress(monkeypatch, repository) -> None:
+    repo, chat = repository
+
+    class Config:
+        @staticmethod
+        def get(_key):
+            return type("Workflow", (), {"file_path": Path("/workflow.py")})()
+
+    async def fail_to_start(*_args, **_kwargs):
+        raise OSError("permission denied")
+
+    monkeypatch.setattr("app.services.workflows.asyncio.create_subprocess_exec", fail_to_start)
+    service = WorkflowService(Config(), repo)
+    monkeypatch.setattr(service, "_publish", lambda _execution: None)
+
+    with pytest.raises(OSError, match="permission denied"):
+        await service.execute("podcast", {}, chat.id, "http://localhost")
+
+    execution = repo.get(1)
+    assert execution is not None
+    assert execution.state == "failed"
+    assert execution.progress_content == '["Workflow failed to start: permission denied"]'
