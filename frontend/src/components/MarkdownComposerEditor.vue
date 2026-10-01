@@ -379,6 +379,14 @@ function handleKeydown(event: KeyboardEvent) {
   white-space: pre-wrap;
 }
 
+.markdown-composer :deep(.ProseMirror code) {
+  padding: 0.1rem 0.3rem;
+  border-radius: 0.25rem;
+  background: #eeeeee;
+  font-family: ui-monospace, "Consolas", "Liberation Mono", monospace;
+  font-size: 0.92em;
+}
+
 .markdown-composer :deep(.ProseMirror pre) {
   margin: 0.75rem 0;
   padding: 0.75rem 0.9rem;
@@ -386,6 +394,7 @@ function handleKeydown(event: KeyboardEvent) {
   border: 1px solid #dddddd;
   border-radius: 0.4rem;
   background: #f5f5f5;
+  font-family: ui-monospace, "Consolas", "Liberation Mono", monospace;
 }
 
 .markdown-composer :deep(.ProseMirror pre code) {
@@ -393,6 +402,7 @@ function handleKeydown(event: KeyboardEvent) {
   border: 0;
   background: transparent;
   font-family: inherit;
+  font-size: inherit;
 }
 
 .markdown-composer :deep(.ProseMirror table) {
