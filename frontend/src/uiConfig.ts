@@ -30,20 +30,51 @@ export type UiConfig = {
 let uiConfig: UiConfig | undefined;
 let uiConfigPromise: Promise<UiConfig> | undefined;
 
-async function requestUiConfig(): Promise<UiConfig> {
+const UI_CONFIG_RETRY_COUNT = 10;
+const UI_CONFIG_RETRY_DELAY_MS = 500;
+
+class UiConfigHttpError extends Error {
+  constructor(readonly status: number) {
+    super(`UI config request failed with HTTP ${status}`);
+  }
+}
+
+function waitForUiConfigRetry(): Promise<void> {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, UI_CONFIG_RETRY_DELAY_MS);
+  });
+}
+
+async function requestUiConfigOnce(): Promise<UiConfig> {
   const response = await fetch(
     `${BACKEND_BASE_URL}/api/v1/ui/config`,
   );
 
   if (!response.ok) {
-    throw new Error(
-      `UI config request failed with HTTP ${response.status}`,
-    );
+    throw new UiConfigHttpError(response.status);
   }
 
   const config = await response.json() as UiConfig;
   setPrincipalBearerToken(config.principalBearerToken);
   return config;
+}
+
+async function requestUiConfig(): Promise<UiConfig> {
+  for (let retry = 0; ; retry += 1) {
+    try {
+      return await requestUiConfigOnce();
+    } catch (error) {
+      const retryable =
+        !(error instanceof UiConfigHttpError)
+        || error.status >= 500;
+
+      if (!retryable || retry >= UI_CONFIG_RETRY_COUNT) {
+        throw error;
+      }
+
+      await waitForUiConfigRetry();
+    }
+  }
 }
 
 export async function loadUiConfig(): Promise<UiConfig> {
