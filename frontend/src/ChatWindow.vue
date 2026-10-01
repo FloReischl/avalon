@@ -182,6 +182,7 @@ const historyChats = computed(
 );
 
 const openChatMenuId = ref<number>();
+const openExportMenuId = ref<number>();
 const renameChatId = ref<number>();
 const renameTitle = ref("");
 const renameValidationError = ref<string>();
@@ -302,11 +303,18 @@ async function abortAudioRecording() {
 
 function closeChatMenu() {
   openChatMenuId.value = undefined;
+  openExportMenuId.value = undefined;
 }
 
 function toggleChatMenu(chatId: number) {
-  openChatMenuId.value =
-    openChatMenuId.value === chatId ? undefined : chatId;
+  const isOpen = openChatMenuId.value === chatId;
+  openChatMenuId.value = isOpen ? undefined : chatId;
+  openExportMenuId.value = undefined;
+}
+
+function toggleExportMenu(chatId: number) {
+  openExportMenuId.value =
+    openExportMenuId.value === chatId ? undefined : chatId;
 }
 
 function openRenameDialog(chatId: number) {
@@ -1002,12 +1010,15 @@ function handleInputKeydown(event: KeyboardEvent) {
                     type="button"
                     role="menuitem"
                     aria-haspopup="menu"
+                    :aria-expanded="openExportMenuId === chat.id"
                     :data-testid="`chat-export-${chat.id}`"
+                    @click="toggleExportMenu(chat.id)"
                   >
                     Export
                   </button>
                   <div
-                    class="chat-menu chat-menu-submenu-popup"
+                    v-if="openExportMenuId === chat.id"
+                    class="chat-menu-submenu-content"
                     role="menu"
                     :data-testid="`chat-export-submenu-${chat.id}`"
                   >
@@ -1149,12 +1160,15 @@ function handleInputKeydown(event: KeyboardEvent) {
                     type="button"
                     role="menuitem"
                     aria-haspopup="menu"
+                    :aria-expanded="openExportMenuId === chat.id"
                     :data-testid="`chat-export-${chat.id}`"
+                    @click="toggleExportMenu(chat.id)"
                   >
                     Export
                   </button>
                   <div
-                    class="chat-menu chat-menu-submenu-popup"
+                    v-if="openExportMenuId === chat.id"
+                    class="chat-menu-submenu-content"
                     role="menu"
                     :data-testid="`chat-export-submenu-${chat.id}`"
                   >
@@ -1844,26 +1858,19 @@ function handleInputKeydown(event: KeyboardEvent) {
   box-shadow: 0 0.3rem 0.8rem rgb(0 0 0 / 15%);
 }
 
-.chat-menu-submenu {
-  position: relative;
-}
-
-.chat-menu-submenu-popup {
-  display: none;
-  top: -0.25rem;
-  right: auto;
-  left: 100%;
-  min-width: 13rem;
-}
-
-.chat-menu-submenu:hover .chat-menu-submenu-popup,
-.chat-menu-submenu:focus-within .chat-menu-submenu-popup {
-  display: block;
+.chat-menu-submenu-content {
+  padding-left: 0.6rem;
 }
 
 .chat-menu-submenu-trigger::after {
   content: "›";
   margin-left: auto;
+  transform: rotate(0deg);
+  transition: transform 0.15s ease;
+}
+
+.chat-menu-submenu-trigger[aria-expanded="true"]::after {
+  transform: rotate(90deg);
 }
 
 .chat-menu-item {
