@@ -165,6 +165,7 @@ class ChatSummaryResponse(BaseModel):
     id: int
     title: str
     pinned: bool
+    agent_name: str | None = None
     created_at: datetime
 
 

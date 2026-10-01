@@ -265,3 +265,33 @@ def test_delete_unknown_chat_returns_404() -> None:
     response = request("DELETE", "/api/v1/chats/999")
 
     assert response.status_code == 404
+
+
+def test_chat_summary_includes_agent_name_or_none() -> None:
+    from app.persistence.models import Agent
+
+    class AgentChatRepository(FakeChatRepository):
+        def __init__(self):
+            super().__init__()
+            self.chats[1].agent = None
+            agent = Agent(key="test-agent", name="Hedwig Agent")
+            self.chats[2].agent = agent
+
+    async def run_test():
+        application = create_app()
+        application.dependency_overrides[get_chat_repository] = lambda: AgentChatRepository()
+        transport = ASGITransport(app=application)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get(
+                "/api/v1/chats",
+                headers={"Authorization": f"Bearer {bearer_token_for_principal(1)}"},
+            )
+            assert response.status_code == 200
+            data = response.json()
+            assert data[0]["id"] == 2
+            assert data[0]["agent_name"] == "Hedwig Agent"
+            assert data[1]["id"] == 1
+            assert data[1]["agent_name"] is None
+
+    asyncio.run(run_test())
+

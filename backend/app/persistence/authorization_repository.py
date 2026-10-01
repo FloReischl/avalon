@@ -103,8 +103,15 @@ class AuthorizationRepository:
             principal = Principal(key=f"agent:{agent_config.key}")
             session.add(principal)
             session.flush()
-            agent = Agent(key=agent_config.key, principal_id=principal.id)
+            agent = Agent(
+                key=agent_config.key,
+                name=agent_config.name,
+                principal_id=principal.id,
+            )
             session.add(agent)
+            session.flush()
+        else:
+            agent.name = agent_config.name
             session.flush()
 
         self._reconcile_principal_permissions(

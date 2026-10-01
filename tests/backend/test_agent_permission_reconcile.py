@@ -113,3 +113,25 @@ def test_reconcile_rolls_back_every_change_after_a_failure(repository, monkeypat
         assert session.scalars(select(PermissionCatalog)).all() == []
         assert session.scalars(select(Agent)).all() == []
         assert session.scalars(select(PrincipalPermission)).all() == []
+
+
+def test_reconcile_persists_and_updates_agent_name(repository) -> None:
+    repo, session_factory = repository
+    config_v1 = AgentsConfig.model_validate(
+        {"agents": [{"name": "Hedwig", "key": "podcast", "persona": "P", "instructions": "I", "permissions": []}]}
+    )
+    repo.reconcile_agents_permissions(config_v1)
+
+    with session_factory() as session:
+        agent = session.scalar(select(Agent).where(Agent.key == "podcast"))
+        assert agent.name == "Hedwig"
+
+    config_v2 = AgentsConfig.model_validate(
+        {"agents": [{"name": "Hedwig Updated", "key": "podcast", "persona": "P", "instructions": "I", "permissions": []}]}
+    )
+    repo.reconcile_agents_permissions(config_v2)
+
+    with session_factory() as session:
+        agent = session.scalar(select(Agent).where(Agent.key == "podcast"))
+        assert agent.name == "Hedwig Updated"
+

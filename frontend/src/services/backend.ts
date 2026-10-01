@@ -65,6 +65,7 @@ export interface ChatSummary {
   id: number;
   title: string;
   pinned: boolean;
+  agent_name: string | null;
   created_at: string;
 }
 

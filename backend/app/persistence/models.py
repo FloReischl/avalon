@@ -40,6 +40,7 @@ class Agent(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     key: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
     principal_id: Mapped[int] = mapped_column(
         ForeignKey("principals.id", ondelete="RESTRICT"),
         nullable=False,
@@ -173,6 +174,7 @@ class Chat(Base):
         back_populates="chat",
         cascade="all, delete-orphan",
     )
+    agent: Mapped["Agent | None"] = relationship()
 
 
 class Message(Base):

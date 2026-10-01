@@ -113,7 +113,11 @@ class ChatRepository:
     def get_chat(self, chat_id: int) -> Chat | None:
         """Return one chat or None when it does not exist."""
         with self._session_factory() as session:
-            return session.get(Chat, chat_id)
+            return session.scalar(
+                select(Chat)
+                .where(Chat.id == chat_id)
+                .options(selectinload(Chat.agent))
+            )
 
     def get_principal_by_key(self, key: str) -> Principal | None:
         """Resolve a configured chat principal."""
@@ -287,6 +291,7 @@ class ChatRepository:
                 .join(Message, Message.chat_id == Chat.id)
                 .group_by(Chat.id)
                 .order_by(last_message_at.desc(), Chat.id.desc())
+                .options(selectinload(Chat.agent))
             )
             return list(session.scalars(statement))
 
@@ -295,7 +300,11 @@ class ChatRepository:
         normalized_title = self._validate_title(title)
 
         with self._session_factory() as session:
-            chat = session.get(Chat, chat_id)
+            chat = session.scalar(
+                select(Chat)
+                .where(Chat.id == chat_id)
+                .options(selectinload(Chat.agent))
+            )
             if chat is None:
                 return None
 
@@ -308,7 +317,11 @@ class ChatRepository:
     def set_pinned(self, chat_id: int, pinned: bool) -> Chat | None:
         """Persist the pinned state of one chat."""
         with self._session_factory() as session:
-            chat = session.get(Chat, chat_id)
+            chat = session.scalar(
+                select(Chat)
+                .where(Chat.id == chat_id)
+                .options(selectinload(Chat.agent))
+            )
             if chat is None:
                 return None
 

@@ -50,10 +50,12 @@ async def get_authorization_repository():
 
 def _summary_response(chat) -> ChatSummaryResponse:
     """Translate one persistent chat into its public summary schema."""
+    agent_name = chat.agent.name if chat.agent is not None else None
     return ChatSummaryResponse(
         id=chat.id,
         title=chat.title,
         pinned=chat.pinned,
+        agent_name=agent_name,
         created_at=chat.created_at,
     )
 

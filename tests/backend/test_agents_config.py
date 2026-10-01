@@ -60,3 +60,28 @@ def test_duplicate_agent_permission_identity_is_invalid(tmp_path: Path) -> None:
 
     with pytest.raises(ValidationError, match="Permission identities must be unique"):
         load_agents_config(path)
+
+
+@pytest.mark.parametrize("invalid_name", [None, "", "   "])
+def test_agent_config_rejects_missing_null_or_empty_name(tmp_path: Path, invalid_name) -> None:
+    path = tmp_path / "agents.yaml"
+    path.write_text(
+        yaml.safe_dump(
+            {
+                "agents": [
+                    {
+                        "name": invalid_name,
+                        "key": "podcast",
+                        "persona": "P",
+                        "instructions": "I",
+                        "permissions": [],
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValidationError):
+        load_agents_config(path)
+
