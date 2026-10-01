@@ -2,7 +2,7 @@
 
 from uuid import uuid4
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 
 from app.api.schemas import (
     UiAnimationResponse,
@@ -12,6 +12,9 @@ from app.api.schemas import (
     UiStandardImageResponse,
 )
 from app.state import get_avalon_state
+from app.persistence.authorization_repository import AuthorizationRepository
+from app.api.routes.chats import get_authorization_repository
+from app.mcp.security import bearer_token_for_principal
 
 
 router = APIRouter(prefix="/ui", tags=["ui"])
@@ -35,13 +38,21 @@ def _avatar_asset_url(
 
 
 @router.get("/config", response_model=UiConfigResponse)
-async def ui_config(request: Request) -> UiConfigResponse:
+async def ui_config(
+    request: Request,
+    repository: AuthorizationRepository = Depends(get_authorization_repository),
+) -> UiConfigResponse:
     """Return only configuration intentionally exposed to the frontend."""
     state = get_avalon_state()
     avatar = state.current_avatar
+    principal = repository.get_principal_by_key(state.user_config.chat_default_principal_key)
+    if principal is None:
+        raise RuntimeError("Configured default chat principal does not exist.")
+    principal_token = bearer_token_for_principal(principal.id)
 
     return UiConfigResponse(
         name=state.user_config.name,
+        principalBearerToken=principal_token,
         avatar=UiAvatarResponse(
             greetingAudioUrl=_avatar_asset_url(
                 request,

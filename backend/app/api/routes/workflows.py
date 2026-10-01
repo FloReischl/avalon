@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import json
 from collections.abc import AsyncIterator
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
 from app.api.schemas import WorkflowRuntimeUpdateRequest
@@ -31,18 +30,20 @@ def _event(event: WorkflowExecutionEvent) -> str:
 
 
 @router.patch("/{execution_id}/runtime")
-def update_runtime(
+async def update_runtime(
     execution_id: int,
     request: WorkflowRuntimeUpdateRequest,
-    authorization: str | None = Header(default=None),
+    http_request: Request,
     repository: WorkflowExecutionRepository = Depends(get_workflow_execution_repository),
 ):
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Workflow runtime token required.")
-    token = authorization.removeprefix("Bearer ")
+    principal_id = http_request.scope.get("avalon.principal_id")
+    if principal_id is None:
+        raise HTTPException(status_code=401, detail="Bearer token required.")
     execution = repository.get(execution_id)
-    if execution is None or not secrets_compare(execution.runtime_token_hash, hashlib.sha256(token.encode()).hexdigest()):
-        raise HTTPException(status_code=401, detail="Invalid workflow runtime token.")
+    if execution is None or not repository.chat_matches_principal(
+        execution.progress_message.chat_id, principal_id
+    ):
+        raise HTTPException(status_code=401, detail="Workflow execution does not belong to principal.")
     provided = "progress_content" in request.model_fields_set
     if provided and (request.progress_content is None or not request.progress_content or not all(isinstance(item, str) and item for item in request.progress_content)):
         raise HTTPException(status_code=422, detail="progress_content must be a non-empty list of strings.")
@@ -59,13 +60,6 @@ def update_runtime(
             )
         )
     return {"changed": updated is not None}
-
-
-def secrets_compare(left: str, right: str) -> bool:
-    import hmac
-    return hmac.compare_digest(left, right)
-
-
 @router.get("/events")
 async def events(request: Request) -> StreamingResponse:
     queue = get_workflow_event_manager().subscribe()

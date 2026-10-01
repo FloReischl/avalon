@@ -50,6 +50,7 @@ class UiConfigResponse(BaseModel):
     """Configuration intentionally exposed to the frontend."""
 
     name: str
+    principalBearerToken: str
     avatar: UiAvatarResponse
 
 

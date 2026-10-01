@@ -1,11 +1,13 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { streamDialogResponse } from "../../frontend/src/services/backend";
+import { setPrincipalBearerToken, streamDialogResponse } from "../../frontend/src/services/backend";
 
 
 afterEach(() => {
   vi.restoreAllMocks();
 });
+
+beforeEach(() => setPrincipalBearerToken("test-token"));
 
 
 describe("streamDialogResponse", () => {
@@ -75,13 +77,9 @@ describe("streamDialogResponse", () => {
     expect(url).toBe(
       "http://127.0.0.1:8095/api/v1/audio/dialog/turn",
     );
-    expect(options).toMatchObject({
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      signal: controller.signal,
-    });
+    expect(options).toMatchObject({ method: "POST", signal: controller.signal });
+    expect(new Headers(options?.headers).get("Content-Type")).toBe("application/json");
+    expect(new Headers(options?.headers).get("Authorization")).toBe("Bearer test-token");
     expect(JSON.parse(String(options?.body))).toEqual({
       chat_id: 42,
       messages: [

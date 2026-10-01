@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   abortAudioRecording,
@@ -7,6 +7,7 @@ import {
   streamAudioResponse,
   streamChatMessage,
   synthesizeSpeech,
+  setPrincipalBearerToken,
 } from "../../frontend/src/services/backend";
 
 
@@ -31,6 +32,7 @@ function createStreamingResponse(parts: string[]): Response {
 }
 
 describe("tts", () => {
+  beforeEach(() => setPrincipalBearerToken("test-token"));
   afterEach(() => {
     vi.restoreAllMocks();
   });
@@ -101,6 +103,7 @@ describe("tts", () => {
 });
 
 describe("streamChatMessage", () => {
+  beforeEach(() => setPrincipalBearerToken("test-token"));
   afterEach(() => {
     vi.restoreAllMocks();
   });

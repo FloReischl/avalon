@@ -3,10 +3,8 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import json
 import logging
-import secrets
 import sys
 
 from pydantic import JsonValue
@@ -22,6 +20,7 @@ from app.services.context_compression import (
 )
 from app.services.workflow_events import WorkflowExecutionEvent, get_workflow_event_manager
 from app.state import get_avalon_state
+from app.mcp.security import bearer_token_for_principal
 
 
 logger = logging.getLogger(__name__)
@@ -74,7 +73,9 @@ class WorkflowService:
             )
         return configured_agent
 
-    async def execute(self, workflow_key: str, payload: JsonValue, chat_id: int, invocation_id: str, backend_url: str, principal_id: int | None = None) -> int:
+    async def execute(self, workflow_key: str, payload: JsonValue, chat_id: int, invocation_id: str, backend_url: str, principal_id: int) -> int:
+        if not isinstance(principal_id, int) or isinstance(principal_id, bool) or principal_id < 1:
+            raise WorkflowExecutionError("Workflow execution requires a parent principal.")
         config = self._config or get_workflows_config()
         try:
             workflow = config.get(workflow_key)
@@ -82,7 +83,7 @@ class WorkflowService:
             raise WorkflowExecutionError(f"Unknown workflow: {workflow_key}") from exc
 
         repository, chat_repository, engine = self._repositories_for_call()
-        if principal_id is not None and not repository.chat_matches_principal(chat_id, principal_id):
+        if not repository.chat_matches_principal(chat_id, principal_id):
             if engine is not None:
                 engine.dispose()
             raise WorkflowExecutionError("Workflow execution context does not belong to principal.")
@@ -100,17 +101,15 @@ class WorkflowService:
             chat.compressed_through_seq,
         )
 
-        token = secrets.token_urlsafe(32)
         execution = repository.create(
             chat_id, invocation_id, workflow_key,
-            hashlib.sha256(token.encode()).hexdigest(),
         )
         self._publish(execution)
         envelope = {
             "avalon": {
                 "workflow_execution_id": execution.id,
                 "backend_url": backend_url,
-                "runtime_token": token,
+                "principal_bearer_token": bearer_token_for_principal(principal_id),
                 "model_persona": "" if identity is None else identity.persona,
                 "model_instructions": "" if identity is None else identity.instructions,
                 "model_context": model_context,

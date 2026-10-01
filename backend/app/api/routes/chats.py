@@ -39,7 +39,7 @@ def get_chat_repository():
         engine.dispose()
 
 
-def get_authorization_repository():
+async def get_authorization_repository():
     engine = create_database_engine()
     repository = AuthorizationRepository(create_session_factory(engine))
     try:

@@ -14,6 +14,7 @@ from app.models_config import load_models_config
 from app.state import initialize_avalon_state
 from app.avatars_config import initialize_avatars_config
 from app.user_config import initialize_user_config
+from app.mcp.security import principal_from_authorization
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -77,6 +78,9 @@ def test_ui_config_exposes_only_frontend_runtime_data() -> None:
     payload = response.json()
 
     assert payload["name"] == "Frieda"
+    assert principal_from_authorization(
+        f"Bearer {payload['principalBearerToken']}"
+    ) > 0
     assert payload["avatar"]["standard"]["key"] == "standard"
 
     cache_token = assert_avatar_asset_url(

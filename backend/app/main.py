@@ -6,7 +6,7 @@ import traceback
 from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -113,8 +113,8 @@ class StderrExceptionMiddleware:
             raise
 
 
-class McpBearerMiddleware:
-    """Require the provisional JWT-shaped bearer token on the MCP endpoint."""
+class PrincipalBearerMiddleware:
+    """Resolve the local bearer token for mounted MCP requests."""
 
     def __init__(self, app) -> None:
         self.app = app
@@ -123,11 +123,12 @@ class McpBearerMiddleware:
         if scope["type"] != "http" or not scope["path"].startswith("/mcp"):
             await self.app(scope, receive, send)
             return
-        headers = dict(scope["headers"])
         try:
-            principal_id = principal_from_authorization(headers.get(b"authorization", b"").decode())
-        except HTTPException as exc:
-            await JSONResponse({"detail": exc.detail}, status_code=exc.status_code)(scope, receive, send)
+            authorization = dict(scope["headers"]).get(b"authorization", b"").decode("ascii")
+            principal_id = principal_from_authorization(authorization)
+        except (HTTPException, UnicodeDecodeError) as exc:
+            detail = exc.detail if isinstance(exc, HTTPException) else "Invalid bearer token."
+            await JSONResponse({"detail": detail}, status_code=401)(scope, receive, send)
             return
         token = current_principal_id.set(principal_id)
         try:
@@ -136,11 +137,24 @@ class McpBearerMiddleware:
             current_principal_id.reset(token)
 
 
+async def require_api_principal(request: Request) -> None:
+    """Resolve the bearer principal for API routes where identity matters."""
+    path = request.url.path
+    if not path.startswith("/api/v1/") or path == "/api/v1/ui/config" or path.startswith("/api/v1/assets/avatar/") or (path.endswith("/download") and path.startswith("/api/v1/attachments/")) or path in {"/api/v1/authorization-requests/events", "/api/v1/workflow-executions/events"}:
+        return
+    principal_id = principal_from_authorization(request.headers.get("Authorization"))
+    request.scope["avalon.principal_id"] = principal_id
+
+
 def create_app() -> FastAPI:
     """Create the backend application."""
 
-    application = FastAPI(title=settings.app_name, lifespan=lifespan)
-    application.add_middleware(McpBearerMiddleware)
+    application = FastAPI(
+        title=settings.app_name,
+        lifespan=lifespan,
+        dependencies=[Depends(require_api_principal)],
+    )
+    application.add_middleware(PrincipalBearerMiddleware)
     application.add_middleware(StderrExceptionMiddleware)
     application.add_middleware(
         CORSMiddleware,

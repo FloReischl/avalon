@@ -1,5 +1,19 @@
 export const BACKEND_BASE_URL = "http://127.0.0.1:8095";
 
+let principalBearerToken: string | undefined;
+
+export function setPrincipalBearerToken(token: string): void {
+  if (!token) throw new Error("UI config returned an empty principal bearer token");
+  principalBearerToken = token;
+}
+
+function authenticatedFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
+  if (!principalBearerToken) throw new Error("Principal bearer token is not initialized");
+  const headers = new Headers(init.headers);
+  headers.set("Authorization", `Bearer ${principalBearerToken}`);
+  return fetch(input, { ...init, headers });
+}
+
 export interface BackendHealth {
   status: "ok";
   service: string;
@@ -130,7 +144,7 @@ export async function getBackendHealth(): Promise<BackendHealth> {
 }
 
 export async function warmUpRuntime(): Promise<void> {
-  const response = await fetch(
+  const response = await authenticatedFetch(
     `${BACKEND_BASE_URL}/api/v1/runtime/warm-up`,
     { method: "POST" },
   );
@@ -141,7 +155,7 @@ export async function warmUpRuntime(): Promise<void> {
 }
 
 export async function getChats(): Promise<ChatSummary[]> {
-  const response = await fetch(`${BACKEND_BASE_URL}/api/v1/chats`);
+  const response = await authenticatedFetch(`${BACKEND_BASE_URL}/api/v1/chats`);
   if (!response.ok) {
     throw new Error(`Chat list request failed with ${response.status}`);
   }
@@ -150,7 +164,7 @@ export async function getChats(): Promise<ChatSummary[]> {
 }
 
 export async function getChat(chatId: number): Promise<ChatDetail> {
-  const response = await fetch(
+  const response = await authenticatedFetch(
     `${BACKEND_BASE_URL}/api/v1/chats/${chatId}`,
   );
   if (!response.ok) {
@@ -164,7 +178,7 @@ export async function renameChat(
   chatId: number,
   title: string,
 ): Promise<ChatSummary> {
-  const response = await fetch(
+  const response = await authenticatedFetch(
     `${BACKEND_BASE_URL}/api/v1/chats/${chatId}`,
     {
       method: "PATCH",
@@ -186,7 +200,7 @@ export async function setChatPinned(
   chatId: number,
   pinned: boolean,
 ): Promise<ChatSummary> {
-  const response = await fetch(
+  const response = await authenticatedFetch(
     `${BACKEND_BASE_URL}/api/v1/chats/${chatId}/pinned`,
     {
       method: "PATCH",
@@ -207,7 +221,7 @@ export async function setChatPinned(
 export async function deleteChat(
   chatId: number,
 ): Promise<void> {
-  const response = await fetch(
+  const response = await authenticatedFetch(
     `${BACKEND_BASE_URL}/api/v1/chats/${chatId}`,
     {
       method: "DELETE",
@@ -232,7 +246,7 @@ export async function streamChatMessage(
         message: request.message,
       };
 
-  const response = await fetch(`${BACKEND_BASE_URL}/api/v1/chat`, {
+  const response = await authenticatedFetch(`${BACKEND_BASE_URL}/api/v1/chat`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -247,7 +261,7 @@ export async function streamChatMessage(
 export async function confirmAuthorization(
   requestId: string, approvedItemIndexes: number[], durationSeconds?: number,
 ): Promise<void> {
-  const response = await fetch(
+  const response = await authenticatedFetch(
     `${BACKEND_BASE_URL}/api/v1/authorization-requests/${requestId}/confirm`,
     { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ approved_item_indexes: approvedItemIndexes, duration_seconds: durationSeconds }) },
   );
@@ -255,7 +269,7 @@ export async function confirmAuthorization(
 }
 
 export async function abortAuthorization(requestId: string): Promise<void> {
-  const response = await fetch(
+  const response = await authenticatedFetch(
     `${BACKEND_BASE_URL}/api/v1/authorization-requests/${requestId}/abort`,
     { method: "POST" },
   );
@@ -263,7 +277,7 @@ export async function abortAuthorization(requestId: string): Promise<void> {
 }
 
 export async function getPendingAuthorizationRequests(): Promise<PendingAuthorizationRequest[]> {
-  const response = await fetch(`${BACKEND_BASE_URL}/api/v1/authorization-requests`);
+  const response = await authenticatedFetch(`${BACKEND_BASE_URL}/api/v1/authorization-requests`);
   if (!response.ok) throw new Error(`Authorization request list failed with ${response.status}`);
   const payload = await response.json() as Array<Record<string, unknown>>;
   return payload.map((request) => ({
@@ -284,7 +298,7 @@ function proactivePermissionFromPayload(permission: Record<string, unknown>): Pr
 }
 
 export async function getChatPermissions(chatId: number): Promise<ProactivePermission[]> {
-  const response = await fetch(`${BACKEND_BASE_URL}/api/v1/chats/${chatId}/permissions`);
+  const response = await authenticatedFetch(`${BACKEND_BASE_URL}/api/v1/chats/${chatId}/permissions`);
   if (!response.ok) throw new Error(`Chat permissions request failed with ${response.status}`);
   return (await response.json() as Array<Record<string, unknown>>).map(proactivePermissionFromPayload);
 }
@@ -292,7 +306,7 @@ export async function getChatPermissions(chatId: number): Promise<ProactivePermi
 export async function saveChatPermission(
   chatId: number, permissionId: number, granted: boolean, expiresAt?: string,
 ): Promise<ProactivePermission> {
-  const response = await fetch(
+  const response = await authenticatedFetch(
     `${BACKEND_BASE_URL}/api/v1/chats/${chatId}/permissions/${permissionId}`,
     { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ granted, expires_at: expiresAt }) },
   );
@@ -301,7 +315,7 @@ export async function saveChatPermission(
 }
 
 export async function startAudioRecording(): Promise<void> {
-  const response = await fetch(
+  const response = await authenticatedFetch(
     `${BACKEND_BASE_URL}/api/v1/audio/recording/start`,
     { method: "POST" },
   );
@@ -311,7 +325,7 @@ export async function startAudioRecording(): Promise<void> {
 }
 
 export async function abortAudioRecording(): Promise<void> {
-  const response = await fetch(
+  const response = await authenticatedFetch(
     `${BACKEND_BASE_URL}/api/v1/audio/recording/abort`,
     { method: "POST" },
   );
@@ -326,7 +340,7 @@ export async function streamAudioResponse(
   signal: AbortSignal,
   chatId?: number,
 ): Promise<void> {
-  const response = await fetch(
+  const response = await authenticatedFetch(
     `${BACKEND_BASE_URL}/api/v1/audio/recording/stop`,
     {
       method: "POST",
@@ -351,7 +365,7 @@ export async function streamDialogResponse(
   signal: AbortSignal,
   chatId?: number,
 ): Promise<void> {
-  const response = await fetch(
+  const response = await authenticatedFetch(
     `${BACKEND_BASE_URL}/api/v1/audio/dialog/turn`,
     {
       method: "POST",
@@ -371,7 +385,7 @@ export async function streamDialogResponse(
 }
 
 export async function startAudioCall(chatId?: number): Promise<AudioCallStatus> {
-  const response = await fetch(`${BACKEND_BASE_URL}/api/v1/audio/call/start`, {
+  const response = await authenticatedFetch(`${BACKEND_BASE_URL}/api/v1/audio/call/start`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(chatId === undefined ? {} : { chat_id: chatId }),
@@ -381,25 +395,25 @@ export async function startAudioCall(chatId?: number): Promise<AudioCallStatus> 
 }
 
 export async function getAudioCallStatus(): Promise<AudioCallStatus> {
-  const response = await fetch(`${BACKEND_BASE_URL}/api/v1/audio/call/status`);
+  const response = await authenticatedFetch(`${BACKEND_BASE_URL}/api/v1/audio/call/status`);
   if (!response.ok) throw new Error(`Audio call status failed with ${response.status}`);
   return response.json() as Promise<AudioCallStatus>;
 }
 
 export async function consumeAudioCallSpeech(): Promise<string | null> {
-  const response = await fetch(`${BACKEND_BASE_URL}/api/v1/audio/call/speech/consume`, { method: "POST" });
+  const response = await authenticatedFetch(`${BACKEND_BASE_URL}/api/v1/audio/call/speech/consume`, { method: "POST" });
   if (!response.ok) throw new Error(`Audio call speech consume failed with ${response.status}`);
   return (await response.json() as { text: string | null }).text;
 }
 
 export async function endAudioCall(): Promise<AudioCallStatus> {
-  const response = await fetch(`${BACKEND_BASE_URL}/api/v1/audio/call/end`, { method: "POST" });
+  const response = await authenticatedFetch(`${BACKEND_BASE_URL}/api/v1/audio/call/end`, { method: "POST" });
   if (!response.ok) throw new Error(`Audio call end failed with ${response.status}`);
   return response.json() as Promise<AudioCallStatus>;
 }
 
 export async function completeAudioCallTurn(): Promise<AudioCallStatus> {
-  const response = await fetch(`${BACKEND_BASE_URL}/api/v1/audio/call/turn/complete`, { method: "POST" });
+  const response = await authenticatedFetch(`${BACKEND_BASE_URL}/api/v1/audio/call/turn/complete`, { method: "POST" });
   if (!response.ok) throw new Error(`Audio call turn completion failed with ${response.status}`);
   return response.json() as Promise<AudioCallStatus>;
 }
@@ -408,7 +422,7 @@ export async function synthesizeSpeech(
   text: string,
   signal: AbortSignal,
 ): Promise<TtsResponse> {
-  const response = await fetch(
+  const response = await authenticatedFetch(
     `${BACKEND_BASE_URL}/api/v1/tts`,
     {
       method: "POST",
@@ -440,7 +454,7 @@ export async function synthesizeSpeech(
 export async function notifyTtsPlaybackEnded(
   playbackId: string,
 ): Promise<void> {
-  const response = await fetch(
+  const response = await authenticatedFetch(
     `${BACKEND_BASE_URL}/api/v1/tts/playback-ended`,
     {
       method: "POST",

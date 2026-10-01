@@ -7,6 +7,7 @@ from httpx import ASGITransport, AsyncClient
 
 from app.api.routes.chats import get_chat, get_chat_repository
 from app.main import create_app
+from app.mcp.security import bearer_token_for_principal
 from app.persistence.models import Chat, TextMessage
 
 
@@ -111,6 +112,7 @@ def request(method: str, path: str, json=None):
                 method,
                 path,
                 json=json,
+                headers={"Authorization": f"Bearer {bearer_token_for_principal(1)}"},
             )
 
     return asyncio.run(send())

@@ -21,7 +21,7 @@ class WorkflowExecutionRepository:
         self._session_factory = session_factory
 
     def create(
-        self, chat_id: int, invocation_id: str, workflow_key: str, token_hash: str
+        self, chat_id: int, invocation_id: str, workflow_key: str
     ) -> WorkflowExecution:
         """Create one stable progress element and its running execution atomically."""
         with self._session_factory.begin() as session:
@@ -38,7 +38,6 @@ class WorkflowExecutionRepository:
                 progress_message=message,
                 workflow_key=workflow_key,
                 state="running",
-                runtime_token_hash=token_hash,
             )
             session.add_all([message, execution])
             session.flush()

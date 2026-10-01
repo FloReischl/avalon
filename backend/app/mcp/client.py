@@ -1,7 +1,5 @@
 """HTTP MCP client used by the production tool runner."""
 
-import base64
-import json
 import uuid
 from collections.abc import Awaitable, Callable
 from typing import TypeVar
@@ -11,16 +9,10 @@ from mcp import Client
 from mcp.client.streamable_http import streamable_http_client
 
 from app.config import settings
+from app.mcp.security import bearer_token_for_principal
 
 
 Result = TypeVar("Result")
-
-
-def _internal_token(principal_id: int) -> str:
-    """Temporary unsigned JWT-shaped token; replace with real JWT verification."""
-    def encode(value: dict[str, object]) -> str:
-        return base64.urlsafe_b64encode(json.dumps(value).encode()).decode().rstrip("=")
-    return f"{encode({'alg': 'none', 'typ': 'JWT'})}.{encode({'principal_id': principal_id})}."
 
 
 class HttpMcpToolClient:
@@ -32,7 +24,7 @@ class HttpMcpToolClient:
         self._invocation_id = str(uuid.uuid4())
 
     async def _request(self, operation: Callable[[Client], Awaitable[Result]]) -> Result:
-        headers = {"Authorization": f"Bearer {_internal_token(self._principal_id)}"}
+        headers = {"Authorization": f"Bearer {bearer_token_for_principal(self._principal_id)}"}
         async with httpx2.AsyncClient(
             headers=headers, timeout=self._REQUEST_TIMEOUT_SECONDS
         ) as http:

@@ -259,7 +259,6 @@ class WorkflowExecution(Base):
     )
     workflow_key: Mapped[str] = mapped_column(String(100), nullable=False)
     state: Mapped[str] = mapped_column(String(16), nullable=False)
-    runtime_token_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.current_timestamp()
     )
