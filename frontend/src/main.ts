@@ -16,7 +16,7 @@ async function bootstrap() {
   const isPermissionsWindow = currentWindow?.label === "permissions";
 
   if (currentWindow && isChatWindow) {
-    await currentWindow.setTitle("Chat Window");
+    await currentWindow.setTitle("New Chat - Avalon");
   }
 
   createApp(isPermissionsWindow ? PermissionsWindow : isChatWindow ? ChatWindow : App).mount("#app");

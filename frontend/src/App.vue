@@ -16,6 +16,7 @@ import {
   listenToBackendLifecycle,
 } from "./services/backendLifecycle";
 import { loadUiConfig, type UiConfig } from "./uiConfig";
+import { BACKEND_BASE_URL } from "./services/backend";
 
 import {
   resizeAvatarWindow,
@@ -244,6 +245,20 @@ async function changeAvatarScale(delta: number) {
 
   avatarScalePercent.value = nextScale;
   requestAvatarSync();
+
+  try {
+    const response = await fetch(`${BACKEND_BASE_URL}/api/v1/ui/settings`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ avatarZoom: nextScale / 100 }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to persist avatar zoom: ${response.status}`);
+    }
+  } catch (error) {
+    console.error("[ui-settings] failed to persist avatar zoom", error);
+  }
 }
 
 function handleAvatarScaleKeydown(event: KeyboardEvent) {
@@ -284,6 +299,9 @@ async function initializeUiConfig() {
 
   try {
     uiConfig.value = await loadUiConfig();
+    if (uiConfig.value.avatarZoom !== undefined) {
+      avatarScalePercent.value = Math.round(uiConfig.value.avatarZoom * 100);
+    }
     await setAvatarWindowTitle(uiConfig.value.name);
 
   } catch (error) {

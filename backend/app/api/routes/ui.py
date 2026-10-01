@@ -10,8 +10,10 @@ from app.api.schemas import (
     UiConfigResponse,
     UiSpriteRegionResponse,
     UiStandardImageResponse,
+    UserSettingsUpdateRequest,
 )
 from app.state import get_avalon_state
+from app.user_settings import get_user_settings, save_user_settings
 from app.persistence.authorization_repository import AuthorizationRepository
 from app.api.routes.chats import get_authorization_repository
 from app.mcp.security import bearer_token_for_principal
@@ -53,6 +55,7 @@ async def ui_config(
     return UiConfigResponse(
         name=state.user_config.name,
         principalBearerToken=principal_token,
+        avatarZoom=get_user_settings().avatar_zoom,
         avatar=UiAvatarResponse(
             greetingAudioUrl=_avatar_asset_url(
                 request,
@@ -89,3 +92,13 @@ async def ui_config(
             ],
         ),
     )
+
+
+@router.put("/settings")
+async def update_user_settings(body: UserSettingsUpdateRequest) -> dict:
+    """Update user settings (e.g. avatar zoom)."""
+    zoom = body.avatar_zoom if body.avatar_zoom is not None else body.avatarZoom
+    if zoom is None:
+        raise ValueError("avatar_zoom or avatarZoom is required.")
+    save_user_settings(zoom)
+    return {"status": "ok", "avatar_zoom": zoom}

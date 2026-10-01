@@ -17,6 +17,7 @@ export type UiAvatarAnimation = {
 export type UiConfig = {
   name: string;
   principalBearerToken: string;
+  avatarZoom: number;
   avatar: {
     greetingAudioUrl: string;
     standard: {

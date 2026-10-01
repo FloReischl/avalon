@@ -45,6 +45,7 @@ import {
   publishAudioCallChanged,
 } from "./services/audioCallEvents";
 import { boundCallChatToSelect } from "./services/audioCallBinding";
+import { setChatWindowTitle } from "./services/windowTitle";
 
 
 const uiConfig = ref<UiConfig>();
@@ -179,6 +180,28 @@ const pinnedChats = computed(
 );
 const historyChats = computed(
   () => chatSummaries.value.filter((chat) => !chat.pinned),
+);
+
+const chatWindowTitle = computed(() => {
+  if (selectedChatId.value === undefined) {
+    return "New Chat - Avalon";
+  }
+
+  const chat = chatSummaries.value.find(
+    (summary) => summary.id === selectedChatId.value,
+  );
+
+  return `${chat?.title ?? "New Chat"} - Avalon`;
+});
+
+watch(
+  chatWindowTitle,
+  (title) => {
+    void setChatWindowTitle(title).catch((error) => {
+      console.error("[window-title] failed to update chat window title", error);
+    });
+  },
+  { immediate: true },
 );
 
 const openChatMenuId = ref<number>();

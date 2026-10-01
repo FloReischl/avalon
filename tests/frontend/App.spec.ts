@@ -764,6 +764,33 @@ describe("App", () => {
     }
   });
 
+  it("applies saved zoom from uiConfig on startup", async () => {
+    getBackendSnapshotMock.mockResolvedValue({
+      status: "ready",
+      logs: ["Backend ready"],
+    });
+    loadUiConfigMock.mockResolvedValue({
+      name: "Frieda",
+      avatarZoom: 1.25,
+      avatar: {
+        greetingAudioUrl:
+          "http://127.0.0.1:8095/api/v1/assets/avatar/greeting",
+        standard: {
+          key: "standard",
+          url: "http://127.0.0.1:8095/api/v1/assets/avatar/images/standard",
+        },
+        animations: [],
+      },
+    });
+
+    const wrapper = mount(App);
+    await flushPromises();
+
+    expect(
+      wrapper.get('[data-testid="avatar-region"]').attributes("style"),
+    ).toContain("30rem");
+  });
+
   it.todo("sends a text message and renders the complete response");
   it.todo("records and submits a push-to-talk audio clip");
   it.todo("plays synthesized speech for an assistant response");

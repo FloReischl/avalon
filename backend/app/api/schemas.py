@@ -1,9 +1,9 @@
 """Public request and response schemas."""
 
 from datetime import datetime
-from typing import Literal
+from typing import Literal, Self
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class HealthResponse(BaseModel):
@@ -51,7 +51,22 @@ class UiConfigResponse(BaseModel):
 
     name: str
     principalBearerToken: str
+    avatarZoom: float
     avatar: UiAvatarResponse
+
+
+class UserSettingsUpdateRequest(BaseModel):
+    """Request payload for updating user settings."""
+
+    avatar_zoom: float | None = Field(default=None, ge=0.5, le=1.5)
+    avatarZoom: float | None = Field(default=None, ge=0.5, le=1.5)
+
+    @model_validator(mode="after")
+    def validate_zoom(self) -> Self:
+        zoom = self.avatar_zoom if self.avatar_zoom is not None else self.avatarZoom
+        if zoom is None:
+            raise ValueError("avatar_zoom or avatarZoom is required.")
+        return self
 
 
 class ChatRequest(BaseModel):

@@ -24,6 +24,7 @@ from app.persistence.workflow_execution_repository import WorkflowExecutionRepos
 from app.runtime.ollama import OllamaRuntime
 from app.state import initialize_avalon_state
 from app.user_config import initialize_user_config
+from app.user_settings import initialize_user_settings
 from app.agents_config import load_agents_config
 from app.workflows_config import initialize_workflows_config
 from app.services.workflows import WorkflowService
@@ -69,6 +70,7 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
     async with application.state.mcp.session_manager.run():
         try:
             user_config = initialize_user_config()
+            user_settings = initialize_user_settings()
             avatars_config = initialize_avatars_config()
             models_config = initialize_models_config()
             agents_config = load_agents_config()
@@ -140,7 +142,7 @@ class PrincipalBearerMiddleware:
 async def require_api_principal(request: Request) -> None:
     """Resolve the bearer principal for API routes where identity matters."""
     path = request.url.path
-    if not path.startswith("/api/v1/") or path == "/api/v1/ui/config" or path.startswith("/api/v1/assets/avatar/") or (path.endswith("/download") and path.startswith("/api/v1/attachments/")) or path in {"/api/v1/authorization-requests/events", "/api/v1/workflow-executions/events"}:
+    if not path.startswith("/api/v1/") or path in {"/api/v1/ui/config", "/api/v1/ui/settings"} or path.startswith("/api/v1/assets/avatar/") or (path.endswith("/download") and path.startswith("/api/v1/attachments/")) or path in {"/api/v1/authorization-requests/events", "/api/v1/workflow-executions/events"}:
         return
     principal_id = principal_from_authorization(request.headers.get("Authorization"))
     request.scope["avalon.principal_id"] = principal_id

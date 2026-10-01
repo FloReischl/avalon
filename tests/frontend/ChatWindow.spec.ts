@@ -33,10 +33,12 @@ const {
   startAudioCallMock,
   getAudioCallStatusMock,
   listenToAudioCallChangedMock,
+  listenToWorkflowExecutionsMock,
   publishAudioCallChangedMock,
   exportChatToMarkdownMock,
   getChatMarkdownMock,
   loadUiConfigMock,
+  setChatWindowTitleMock,
 } = vi.hoisted(() => ({
 
   abortAudioRecordingMock: vi.fn(),
@@ -51,10 +53,12 @@ const {
   startAudioCallMock: vi.fn(),
   getAudioCallStatusMock: vi.fn(),
   listenToAudioCallChangedMock: vi.fn(),
+  listenToWorkflowExecutionsMock: vi.fn(),
   publishAudioCallChangedMock: vi.fn(),
   exportChatToMarkdownMock: vi.fn(),
   getChatMarkdownMock: vi.fn(),
   loadUiConfigMock: vi.fn(),
+  setChatWindowTitleMock: vi.fn(),
 }));
 
 
@@ -77,6 +81,7 @@ vi.mock("../../frontend/src/services/backend", async (importOriginal) => {
     synthesizeSpeech: synthesizeSpeechMock,
     startAudioCall: startAudioCallMock,
     getAudioCallStatus: getAudioCallStatusMock,
+    listenToWorkflowExecutions: listenToWorkflowExecutionsMock,
 
   };
 });
@@ -93,6 +98,10 @@ vi.mock("../../frontend/src/services/chatExport", () => ({
 
 vi.mock("../../frontend/src/uiConfig", () => ({
   loadUiConfig: loadUiConfigMock,
+}));
+
+vi.mock("../../frontend/src/services/windowTitle", () => ({
+  setChatWindowTitle: setChatWindowTitleMock,
 }));
 
 vi.mock("../../frontend/src/components/MarkdownComposer.vue", async () => {
@@ -182,6 +191,8 @@ describe("ChatWindow", () => {
 
     listenToAudioCallChangedMock.mockReset();
     listenToAudioCallChangedMock.mockResolvedValue(() => {});
+    listenToWorkflowExecutionsMock.mockReset();
+    listenToWorkflowExecutionsMock.mockReturnValue(() => {});
     publishAudioCallChangedMock.mockReset();
     publishAudioCallChangedMock.mockResolvedValue(undefined);
 
@@ -203,6 +214,49 @@ describe("ChatWindow", () => {
         animations: [],
       },
     });
+
+    setChatWindowTitleMock.mockReset();
+    setChatWindowTitleMock.mockResolvedValue(undefined);
+  });
+
+
+  it("uses the selected chat title as the window title", async () => {
+    getChatsMock.mockResolvedValue([
+      {
+        id: 42,
+        title: "Mein Chat",
+        pinned: false,
+        created_at: "2026-09-07T10:00:00",
+      },
+    ]);
+    getChatMock.mockResolvedValue({
+      id: 42,
+      title: "Mein Chat",
+      pinned: false,
+      created_at: "2026-09-07T10:00:00",
+      messages: [],
+    });
+
+    const wrapper = mount(ChatWindow);
+    await flushPromises();
+
+    expect(setChatWindowTitleMock).toHaveBeenCalledWith(
+      "New Chat - Avalon",
+    );
+
+    await wrapper.get('[data-testid="chat-42"]').trigger("click");
+    await flushPromises();
+
+    expect(setChatWindowTitleMock).toHaveBeenLastCalledWith(
+      "Mein Chat - Avalon",
+    );
+
+    await wrapper.get('[data-testid="new-chat"]').trigger("click");
+    await flushPromises();
+
+    expect(setChatWindowTitleMock).toHaveBeenLastCalledWith(
+      "New Chat - Avalon",
+    );
   });
 
 
@@ -281,6 +335,7 @@ describe("ChatWindow", () => {
       messages: [
         {
           id: 1,
+          kind: "text",
           role: "assistant",
           content: "Hallo",
           created_at: "2026-09-07T10:00:01",
@@ -455,12 +510,14 @@ describe("ChatWindow", () => {
         messages: [
           {
             id: 1,
+            kind: "text",
             role: "user",
             content: "Audiofrage",
             created_at: "2026-09-11T18:00:01",
           },
           {
             id: 2,
+            kind: "text",
             role: "assistant",
             content: "Audioantwort",
             created_at: "2026-09-11T18:00:02",
@@ -1327,6 +1384,11 @@ describe("ChatWindow", () => {
     expect(
       wrapper.get('[data-testid="chat-export-42"]').text(),
     ).toBe("Export");
+
+    await wrapper
+      .get('[data-testid="chat-export-42"]')
+      .trigger("click");
+
     expect(
       wrapper.get('[data-testid="chat-export-download-42"]').text(),
     ).toBe("Download Markdown File...");
@@ -1376,6 +1438,9 @@ describe("ChatWindow", () => {
       .get('[data-testid="chat-menu-42"]')
       .trigger("click");
     await wrapper
+      .get('[data-testid="chat-export-42"]')
+      .trigger("click");
+    await wrapper
       .get('[data-testid="chat-export-clipboard-42"]')
       .trigger("click");
     await flushPromises();
@@ -1410,6 +1475,9 @@ describe("ChatWindow", () => {
 
     await wrapper
       .get('[data-testid="chat-menu-42"]')
+      .trigger("click");
+    await wrapper
+      .get('[data-testid="chat-export-42"]')
       .trigger("click");
     await wrapper
       .get('[data-testid="chat-export-download-42"]')
@@ -1572,12 +1640,14 @@ describe("ChatWindow", () => {
       messages: [
         {
           id: 1,
+          kind: "text",
           role: "user",
           content: "Frage",
           created_at: "2026-09-07T10:00:01",
         },
         {
           id: 2,
+          kind: "text",
           role: "assistant",
           content: "Antwort",
           created_at: "2026-09-07T10:00:02",
