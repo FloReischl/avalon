@@ -318,7 +318,7 @@ function handleKeydown(event: KeyboardEvent) {
   box-sizing: border-box;
   overflow: hidden;
   color: inherit;
-  font-family: ui-monospace, "Consolas", "Liberation Mono", monospace;
+  font-family: system-ui, sans-serif;
   font-size: 0.95rem;
   line-height: 1.45;
 }
