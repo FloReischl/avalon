@@ -29,7 +29,10 @@ import {
   type Attachment,
   listenToWorkflowExecutions,
 } from "./services/backend";
-import { exportChatToMarkdown } from "./services/chatExport";
+import {
+  exportChatToMarkdown,
+  getChatMarkdown,
+} from "./services/chatExport";
 import { showPermissionsWindowForChat } from "./services/permissionsWindow";
 import { formatMessageTime } from "./services/messageTime";
 import { requestRuntimeWarmUp } from "./services/runtimeWarmup";
@@ -394,6 +397,32 @@ async function exportChat(chatId: number) {
   } catch (error) {
 
     console.error("[chat-export] failed to export chat", error);
+    errorMessage.value = "Chat konnte nicht exportiert werden.";
+  }
+}
+
+async function copyChatMarkdownToClipboard(chatId: number) {
+  closeChatMenu();
+
+  try {
+    if (!uiConfig.value) {
+      throw new Error("UI configuration has not been loaded.");
+    }
+
+    if (!navigator.clipboard?.writeText) {
+      throw new Error("Clipboard API is not available.");
+    }
+
+    const markdown = await getChatMarkdown(
+      chatId,
+      uiConfig.value.name,
+    );
+    await navigator.clipboard.writeText(markdown);
+  } catch (error) {
+    console.error(
+      "[chat-export] failed to copy chat to clipboard",
+      error,
+    );
     errorMessage.value = "Chat konnte nicht exportiert werden.";
   }
 }
@@ -967,15 +996,41 @@ function handleInputKeydown(event: KeyboardEvent) {
                 >
                   Rename
                 </button>
-                <button
-                  class="chat-menu-item"
-                  type="button"
-                  role="menuitem"
-                  :data-testid="`chat-export-${chat.id}`"
-                  @click="exportChat(chat.id)"
-                >
-                  Export
-                </button>
+                <div class="chat-menu-submenu">
+                  <button
+                    class="chat-menu-item chat-menu-submenu-trigger"
+                    type="button"
+                    role="menuitem"
+                    aria-haspopup="menu"
+                    :data-testid="`chat-export-${chat.id}`"
+                  >
+                    Export
+                  </button>
+                  <div
+                    class="chat-menu chat-menu-submenu-popup"
+                    role="menu"
+                    :data-testid="`chat-export-submenu-${chat.id}`"
+                  >
+                    <button
+                      class="chat-menu-item"
+                      type="button"
+                      role="menuitem"
+                      :data-testid="`chat-export-download-${chat.id}`"
+                      @click="exportChat(chat.id)"
+                    >
+                      Download Markdown File...
+                    </button>
+                    <button
+                      class="chat-menu-item"
+                      type="button"
+                      role="menuitem"
+                      :data-testid="`chat-export-clipboard-${chat.id}`"
+                      @click="copyChatMarkdownToClipboard(chat.id)"
+                    >
+                      Markdown to Clipboard
+                    </button>
+                  </div>
+                </div>
                 <div class="chat-menu-separator" role="separator" />
                 <button
                   class="chat-menu-item"
@@ -1088,15 +1143,41 @@ function handleInputKeydown(event: KeyboardEvent) {
                 >
                   Rename
                 </button>
-                <button
-                  class="chat-menu-item"
-                  type="button"
-                  role="menuitem"
-                  :data-testid="`chat-export-${chat.id}`"
-                  @click="exportChat(chat.id)"
-                >
-                  Export
-                </button>
+                <div class="chat-menu-submenu">
+                  <button
+                    class="chat-menu-item chat-menu-submenu-trigger"
+                    type="button"
+                    role="menuitem"
+                    aria-haspopup="menu"
+                    :data-testid="`chat-export-${chat.id}`"
+                  >
+                    Export
+                  </button>
+                  <div
+                    class="chat-menu chat-menu-submenu-popup"
+                    role="menu"
+                    :data-testid="`chat-export-submenu-${chat.id}`"
+                  >
+                    <button
+                      class="chat-menu-item"
+                      type="button"
+                      role="menuitem"
+                      :data-testid="`chat-export-download-${chat.id}`"
+                      @click="exportChat(chat.id)"
+                    >
+                      Download Markdown File...
+                    </button>
+                    <button
+                      class="chat-menu-item"
+                      type="button"
+                      role="menuitem"
+                      :data-testid="`chat-export-clipboard-${chat.id}`"
+                      @click="copyChatMarkdownToClipboard(chat.id)"
+                    >
+                      Markdown to Clipboard
+                    </button>
+                  </div>
+                </div>
                 <div class="chat-menu-separator" role="separator" />
                 <button
                   class="chat-menu-item"
@@ -1589,7 +1670,7 @@ function handleInputKeydown(event: KeyboardEvent) {
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
-  overflow: hidden;
+  overflow: visible;
   background: #eeeeee;
 }
 
@@ -1721,6 +1802,7 @@ function handleInputKeydown(event: KeyboardEvent) {
 
 .chat-menu-container {
   position: relative;
+  z-index: 30;
   flex: 0 0 auto;
 }
 
@@ -1760,6 +1842,28 @@ function handleInputKeydown(event: KeyboardEvent) {
   border-radius: 0.4rem;
   background: #ffffff;
   box-shadow: 0 0.3rem 0.8rem rgb(0 0 0 / 15%);
+}
+
+.chat-menu-submenu {
+  position: relative;
+}
+
+.chat-menu-submenu-popup {
+  display: none;
+  top: -0.25rem;
+  right: auto;
+  left: 100%;
+  min-width: 13rem;
+}
+
+.chat-menu-submenu:hover .chat-menu-submenu-popup,
+.chat-menu-submenu:focus-within .chat-menu-submenu-popup {
+  display: block;
+}
+
+.chat-menu-submenu-trigger::after {
+  content: "›";
+  margin-left: auto;
 }
 
 .chat-menu-item {

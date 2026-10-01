@@ -35,6 +35,7 @@ const {
   listenToAudioCallChangedMock,
   publishAudioCallChangedMock,
   exportChatToMarkdownMock,
+  getChatMarkdownMock,
   loadUiConfigMock,
 } = vi.hoisted(() => ({
 
@@ -52,6 +53,7 @@ const {
   listenToAudioCallChangedMock: vi.fn(),
   publishAudioCallChangedMock: vi.fn(),
   exportChatToMarkdownMock: vi.fn(),
+  getChatMarkdownMock: vi.fn(),
   loadUiConfigMock: vi.fn(),
 }));
 
@@ -86,6 +88,7 @@ vi.mock("../../frontend/src/services/audioCallEvents", () => ({
 
 vi.mock("../../frontend/src/services/chatExport", () => ({
   exportChatToMarkdown: exportChatToMarkdownMock,
+  getChatMarkdown: getChatMarkdownMock,
 }));
 
 vi.mock("../../frontend/src/uiConfig", () => ({
@@ -184,6 +187,10 @@ describe("ChatWindow", () => {
 
     exportChatToMarkdownMock.mockReset();
     exportChatToMarkdownMock.mockResolvedValue(undefined);
+    getChatMarkdownMock.mockReset();
+    getChatMarkdownMock.mockResolvedValue(
+      "# User\n\nFrage\n---\n# Frieda\n\nAntwort\n",
+    );
 
     loadUiConfigMock.mockReset();
     loadUiConfigMock.mockResolvedValue({
@@ -1300,7 +1307,7 @@ describe("ChatWindow", () => {
     ).toBe("Delete");
   });
 
-  it("exports a persisted chat from its menu", async () => {
+  it("downloads a persisted chat as Markdown from the export submenu", async () => {
     getChatsMock.mockResolvedValue([
       {
         id: 42,
@@ -1316,8 +1323,19 @@ describe("ChatWindow", () => {
     await wrapper
       .get('[data-testid="chat-menu-42"]')
       .trigger("click");
+
+    expect(
+      wrapper.get('[data-testid="chat-export-42"]').text(),
+    ).toBe("Export");
+    expect(
+      wrapper.get('[data-testid="chat-export-download-42"]').text(),
+    ).toBe("Download Markdown File...");
+    expect(
+      wrapper.get('[data-testid="chat-export-clipboard-42"]').text(),
+    ).toBe("Markdown to Clipboard");
+
     await wrapper
-      .get('[data-testid="chat-export-42"]')
+      .get('[data-testid="chat-export-download-42"]')
       .trigger("click");
     await flushPromises();
 
@@ -1330,6 +1348,47 @@ describe("ChatWindow", () => {
     ).toBe(false);
     expect(
       wrapper.find('[data-testid="chat-error"]').exists(),
+    ).toBe(false);
+  });
+
+  it("copies persisted chat Markdown to the clipboard", async () => {
+    getChatsMock.mockResolvedValue([
+      {
+        id: 42,
+        title: "Chat",
+        pinned: false,
+        created_at: "2026-09-07T10:00:00",
+      },
+    ]);
+
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText,
+      },
+    });
+
+    const wrapper = mount(ChatWindow);
+    await flushPromises();
+
+    await wrapper
+      .get('[data-testid="chat-menu-42"]')
+      .trigger("click");
+    await wrapper
+      .get('[data-testid="chat-export-clipboard-42"]')
+      .trigger("click");
+    await flushPromises();
+
+    expect(getChatMarkdownMock).toHaveBeenCalledWith(
+      42,
+      "Frieda",
+    );
+    expect(writeText).toHaveBeenCalledWith(
+      "# User\n\nFrage\n---\n# Frieda\n\nAntwort\n",
+    );
+    expect(
+      wrapper.find('[data-testid="chat-menu-popup-42"]').exists(),
     ).toBe(false);
   });
 
@@ -1353,7 +1412,7 @@ describe("ChatWindow", () => {
       .get('[data-testid="chat-menu-42"]')
       .trigger("click");
     await wrapper
-      .get('[data-testid="chat-export-42"]')
+      .get('[data-testid="chat-export-download-42"]')
       .trigger("click");
     await flushPromises();
 

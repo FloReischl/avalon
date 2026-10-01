@@ -25,6 +25,15 @@ export function buildChatMarkdown(
   return `${sections.join("\n---\n")}\n`;
 }
 
+export async function getChatMarkdown(
+  chatId: number,
+  avatarName: string,
+  getChatFn: typeof getChat = getChat,
+): Promise<string> {
+  const chat = await getChatFn(chatId);
+  return buildChatMarkdown(chat.messages, avatarName);
+}
+
 export function sanitizeChatExportFilename(
   title: string,
 ): string {

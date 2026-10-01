@@ -13,6 +13,7 @@ const dependencies = {
 import {
   buildChatMarkdown,
   exportChatToMarkdown,
+  getChatMarkdown,
   sanitizeChatExportFilename,
 } from "../../frontend/src/services/chatExport";
 
@@ -60,6 +61,41 @@ describe("chat export", () => {
       + "Weiter\n",
     );
     expect(markdown.endsWith("---\n")).toBe(false);
+  });
+
+  it("loads persisted chat Markdown using the shared Markdown builder", async () => {
+    getChatMock.mockResolvedValue({
+      id: 42,
+      title: "Chat",
+      pinned: false,
+      created_at: "2026-09-08T10:00:00",
+      messages: [
+        {
+          id: 1,
+          role: "user",
+          content: "Frage",
+          created_at: "2026-09-08T10:00:01",
+        },
+        {
+          id: 2,
+          role: "assistant",
+          content: "Antwort",
+          created_at: "2026-09-08T10:00:02",
+        },
+      ],
+    });
+
+    await expect(
+      getChatMarkdown(
+        42,
+        "Frieda",
+        getChatMock,
+      ),
+    ).resolves.toBe(
+      "# User\n\nFrage\n---\n# Frieda\n\nAntwort\n",
+    );
+
+    expect(getChatMock).toHaveBeenCalledWith(42);
   });
 
   it("sanitizes problematic filename characters and falls back to chat", () => {
