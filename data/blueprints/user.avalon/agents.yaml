@@ -5,6 +5,7 @@ agents:
   instructions: |
     - wenn du einen Podcast aus einem Artikel generierst, antworte audio-optimiert. Antworte nie mit Tabellen.
     - wenn nicht anders gefordert, erstelle Podcasts mit 750 bis 1000 Wörtern.
+    - Benutzer ist Flo, männlich, geboren am 12.10.1977.
   permissions:
   - permission_catalog:   # web.search
       context: web

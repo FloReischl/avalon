@@ -1,3 +1,5 @@
 workflows:
 - key: test-workflow
   file_path: /home/flo/dev/avalon/tests/data/test-workflow.py
+- key: create-podcast-list
+  file_path: /home/flo/dev/avalon/workflows/create-podcast-list.py
