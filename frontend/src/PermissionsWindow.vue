@@ -15,6 +15,7 @@ const proactiveChatId = ref<number>();
 const proactivePrincipalId = ref<number>();
 const proactivePermissions = ref<ProactivePermission[]>([]);
 const proactiveSelection = ref<Record<number, { granted: boolean; expiresAt: string }>>({});
+const loadError = ref(false);
 const mode = computed(() => proactiveChatId.value === undefined ? "reactive" : "proactive");
 let events: EventSource | undefined;
 let refreshPoll: number | undefined;
@@ -44,23 +45,42 @@ async function openProactivePermissions({ chatId, principalId }: ProactivePermis
   stopRefreshPolling();
   proactiveChatId.value = chatId;
   proactivePrincipalId.value = principalId;
-  setPrincipalBearerToken(await loadPrincipalBearerToken(principalId));
-  proactivePermissions.value = await getChatPermissions(chatId);
-  initializeProactiveSelection(proactivePermissions.value);
+  proactivePermissions.value = [];
+  proactiveSelection.value = {};
+  try {
+    setPrincipalBearerToken(await loadPrincipalBearerToken(principalId));
+    proactivePermissions.value = await getChatPermissions(chatId);
+    initializeProactiveSelection(proactivePermissions.value);
+    loadError.value = false;
+  } catch (error) {
+    console.error("Could not load proactive permissions", error);
+    loadError.value = true;
+  }
 }
 async function openReactivePermissions() {
   proactiveChatId.value = undefined;
   proactivePrincipalId.value = undefined;
   proactivePermissions.value = [];
   proactiveSelection.value = {};
-  await loadUiConfig();
-  refreshForEventWindow();
+  try {
+    await loadUiConfig();
+    refreshForEventWindow();
+  } catch (error) {
+    console.error("Could not load reactive permissions", error);
+    loadError.value = true;
+  }
 }
 function stopRefreshPolling() { if (refreshPoll !== undefined) { window.clearInterval(refreshPoll); refreshPoll = undefined; } }
 async function refresh() {
-  requests.value = await getPendingAuthorizationRequests();
-  if (!selected.value) selectRequest(requests.value[0]);
-  if (requests.value.length > 0) stopRefreshPolling();
+  try {
+    requests.value = await getPendingAuthorizationRequests();
+    if (!selected.value) selectRequest(requests.value[0]);
+    if (requests.value.length > 0) stopRefreshPolling();
+    loadError.value = false;
+  } catch (error) {
+    console.error("Could not load pending authorization requests", error);
+    loadError.value = true;
+  }
 }
 function refreshForEventWindow() {
   if (mode.value !== "reactive") return;
@@ -104,14 +124,15 @@ onBeforeUnmount(() => { events?.close(); stopRefreshPolling(); unlistenProactive
 <template>
   <main class="permissions">
     <template v-if="mode === 'reactive'">
-      <aside><button v-for="request in requests" :key="request.id" @click="selectRequest(request)">{{ request.sourceLabel }}<br><small>{{ request.context }}.{{ request.key }}</small></button></aside>
+      <section v-if="loadError"><p>Permissions konnten nicht geladen werden.</p></section>
+      <template v-else><aside><button v-for="request in requests" :key="request.id" @click="selectRequest(request)">{{ request.sourceLabel }}<br><small>{{ request.context }}.{{ request.key }}</small></button></aside>
       <PermissionDetails v-if="selected" :context="selected.context" :permission-key="selected.key" :validity-type="selected.validityType" :granted="false">
         <label v-for="(item, index) in selected.items" :key="index"><input v-model="selectedItems" type="checkbox" :value="index">{{ item }}</label>
         <label v-if="selected.validityType !== 'permanent'">Stunden <input v-model.number="durationHours" type="number" min="1" max="8760"></label>
         <footer><button @click="abort">Abbrechen</button><button @click="confirm">Bestätigen</button></footer>
-      </PermissionDetails><section v-else><p>Keine offenen Permissions.</p></section>
+      </PermissionDetails><section v-else><p>Keine offenen Permissions.</p></section></template>
     </template>
-    <section v-else class="proactive-permissions"><h1>Permissions des Chats</h1><p v-if="proactivePermissions.length === 0">Keine proaktiv verwaltbaren Permissions.</p>
+    <section v-else class="proactive-permissions"><h1>Permissions des Chats</h1><p v-if="loadError">Permissions konnten nicht geladen werden.</p><p v-else-if="proactivePermissions.length === 0">Keine proaktiv verwaltbaren Permissions.</p>
       <PermissionDetails v-for="permission in proactivePermissions" :key="permission.id" :context="permission.context" :permission-key="permission.key" :validity-type="permission.validityType" :granted="Boolean(permission.grant)" :read-only="permission.readOnly">
         <template v-if="permission.readOnly"><p>Range-Grants können nur beim Capability-Request geändert werden.</p></template>
         <template v-else><label><input v-model="proactiveSelection[permission.id].granted" type="checkbox"> Erteilen</label><label v-if="permission.validityType === 'duration'">Ablaufdatum und -zeit <input v-model="proactiveSelection[permission.id].expiresAt" type="text" placeholder="YYYY-MM-DD HH:mm"></label></template>

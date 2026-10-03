@@ -165,4 +165,79 @@ describe("PermissionsWindow", () => {
     expect(loadUiConfigMock).toHaveBeenCalledOnce();
     expect(getPendingAuthorizationRequestsMock).toHaveBeenCalledOnce();
   });
+
+  it("shows a load error instead of the proactive empty state", async () => {
+    getProactivePermissionsChatMock.mockResolvedValue({ chatId: 42, principalId: 7 });
+    loadPrincipalBearerTokenMock.mockResolvedValue("token-7");
+    getChatPermissionsMock.mockRejectedValue(new Error("backend unavailable"));
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    const wrapper = mount(PermissionsWindow);
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("Permissions konnten nicht geladen werden.");
+    expect(wrapper.text()).not.toContain("Keine proaktiv verwaltbaren Permissions.");
+    expect(errorSpy).toHaveBeenCalled();
+    errorSpy.mockRestore();
+  });
+
+  it("shows a load error when the proactive principal token cannot be loaded", async () => {
+    getProactivePermissionsChatMock.mockResolvedValue({ chatId: 42, principalId: 7 });
+    loadPrincipalBearerTokenMock.mockRejectedValue(new Error("token unavailable"));
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    const wrapper = mount(PermissionsWindow);
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("Permissions konnten nicht geladen werden.");
+    expect(getChatPermissionsMock).not.toHaveBeenCalled();
+    errorSpy.mockRestore();
+  });
+
+  it("shows the proactive empty state after a successful empty load", async () => {
+    getProactivePermissionsChatMock.mockResolvedValue({ chatId: 42, principalId: 7 });
+    loadPrincipalBearerTokenMock.mockResolvedValue("token-7");
+    getChatPermissionsMock.mockResolvedValue([]);
+
+    const wrapper = mount(PermissionsWindow);
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("Keine proaktiv verwaltbaren Permissions.");
+    expect(wrapper.text()).not.toContain("Permissions konnten nicht geladen werden.");
+  });
+
+  it("shows a load error instead of the reactive empty state", async () => {
+    getProactivePermissionsChatMock.mockResolvedValue(null);
+    loadUiConfigMock.mockResolvedValue({});
+    getPendingAuthorizationRequestsMock.mockRejectedValue(new Error("backend unavailable"));
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    const wrapper = mount(PermissionsWindow);
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("Permissions konnten nicht geladen werden.");
+    expect(wrapper.text()).not.toContain("Keine offenen Permissions.");
+    expect(errorSpy).toHaveBeenCalled();
+    errorSpy.mockRestore();
+  });
+
+  it("clears a reactive load error after a successful refresh", async () => {
+    getProactivePermissionsChatMock.mockResolvedValue(null);
+    loadUiConfigMock.mockResolvedValue({});
+    getPendingAuthorizationRequestsMock.mockRejectedValueOnce(new Error("backend unavailable"));
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    const wrapper = mount(PermissionsWindow);
+    await flushPromises();
+    expect(wrapper.text()).toContain("Permissions konnten nicht geladen werden.");
+
+    getPendingAuthorizationRequestsMock.mockResolvedValue([{ id: "request-1", sourceLabel: "Agent", context: "web", key: "search", items: [], defaultExpiry: 3600, validityType: "duration" }]);
+    const callbackId = eventCallbackIds.get("reactive-permissions");
+    callbacks.get(callbackId ?? -1)?.({ payload: undefined });
+    await flushPromises();
+
+    expect(wrapper.text()).not.toContain("Permissions konnten nicht geladen werden.");
+    expect(wrapper.text()).toContain("Agent");
+    errorSpy.mockRestore();
+  });
 });
