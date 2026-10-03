@@ -48,6 +48,14 @@ async function openProactivePermissions({ chatId, principalId }: ProactivePermis
   proactivePermissions.value = await getChatPermissions(chatId);
   initializeProactiveSelection(proactivePermissions.value);
 }
+async function openReactivePermissions() {
+  proactiveChatId.value = undefined;
+  proactivePrincipalId.value = undefined;
+  proactivePermissions.value = [];
+  proactiveSelection.value = {};
+  await loadUiConfig();
+  refreshForEventWindow();
+}
 function stopRefreshPolling() { if (refreshPoll !== undefined) { window.clearInterval(refreshPoll); refreshPoll = undefined; } }
 async function refresh() {
   requests.value = await getPendingAuthorizationRequests();
@@ -79,15 +87,17 @@ async function saveProactive() {
   if (principalId === undefined) return;
   await openProactivePermissions({ chatId, principalId });
 }
-function cancelProactive() { proactiveChatId.value = undefined; proactivePrincipalId.value = undefined; proactivePermissions.value = []; proactiveSelection.value = {}; refreshForEventWindow(); }
+function cancelProactive() { void openReactivePermissions(); }
 onMounted(async () => {
-  await loadUiConfig();
-  refreshForEventWindow();
-  if (typeof EventSource !== "undefined") { events = new EventSource(`${BACKEND_BASE_URL}/api/v1/authorization-requests/events`); events.addEventListener("authorization_requests_changed", refreshForEventWindow); }
   unlistenProactive = await listen<ProactivePermissionsChat>("proactive-permissions-for-chat", (event) => { void openProactivePermissions(event.payload); });
   unlistenReactive = await listen("reactive-permissions", cancelProactive);
   const chat = await getProactivePermissionsChat();
-  if (chat !== null) await openProactivePermissions(chat);
+  if (chat !== null) {
+    await openProactivePermissions(chat);
+  } else {
+    await openReactivePermissions();
+  }
+  if (typeof EventSource !== "undefined") { events = new EventSource(`${BACKEND_BASE_URL}/api/v1/authorization-requests/events`); events.addEventListener("authorization_requests_changed", refreshForEventWindow); }
 });
 onBeforeUnmount(() => { events?.close(); stopRefreshPolling(); unlistenProactive?.(); unlistenReactive?.(); });
 </script>

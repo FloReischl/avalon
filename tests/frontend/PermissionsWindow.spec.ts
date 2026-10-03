@@ -84,7 +84,6 @@ afterEach(() => {
 describe("PermissionsWindow", () => {
   it("switches to proactive mode for the chat selected by the desktop command", async () => {
     getPendingAuthorizationRequestsMock.mockResolvedValue([]);
-    loadUiConfigMock.mockResolvedValue({});
     getProactivePermissionsChatMock.mockResolvedValue({ chatId: 42, principalId: 7 });
     loadPrincipalBearerTokenMock.mockResolvedValue("token-7");
     getChatPermissionsMock.mockResolvedValue([]);
@@ -95,6 +94,7 @@ describe("PermissionsWindow", () => {
     expect(getChatPermissionsMock).toHaveBeenCalledWith(42);
     expect(loadPrincipalBearerTokenMock).toHaveBeenCalledWith(7);
     expect(setPrincipalBearerTokenMock).toHaveBeenCalledWith("token-7");
+    expect(loadUiConfigMock).not.toHaveBeenCalled();
     expect(wrapper.text()).toContain("Permissions des Chats");
     expect(wrapper.text()).not.toContain("Keine offenen Permissions.");
   });
@@ -118,7 +118,6 @@ describe("PermissionsWindow", () => {
 
   it("revokes permission when unchecked and saved", async () => {
     getPendingAuthorizationRequestsMock.mockResolvedValue([]);
-    loadUiConfigMock.mockResolvedValue({});
     getProactivePermissionsChatMock.mockResolvedValue({ chatId: 42, principalId: 7 });
     loadPrincipalBearerTokenMock.mockResolvedValue("token-7");
     getChatPermissionsMock.mockResolvedValue([
@@ -153,5 +152,17 @@ describe("PermissionsWindow", () => {
     await flushPromises();
 
     expect(saveChatPermissionMock).toHaveBeenCalledWith(42, 1, false, undefined);
+  });
+
+  it("initializes the default UI principal only in reactive mode", async () => {
+    getPendingAuthorizationRequestsMock.mockResolvedValue([]);
+    getProactivePermissionsChatMock.mockResolvedValue(null);
+    loadUiConfigMock.mockResolvedValue({});
+
+    mount(PermissionsWindow);
+    await flushPromises();
+
+    expect(loadUiConfigMock).toHaveBeenCalledOnce();
+    expect(getPendingAuthorizationRequestsMock).toHaveBeenCalledOnce();
   });
 });
