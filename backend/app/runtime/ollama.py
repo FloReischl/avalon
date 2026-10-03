@@ -1,6 +1,7 @@
 """Ollama text-generation runtime adapter."""
 
 import json
+import logging
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 
@@ -9,6 +10,8 @@ import httpx
 from app.config import settings
 from app.runtime.base import ModelRuntime
 from app.state import AvalonState, get_avalon_state
+
+logger = logging.getLogger(__name__)
 
 OLLAMA_KEEP_ALIVE = "1h"
 
@@ -103,6 +106,7 @@ class OllamaRuntime(ModelRuntime):
                 )
                 response.raise_for_status()
         except (httpx.RequestError, httpx.HTTPStatusError) as exc:
+            logger.exception("[ollama] model unload failed for model %s", model)
             raise RuntimeError(f"Ollama error: {exc}") from exc
 
     async def warm_up_model(self, model: str) -> None:
@@ -124,6 +128,7 @@ class OllamaRuntime(ModelRuntime):
                 ):
                     raise ValueError("Invalid Ollama response")
         except (httpx.RequestError, httpx.HTTPStatusError, ValueError) as exc:
+            logger.exception("[ollama] model warm-up failed for model %s", model)
             raise RuntimeError(f"Ollama error: {exc}") from exc
 
     async def warm_up(self) -> None:
@@ -159,6 +164,7 @@ class OllamaRuntime(ModelRuntime):
                         raise ValueError("Invalid Ollama response")
                     return text
             except (httpx.RequestError, httpx.HTTPStatusError, ValueError) as exc:
+                logger.exception("[ollama] text message generation failed for model %s", model)
                 raise RuntimeError(f"Ollama error: {exc}") from exc
 
     async def generate_text_stream(
@@ -193,6 +199,7 @@ class OllamaRuntime(ModelRuntime):
                             if text:
                                 yield text
             except (httpx.RequestError, httpx.HTTPStatusError, ValueError) as exc:
+                logger.exception("[ollama] text stream generation failed for model %s", model)
                 raise RuntimeError(f"Ollama error: {exc}") from exc
 
     async def generate_tool_response_stream(
@@ -267,6 +274,7 @@ class OllamaRuntime(ModelRuntime):
                             if normalized.get("content") or normalized.get("tool_calls"):
                                 yield normalized
             except (httpx.RequestError, httpx.HTTPStatusError, ValueError) as exc:
+                logger.exception("[ollama] tool response stream failed for model %s", model)
                 raise RuntimeError(f"Ollama error: {exc}") from exc
 
     async def generate_tool_response(
@@ -294,4 +302,5 @@ class OllamaRuntime(ModelRuntime):
                         raise ValueError("Invalid Ollama tool response")
                     return _normalize_qwen_text_tool_call(model, message)
             except (httpx.RequestError, httpx.HTTPStatusError, ValueError) as exc:
+                logger.exception("[ollama] tool response generation failed for model %s", model)
                 raise RuntimeError(f"Ollama error: {exc}") from exc

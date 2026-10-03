@@ -1,6 +1,7 @@
 """Sequential faster-whisper to text-LLM audio orchestration."""
 
 import asyncio
+import logging
 import shutil
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
@@ -21,6 +22,8 @@ from app.stt.whisper import (
     merge_transcripts,
 )
 from app.avatars_config import AvatarConfig
+
+logger = logging.getLogger(__name__)
 
 STT_COMPLETION_TIMEOUT_SECONDS = 30.0
 
@@ -63,6 +66,7 @@ class _StreamingTranscription:
                 timeout=STT_COMPLETION_TIMEOUT_SECONDS,
             )
         except TimeoutError as exc:
+            logger.exception("[audio-chat] transcription timeout")
             raise AudioTurnError("Sprachverarbeitung abgelaufen") from exc
         return self.transcript.strip()
 
@@ -83,6 +87,7 @@ class _StreamingTranscription:
                     await self.stt.transcribe(chunk.path),
                 )
             except Exception as exc:
+                logger.exception("[audio-chat] transcription failed")
                 raise AudioTurnError(
                     "Sprachverarbeitung fehlgeschlagen",
                 ) from exc
@@ -300,6 +305,7 @@ class AudioTextChatService:
                 self._schedule_compression(persistent_chat_id)
             yield AudioStreamEvent(kind="assistant_done")
         except TimeoutError as exc:
+            logger.exception("[audio-chat] stream turn timeout")
             raise AudioTurnError("Sprachverarbeitung abgelaufen") from exc
         finally:
             await self._cleanup_capture(captured)

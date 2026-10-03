@@ -71,6 +71,7 @@ async def start_audio_call(
     except AudioCallAlreadyActiveError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except RuntimeError as exc:
+        logger.exception("[audio] start audio call failed")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Audio call unavailable.",

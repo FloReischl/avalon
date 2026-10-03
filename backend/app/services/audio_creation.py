@@ -33,6 +33,7 @@ class AudioCreationService:
         try:
             target_path.parent.mkdir(parents=True, exist_ok=True)
         except Exception as exc:
+            logger.exception("[audio-creation] failed to create parent directory for %s", output_file)
             raise RuntimeError(f"Cannot create parent directory for {output_file}: {exc}") from exc
 
         tts = self._tts_engine or create_tts_engine()
@@ -60,16 +61,19 @@ class AudioCreationService:
                     stderr=asyncio.subprocess.PIPE,
                 )
             except FileNotFoundError as exc:
+                logger.exception("[audio-creation] ffmpeg not found")
                 raise RuntimeError("ffmpeg is not installed or available in PATH.") from exc
 
             stdout, stderr = await process.communicate()
             if process.returncode != 0:
                 error_msg = stderr.decode("utf-8", errors="ignore").strip()
+                logger.error("[audio-creation] ffmpeg failed with exit code %s: %s", process.returncode, error_msg)
                 raise RuntimeError(f"ffmpeg failed with exit code {process.returncode}: {error_msg}")
 
             try:
                 temp_mp3_path.replace(target_path)
             except Exception as exc:
+                logger.exception("[audio-creation] failed to write output MP3 file %s", output_file)
                 raise RuntimeError(f"Cannot write output MP3 file {output_file}: {exc}") from exc
 
         finally:
