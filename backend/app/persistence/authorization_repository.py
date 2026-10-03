@@ -28,6 +28,10 @@ class AuthorizationRepository:
         with self._session_factory() as session:
             return session.scalar(select(Principal).where(Principal.key == key))
 
+    def get_principal_by_id(self, principal_id: int) -> Principal | None:
+        with self._session_factory() as session:
+            return session.get(Principal, principal_id)
+
     def get_principal_permission(
         self, principal_id: int, context: str, key: str
     ) -> PrincipalPermission | None:

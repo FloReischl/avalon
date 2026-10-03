@@ -2,12 +2,13 @@
 
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from app.api.schemas import (
     UiAnimationResponse,
     UiAvatarResponse,
     UiConfigResponse,
+    PrincipalTokenResponse,
     UiSpriteRegionResponse,
     UiStandardImageResponse,
     UserSettingsUpdateRequest,
@@ -91,6 +92,19 @@ async def ui_config(
                 for animation in avatar.images.animations
             ],
         ),
+    )
+
+
+@router.get("/token", response_model=PrincipalTokenResponse)
+async def ui_principal_token(
+    principal_id: int = Query(gt=0),
+    repository: AuthorizationRepository = Depends(get_authorization_repository),
+) -> PrincipalTokenResponse:
+    """Return a fresh local bearer token for one persisted principal."""
+    if repository.get_principal_by_id(principal_id) is None:
+        raise HTTPException(status_code=404, detail="Principal does not exist.")
+    return PrincipalTokenResponse(
+        principalBearerToken=bearer_token_for_principal(principal_id)
     )
 
 

@@ -2,8 +2,9 @@
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import PermissionDetails from "./components/PermissionDetails.vue";
-import { getProactivePermissionsChatId } from "./services/permissionsWindow";
-import { BACKEND_BASE_URL, abortAuthorization, confirmAuthorization, getChatPermissions, getPendingAuthorizationRequests, saveChatPermission, type PendingAuthorizationRequest, type ProactivePermission } from "./services/backend";
+import { loadUiConfig } from "./uiConfig";
+import { getProactivePermissionsChat, type ProactivePermissionsChat } from "./services/permissionsWindow";
+import { BACKEND_BASE_URL, abortAuthorization, confirmAuthorization, getChatPermissions, getPendingAuthorizationRequests, loadPrincipalBearerToken, saveChatPermission, setPrincipalBearerToken, type PendingAuthorizationRequest, type ProactivePermission } from "./services/backend";
 
 const requests = ref<PendingAuthorizationRequest[]>([]);
 const selectedId = ref<string>();
@@ -11,6 +12,7 @@ const selected = computed(() => requests.value.find((request) => request.id === 
 const selectedItems = ref<number[]>([]);
 const durationHours = ref(10);
 const proactiveChatId = ref<number>();
+const proactivePrincipalId = ref<number>();
 const proactivePermissions = ref<ProactivePermission[]>([]);
 const proactiveSelection = ref<Record<number, { granted: boolean; expiresAt: string }>>({});
 const mode = computed(() => proactiveChatId.value === undefined ? "reactive" : "proactive");
@@ -38,9 +40,11 @@ function initializeProactiveSelection(permissions: ProactivePermission[]) {
     expiresAt: localDateTime(permission.grant ? new Date(permission.grant.expiresAt) : new Date(Date.now() + permission.defaultExpiry * 1000)),
   }]));
 }
-async function openProactivePermissions(chatId: number) {
+async function openProactivePermissions({ chatId, principalId }: ProactivePermissionsChat) {
   stopRefreshPolling();
   proactiveChatId.value = chatId;
+  proactivePrincipalId.value = principalId;
+  setPrincipalBearerToken(await loadPrincipalBearerToken(principalId));
   proactivePermissions.value = await getChatPermissions(chatId);
   initializeProactiveSelection(proactivePermissions.value);
 }
@@ -71,16 +75,19 @@ async function saveProactive() {
     const expiresAt = permission.validityType === "duration" && granted ? selection?.expiresAt : undefined;
     await saveChatPermission(chatId, permission.id, granted, expiresAt);
   }
-  await openProactivePermissions(chatId);
+  const principalId = proactivePrincipalId.value;
+  if (principalId === undefined) return;
+  await openProactivePermissions({ chatId, principalId });
 }
-function cancelProactive() { proactiveChatId.value = undefined; proactivePermissions.value = []; proactiveSelection.value = {}; refreshForEventWindow(); }
+function cancelProactive() { proactiveChatId.value = undefined; proactivePrincipalId.value = undefined; proactivePermissions.value = []; proactiveSelection.value = {}; refreshForEventWindow(); }
 onMounted(async () => {
+  await loadUiConfig();
   refreshForEventWindow();
   if (typeof EventSource !== "undefined") { events = new EventSource(`${BACKEND_BASE_URL}/api/v1/authorization-requests/events`); events.addEventListener("authorization_requests_changed", refreshForEventWindow); }
-  unlistenProactive = await listen<number>("proactive-permissions-for-chat", (event) => { void openProactivePermissions(event.payload); });
+  unlistenProactive = await listen<ProactivePermissionsChat>("proactive-permissions-for-chat", (event) => { void openProactivePermissions(event.payload); });
   unlistenReactive = await listen("reactive-permissions", cancelProactive);
-  const chatId = await getProactivePermissionsChatId();
-  if (chatId !== null) await openProactivePermissions(chatId);
+  const chat = await getProactivePermissionsChat();
+  if (chat !== null) await openProactivePermissions(chat);
 });
 onBeforeUnmount(() => { events?.close(); stopRefreshPolling(); unlistenProactive?.(); unlistenReactive?.(); });
 </script>

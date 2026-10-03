@@ -55,6 +55,12 @@ class UiConfigResponse(BaseModel):
     avatar: UiAvatarResponse
 
 
+class PrincipalTokenResponse(BaseModel):
+    """Bearer token for one persisted principal."""
+
+    principalBearerToken: str
+
+
 class UserSettingsUpdateRequest(BaseModel):
     """Request payload for updating user settings."""
 
@@ -180,6 +186,7 @@ class ChatSummaryResponse(BaseModel):
     id: int
     title: str
     pinned: bool
+    principal_id: int
     agent_name: str | None = None
     created_at: datetime
 

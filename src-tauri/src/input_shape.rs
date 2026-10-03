@@ -39,18 +39,13 @@ pub fn set_window_input_regions(
         RawWindowHandle::Xlib(handle) => u32::try_from(handle.window)
             .map_err(|_| "Xlib window id does not fit into u32".to_string())?,
         RawWindowHandle::Xcb(handle) => handle.window.get(),
-        _ => {
-            return Err(
-                "Pixel input shaping is currently supported only on X11".to_string(),
-            )
-        }
+        _ => return Err("Pixel input shaping is currently supported only on X11".to_string()),
     };
 
     let x11_rectangles = rectangles
         .into_iter()
         .map(to_x11_rectangle)
         .collect::<Result<Vec<_>, _>>()?;
-
 
     let (connection, _) = x11rb::connect(None)
         .map_err(|error| format!("Failed to connect to X11 server: {error}"))?;
@@ -97,11 +92,13 @@ fn to_x11_rectangle(rectangle: InputRect) -> Result<Rectangle, String> {
             .map_err(|_| format!("Input rectangle x is out of range: {}", rectangle.x))?,
         y: i16::try_from(rectangle.y)
             .map_err(|_| format!("Input rectangle y is out of range: {}", rectangle.y))?,
-        width: u16::try_from(rectangle.width).map_err(|_| {
-            format!("Input rectangle width is out of range: {}", rectangle.width)
-        })?,
+        width: u16::try_from(rectangle.width)
+            .map_err(|_| format!("Input rectangle width is out of range: {}", rectangle.width))?,
         height: u16::try_from(rectangle.height).map_err(|_| {
-            format!("Input rectangle height is out of range: {}", rectangle.height)
+            format!(
+                "Input rectangle height is out of range: {}",
+                rectangle.height
+            )
         })?,
     })
 }

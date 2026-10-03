@@ -122,6 +122,28 @@ def test_ui_config_exposes_only_frontend_runtime_data() -> None:
     assert "chatterbox" not in serialized
 
 
+def test_ui_principal_token_is_unauthenticated_and_bound_to_requested_principal() -> None:
+    initialize_blueprint_config()
+    config_response = request("/api/v1/ui/config")
+    principal_id = principal_from_authorization(
+        f"Bearer {config_response.json()['principalBearerToken']}"
+    )
+
+    response = request(f"/api/v1/ui/token?principal_id={principal_id}")
+
+    assert response.status_code == 200
+    assert principal_from_authorization(
+        f"Bearer {response.json()['principalBearerToken']}"
+    ) == principal_id
+
+
+def test_ui_principal_token_rejects_unknown_or_invalid_principal() -> None:
+    initialize_blueprint_config()
+
+    assert request("/api/v1/ui/token?principal_id=999999").status_code == 404
+    assert request("/api/v1/ui/token?principal_id=0").status_code == 422
+
+
 def test_ui_config_keeps_avatar_cache_token_stable() -> None:
     initialize_blueprint_config()
 

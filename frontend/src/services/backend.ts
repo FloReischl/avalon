@@ -65,6 +65,7 @@ export interface ChatSummary {
   id: number;
   title: string;
   pinned: boolean;
+  principal_id: number;
   agent_name: string | null;
   created_at: string;
 }
@@ -107,6 +108,20 @@ export interface Attachment {
 export interface ChatDetail extends ChatSummary {
   messages: PersistentMessage[];
   compression_error_code?: string | null;
+}
+
+export async function loadPrincipalBearerToken(principalId: number): Promise<string> {
+  const response = await fetch(
+    `${BACKEND_BASE_URL}/api/v1/ui/token?principal_id=${encodeURIComponent(String(principalId))}`,
+  );
+  if (!response.ok) {
+    throw new Error(`Failed to load principal bearer token: ${response.status}`);
+  }
+  const payload = await response.json() as { principalBearerToken?: unknown };
+  if (typeof payload.principalBearerToken !== "string" || !payload.principalBearerToken) {
+    throw new Error("Principal token response is invalid");
+  }
+  return payload.principalBearerToken;
 }
 
 export function listenToWorkflowExecutions(onChange: () => void): () => void {

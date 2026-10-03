@@ -3,12 +3,20 @@ mod input_shape;
 
 use backend::{BackendProcess, BackendSnapshot};
 use input_shape::InputRect;
+use serde::Serialize;
 use std::sync::Mutex;
 use tauri::{Emitter, Manager};
 
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ProactivePermissionsChat {
+    chat_id: i64,
+    principal_id: i64,
+}
+
 #[derive(Default)]
 struct PermissionsWindowState {
-    proactive_chat_id: Mutex<Option<i64>>,
+    proactive_chat: Mutex<Option<ProactivePermissionsChat>>,
 }
 
 #[tauri::command]
@@ -61,14 +69,16 @@ fn show_permissions_window(
     app: tauri::AppHandle,
     state: tauri::State<'_, PermissionsWindowState>,
 ) -> Result<(), String> {
-    *state.proactive_chat_id.lock().map_err(|error| error.to_string())? = None;
+    *state
+        .proactive_chat
+        .lock()
+        .map_err(|error| error.to_string())? = None;
     let window = app
         .get_webview_window("permissions")
         .ok_or("Permissions window is unavailable")?;
     window.show().map_err(|error| error.to_string())?;
     window.set_focus().map_err(|error| error.to_string())?;
-    app
-        .emit_to("permissions", "reactive-permissions", ())
+    app.emit_to("permissions", "reactive-permissions", ())
         .map_err(|error| error.to_string())
 }
 
@@ -77,23 +87,34 @@ fn show_permissions_window_for_chat(
     app: tauri::AppHandle,
     state: tauri::State<'_, PermissionsWindowState>,
     chat_id: i64,
+    principal_id: i64,
 ) -> Result<(), String> {
-    *state.proactive_chat_id.lock().map_err(|error| error.to_string())? = Some(chat_id);
+    let chat = ProactivePermissionsChat {
+        chat_id,
+        principal_id,
+    };
+    *state
+        .proactive_chat
+        .lock()
+        .map_err(|error| error.to_string())? = Some(chat.clone());
     let window = app
         .get_webview_window("permissions")
         .ok_or("Permissions window is unavailable")?;
     window.show().map_err(|error| error.to_string())?;
     window.set_focus().map_err(|error| error.to_string())?;
-    app
-        .emit_to("permissions", "proactive-permissions-for-chat", chat_id)
+    app.emit_to("permissions", "proactive-permissions-for-chat", chat)
         .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
-fn get_proactive_permissions_chat_id(
+fn get_proactive_permissions_chat(
     state: tauri::State<'_, PermissionsWindowState>,
-) -> Result<Option<i64>, String> {
-    Ok(*state.proactive_chat_id.lock().map_err(|error| error.to_string())?)
+) -> Result<Option<ProactivePermissionsChat>, String> {
+    Ok(state
+        .proactive_chat
+        .lock()
+        .map_err(|error| error.to_string())?
+        .clone())
 }
 
 #[tauri::command]
@@ -117,7 +138,7 @@ fn main() {
             show_chat_window,
             show_permissions_window,
             show_permissions_window_for_chat,
-            get_proactive_permissions_chat_id,
+            get_proactive_permissions_chat,
             exit_app
         ])
         .setup(move |app| {

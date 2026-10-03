@@ -461,7 +461,11 @@ async function copyChatMarkdownToClipboard(chatId: number) {
 async function openPermissionsDialog(chatId: number) {
   closeChatMenu();
   try {
-    await showPermissionsWindowForChat(chatId);
+    const chat = chatSummaries.value.find((summary) => summary.id === chatId);
+    if (chat === undefined) {
+      throw new Error("Chat is missing from the chat list");
+    }
+    await showPermissionsWindowForChat(chatId, chat.principal_id);
   } catch (error) {
     console.error("[permissions] failed to show chat permissions", error);
     errorMessage.value = "Permissions konnten nicht geöffnet werden.";

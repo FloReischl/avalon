@@ -48,6 +48,16 @@ async def get_authorization_repository():
         engine.dispose()
 
 
+def _effective_principal_id(chat) -> int:
+    """Return the direct or agent-owned principal required by a persisted chat."""
+    principal_id = chat.principal_id
+    if principal_id is None and chat.agent is not None:
+        principal_id = chat.agent.principal_id
+    if principal_id is None:
+        raise RuntimeError(f"Chat {chat.id} has no effective principal.")
+    return principal_id
+
+
 def _summary_response(chat) -> ChatSummaryResponse:
     """Translate one persistent chat into its public summary schema."""
     agent_name = chat.agent.name if chat.agent is not None else None
@@ -55,6 +65,7 @@ def _summary_response(chat) -> ChatSummaryResponse:
         id=chat.id,
         title=chat.title,
         pinned=chat.pinned,
+        principal_id=_effective_principal_id(chat),
         agent_name=agent_name,
         created_at=chat.created_at,
     )
@@ -94,6 +105,8 @@ def get_chat(
         id=chat.id,
         title=chat.title,
         pinned=chat.pinned,
+        principal_id=_effective_principal_id(chat),
+        agent_name=chat.agent.name if chat.agent is not None else None,
         created_at=chat.created_at,
         compression_error_code=chat.compression_error_code,
 

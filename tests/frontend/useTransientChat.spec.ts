@@ -21,6 +21,33 @@ function createChatManagement(
 
 
 describe("useTransientChat", () => {
+  it("loads a fresh token for the effective principal before each chat switch", async () => {
+    const management = createChatManagement({
+      getChats: vi.fn().mockResolvedValue([
+        { id: 1, title: "Direkt", pinned: false, principal_id: 11, agent_name: null, created_at: "2026-09-07T10:00:00" },
+        { id: 2, title: "Agent", pinned: false, principal_id: 22, agent_name: "Research", created_at: "2026-09-07T10:00:00" },
+      ]),
+      getChat: vi.fn().mockImplementation((id: number) => Promise.resolve({
+        id, title: `Chat ${id}`, pinned: false, principal_id: id === 1 ? 11 : 22,
+        agent_name: id === 1 ? null : "Research", created_at: "2026-09-07T10:00:00", messages: [],
+      })),
+    });
+    const loadPrincipalToken = vi.fn()
+      .mockResolvedValueOnce("token-11")
+      .mockResolvedValueOnce("token-22");
+    const chat = useTransientChat(undefined, undefined, management, undefined, loadPrincipalToken);
+
+    await chat.refreshChats();
+    await chat.selectChat(1);
+    await chat.selectChat(2);
+
+    expect(loadPrincipalToken).toHaveBeenNthCalledWith(1, 11);
+    expect(loadPrincipalToken).toHaveBeenNthCalledWith(2, 22);
+    expect(loadPrincipalToken.mock.invocationCallOrder[0]).toBeLessThan(
+      (management.getChat as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0],
+    );
+  });
+
   it("locks a loaded chat with a terminal compression error", async () => {
     const streamMessage = vi.fn();
     const management = createChatManagement({
@@ -32,13 +59,24 @@ describe("useTransientChat", () => {
         messages: [],
         compression_error_code: "chat_context_compression_failed",
       }),
+      getChats: vi.fn().mockResolvedValue([{
+        id: 42,
+        title: "Zu groß",
+        pinned: false,
+        principal_id: 1,
+        agent_name: null,
+        created_at: "2026-09-07T10:00:00",
+      }]),
     });
     const chat = useTransientChat(
       streamMessage,
       undefined,
       management,
+      undefined,
+      vi.fn().mockResolvedValue("token-1"),
     );
 
+    await chat.refreshChats();
     await chat.selectChat(42);
     chat.input.value = "Nicht senden";
     await chat.send();
@@ -57,6 +95,8 @@ describe("useTransientChat", () => {
           id: 42,
           title: "Original",
           pinned: false,
+          principal_id: 1,
+          agent_name: null,
           created_at: "2026-09-07T10:00:00",
         },
       ]),
@@ -64,6 +104,8 @@ describe("useTransientChat", () => {
         id: 42,
         title: "Neuer Name",
         pinned: false,
+        principal_id: 1,
+        agent_name: null,
         created_at: "2026-09-07T10:00:00",
       }),
     });
@@ -92,6 +134,8 @@ describe("useTransientChat", () => {
           id: 42,
           title: "Original",
           pinned: false,
+          principal_id: 1,
+          agent_name: null,
           created_at: "2026-09-07T10:00:00",
         },
       ]),
@@ -123,6 +167,8 @@ describe("useTransientChat", () => {
           id: 42,
           title: "Chat",
           pinned: false,
+          principal_id: 1,
+          agent_name: null,
           created_at: "2026-09-07T10:00:00",
         },
       ]),
@@ -130,6 +176,8 @@ describe("useTransientChat", () => {
         id: 42,
         title: "Chat",
         pinned: true,
+        principal_id: 1,
+        agent_name: null,
         created_at: "2026-09-07T10:00:00",
       }),
     });
@@ -158,6 +206,8 @@ describe("useTransientChat", () => {
           id: 42,
           title: "Chat",
           pinned: false,
+          principal_id: 1,
+          agent_name: null,
           created_at: "2026-09-07T10:00:00",
         },
       ]),
@@ -189,6 +239,8 @@ describe("useTransientChat", () => {
           id: 42,
           title: "Chat",
           pinned: false,
+          principal_id: 1,
+          agent_name: null,
           created_at: "2026-09-07T10:00:00",
         },
       ]),
@@ -196,6 +248,8 @@ describe("useTransientChat", () => {
         id: 42,
         title: "Chat",
         pinned: false,
+        principal_id: 1,
+        agent_name: null,
         created_at: "2026-09-07T10:00:00",
         messages: [
           {
@@ -235,6 +289,8 @@ describe("useTransientChat", () => {
           id: 42,
           title: "Chat",
           pinned: false,
+          principal_id: 1,
+          agent_name: null,
           created_at: "2026-09-07T10:00:00",
         },
       ]),

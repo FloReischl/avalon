@@ -4,16 +4,22 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const {
   getChatPermissionsMock,
   getPendingAuthorizationRequestsMock,
-  getProactivePermissionsChatIdMock,
+  getProactivePermissionsChatMock,
+  loadPrincipalBearerTokenMock,
+  setPrincipalBearerTokenMock,
+  loadUiConfigMock,
   saveChatPermissionMock,
   callbacks,
   eventCallbackIds,
 } = vi.hoisted(() => ({
   getChatPermissionsMock: vi.fn(),
   getPendingAuthorizationRequestsMock: vi.fn(),
-  getProactivePermissionsChatIdMock: vi.fn(),
+  getProactivePermissionsChatMock: vi.fn(),
+  loadPrincipalBearerTokenMock: vi.fn(),
+  setPrincipalBearerTokenMock: vi.fn(),
+  loadUiConfigMock: vi.fn(),
   saveChatPermissionMock: vi.fn(),
-  callbacks: new Map<number, (event: { payload: number }) => void>(),
+  callbacks: new Map<number, (event: { payload: unknown }) => void>(),
   eventCallbackIds: new Map<string, number>(),
 }));
 
@@ -23,11 +29,17 @@ vi.mock("../../frontend/src/services/backend", () => ({
   confirmAuthorization: vi.fn(),
   getChatPermissions: getChatPermissionsMock,
   getPendingAuthorizationRequests: getPendingAuthorizationRequestsMock,
+  loadPrincipalBearerToken: loadPrincipalBearerTokenMock,
   saveChatPermission: saveChatPermissionMock,
+  setPrincipalBearerToken: setPrincipalBearerTokenMock,
 }));
 
 vi.mock("../../frontend/src/services/permissionsWindow", () => ({
-  getProactivePermissionsChatId: getProactivePermissionsChatIdMock,
+  getProactivePermissionsChat: getProactivePermissionsChatMock,
+}));
+
+vi.mock("../../frontend/src/uiConfig", () => ({
+  loadUiConfig: loadUiConfigMock,
 }));
 
 import PermissionsWindow from "../../frontend/src/PermissionsWindow.vue";
@@ -39,7 +51,7 @@ beforeEach(() => {
   Object.defineProperty(window, "__TAURI_INTERNALS__", {
     configurable: true,
     value: {
-      transformCallback(callback: (event: { payload: number }) => void) {
+      transformCallback(callback: (event: { payload: unknown }) => void) {
         const callbackId = ++nextCallbackId;
         callbacks.set(callbackId, callback);
         return callbackId;
@@ -62,33 +74,42 @@ beforeEach(() => {
 afterEach(() => {
   getChatPermissionsMock.mockReset();
   getPendingAuthorizationRequestsMock.mockReset();
-  getProactivePermissionsChatIdMock.mockReset();
+  getProactivePermissionsChatMock.mockReset();
+  loadPrincipalBearerTokenMock.mockReset();
+  setPrincipalBearerTokenMock.mockReset();
+  loadUiConfigMock.mockReset();
   saveChatPermissionMock.mockReset();
 });
 
 describe("PermissionsWindow", () => {
   it("switches to proactive mode for the chat selected by the desktop command", async () => {
     getPendingAuthorizationRequestsMock.mockResolvedValue([]);
-    getProactivePermissionsChatIdMock.mockResolvedValue(42);
+    loadUiConfigMock.mockResolvedValue({});
+    getProactivePermissionsChatMock.mockResolvedValue({ chatId: 42, principalId: 7 });
+    loadPrincipalBearerTokenMock.mockResolvedValue("token-7");
     getChatPermissionsMock.mockResolvedValue([]);
 
     const wrapper = mount(PermissionsWindow);
     await flushPromises();
 
     expect(getChatPermissionsMock).toHaveBeenCalledWith(42);
+    expect(loadPrincipalBearerTokenMock).toHaveBeenCalledWith(7);
+    expect(setPrincipalBearerTokenMock).toHaveBeenCalledWith("token-7");
     expect(wrapper.text()).toContain("Permissions des Chats");
     expect(wrapper.text()).not.toContain("Keine offenen Permissions.");
   });
 
   it("switches to proactive mode when the open event arrives after mount", async () => {
     getPendingAuthorizationRequestsMock.mockResolvedValue([]);
-    getProactivePermissionsChatIdMock.mockResolvedValue(null);
+    loadUiConfigMock.mockResolvedValue({});
+    getProactivePermissionsChatMock.mockResolvedValue(null);
+    loadPrincipalBearerTokenMock.mockResolvedValue("token-7");
     getChatPermissionsMock.mockResolvedValue([]);
 
     const wrapper = mount(PermissionsWindow);
     await flushPromises();
     const callbackId = eventCallbackIds.get("proactive-permissions-for-chat");
-    callbacks.get(callbackId ?? -1)?.({ payload: 42 });
+    callbacks.get(callbackId ?? -1)?.({ payload: { chatId: 42, principalId: 7 } });
     await flushPromises();
 
     expect(getChatPermissionsMock).toHaveBeenCalledWith(42);
@@ -97,7 +118,9 @@ describe("PermissionsWindow", () => {
 
   it("revokes permission when unchecked and saved", async () => {
     getPendingAuthorizationRequestsMock.mockResolvedValue([]);
-    getProactivePermissionsChatIdMock.mockResolvedValue(42);
+    loadUiConfigMock.mockResolvedValue({});
+    getProactivePermissionsChatMock.mockResolvedValue({ chatId: 42, principalId: 7 });
+    loadPrincipalBearerTokenMock.mockResolvedValue("token-7");
     getChatPermissionsMock.mockResolvedValue([
       {
         id: 1,

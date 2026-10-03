@@ -55,10 +55,7 @@ impl BackendProcess {
             .stderr(Stdio::piped())
             .spawn()
             .map_err(|error| {
-                format!(
-                    "Failed to start backend via {}: {error}",
-                    script.display()
-                )
+                format!("Failed to start backend via {}: {error}", script.display())
             })?;
 
         if let Some(stdout) = child.stdout.take() {
@@ -154,12 +151,7 @@ fn backend_script_path() -> PathBuf {
         .join("start-backend.sh")
 }
 
-fn forward_output<R>(
-    app: AppHandle,
-    process: BackendProcess,
-    stream: &'static str,
-    reader: R,
-)
+fn forward_output<R>(app: AppHandle, process: BackendProcess, stream: &'static str, reader: R)
 where
     R: Read + Send + 'static,
 {
@@ -168,11 +160,7 @@ where
             match line {
                 Ok(line) => {
                     println!("[backend:{stream}] {line}");
-                    emit_log(
-                        &app,
-                        &process,
-                        format!("[{stream}] {line}"),
-                    );
+                    emit_log(&app, &process, format!("[{stream}] {line}"));
                 }
                 Err(error) => {
                     eprintln!("[backend:{stream}] failed to read backend output: {error}");
@@ -229,9 +217,7 @@ fn backend_is_healthy(address: &str) -> bool {
         return false;
     };
 
-    let Ok(mut stream) =
-        TcpStream::connect_timeout(&socket_address, HEALTH_IO_TIMEOUT)
-    else {
+    let Ok(mut stream) = TcpStream::connect_timeout(&socket_address, HEALTH_IO_TIMEOUT) else {
         return false;
     };
 
@@ -239,9 +225,7 @@ fn backend_is_healthy(address: &str) -> bool {
     let _ = stream.set_write_timeout(Some(HEALTH_IO_TIMEOUT));
 
     if stream
-        .write_all(
-            b"GET /health HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n",
-        )
+        .write_all(b"GET /health HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n")
         .is_err()
     {
         return false;
