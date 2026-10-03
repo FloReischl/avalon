@@ -62,17 +62,12 @@ async function openReactivePermissions() {
   proactivePrincipalId.value = undefined;
   proactivePermissions.value = [];
   proactiveSelection.value = {};
-  try {
-    await loadUiConfig();
-    refreshForEventWindow();
-  } catch (error) {
-    console.error("Could not load reactive permissions", error);
-    loadError.value = true;
-  }
+  refreshForEventWindow();
 }
 function stopRefreshPolling() { if (refreshPoll !== undefined) { window.clearInterval(refreshPoll); refreshPoll = undefined; } }
 async function refresh() {
   try {
+    await loadUiConfig();
     requests.value = await getPendingAuthorizationRequests();
     if (!selected.value) selectRequest(requests.value[0]);
     if (requests.value.length > 0) stopRefreshPolling();

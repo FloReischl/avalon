@@ -221,6 +221,30 @@ describe("PermissionsWindow", () => {
     errorSpy.mockRestore();
   });
 
+  it("retries reactive loading after the UI configuration fails", async () => {
+    vi.useFakeTimers();
+    getProactivePermissionsChatMock.mockResolvedValue(null);
+    loadUiConfigMock.mockRejectedValueOnce(new Error("backend unavailable"));
+    getPendingAuthorizationRequestsMock.mockResolvedValue([]);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    const wrapper = mount(PermissionsWindow);
+    await flushPromises();
+    expect(wrapper.text()).toContain("Permissions konnten nicht geladen werden.");
+
+    loadUiConfigMock.mockResolvedValue({});
+    await vi.advanceTimersByTimeAsync(500);
+    await flushPromises();
+
+    expect(loadUiConfigMock).toHaveBeenCalledTimes(2);
+    expect(getPendingAuthorizationRequestsMock).toHaveBeenCalledOnce();
+    expect(wrapper.text()).toContain("Keine offenen Permissions.");
+    expect(wrapper.text()).not.toContain("Permissions konnten nicht geladen werden.");
+    wrapper.unmount();
+    errorSpy.mockRestore();
+    vi.useRealTimers();
+  });
+
   it("clears a reactive load error after a successful refresh", async () => {
     getProactivePermissionsChatMock.mockResolvedValue(null);
     loadUiConfigMock.mockResolvedValue({});
