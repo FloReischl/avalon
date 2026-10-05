@@ -60,7 +60,7 @@ def configure_logging() -> None:
         file_handler.setFormatter(formatter)
         root_logger.addHandler(file_handler)
 
-    if not any(isinstance(h, logging.StreamHandler) for h in root_logger.handlers):
+    if not any(isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler) for h in root_logger.handlers):
         stream_handler = logging.StreamHandler(sys.stderr)
         stream_handler.setFormatter(formatter)
         root_logger.addHandler(stream_handler)

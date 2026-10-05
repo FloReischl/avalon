@@ -39,7 +39,7 @@ Arbeitsindex für Frieda: Impact-Analyse, Implementierungsplanung, Abhängigkeit
 
 ### Backendstart und Health
 
-- Entry `backend/app/main.py:create_app`: User-Konfiguration laden/validieren, dann Alembic bis Head; Fehler lassen Start fehlschlagen und Traceback auf stderr. CORS für Browser `GET, POST, PATCH, DELETE`; Router installieren.
+- Entry `backend/app/main.py:create_app`: Logging konfigurieren, User-Konfiguration laden/validieren, dann Alembic bis Head; Fehler lassen Start fehlschlagen und werden über Python-Logging protokolliert. CORS für Browser `GET, POST, PATCH, DELETE`; Router installieren.
 - `GET /health` → `backend/app/api/routes/health.py:health`, Schema `HealthResponse`; nur HTTP-Readiness.
 
 ### Text-Chat
@@ -100,7 +100,7 @@ Arbeitsindex für Frieda: Impact-Analyse, Implementierungsplanung, Abhängigkeit
 
 ### Backend: Komposition, API und Konfiguration
 
-- `backend/app/config.py`: eingefrorene `LlmConfig(key, model)`, `Settings`-Singleton. Relevante Felder: Netz/DB/CORS/Sprache, Audio-Silence, Kontextkompressions-Parameter, Ollama, `llm_models`, TTS-Engine/Device/Revision/Idle. Für Start, Health, Runtime, Audio, TTS.
+- `backend/app/config.py`: eingefrorene `LlmConfig(key, model)`, `Settings`-Singleton. Relevante Felder: Netz/DB/CORS/Sprache, Audio-Silence, Kontextkompressions-Parameter, Ollama, `llm_models`, TTS-Engine/Device/Revision/Idle sowie Logging. `configure_logging()` konfiguriert Root-Logging auf INFO mit Logdatei und stderr-Stream. Für Start, Health, Runtime, Audio, TTS.
 - `backend/app/state.py`: prozesslokaler Avatar, aktives LLM, Inferenzzähler, Switch-Guard; Standard-LLM beim Start, nicht persistent; Modellwechsel während Inferenz blockieren.
 - `backend/app/commands`: async `/ <group> <command> [payload]`; `/avatar set <key>`, `/llm set <key>`, `/agent invite <key-or-name-prefix> [-force]`, `/agent unload`. Agent-Invite löst zuerst exakte Keys, dann eindeutige Namenspräfixe auf; `-force` ersetzt einen bereits zugeordneten Agenten. Invite/Unload wechseln die persistierte Chat/Agent-Autorisierungsidentität; der bestehende Chatverlauf bleibt erhalten. LLM: unbekannt/nicht verfügbar ablehnen, gleiches Modell No-op, altes unloaden, Ziel aufwärmen, erst dann publizieren; bei Warm-up-Fehler altes wiederherstellen, bei Fehlschlag terminieren.
 - `backend/app/main.py`: `create_app() -> FastAPI`, `StderrExceptionMiddleware`, Principal-ASGI-Grenze, `app`; validiert Konfiguration, initialisiert State, verlangt Standard-LLM in Ollama, warnt bei anderen, Alembic + MCP-Session-Lifespan, mountet `/mcp`. Fachliche API-/MCP-Requests lösen den lokalen unsigned Bearer-Token zentral zur `principal_id` auf; API-Requests erhalten sie im ASGI-Scope, MCP über request-lokalen Principal-Kontext.

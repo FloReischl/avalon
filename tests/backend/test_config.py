@@ -28,6 +28,13 @@ def test_configure_logging() -> None:
     from app.config import configure_logging
     configure_logging()
     
+    root_logger = logging.getLogger()
+    has_file = any(isinstance(h, logging.FileHandler) for h in root_logger.handlers)
+    has_stream = any(isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler) for h in root_logger.handlers)
+    
+    assert has_file
+    assert has_stream
+    
     logger = logging.getLogger("test.avalon.logger")
     logger.info("Test info message for logging configuration")
     
