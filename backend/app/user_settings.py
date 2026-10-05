@@ -5,8 +5,11 @@ from __future__ import annotations
 from pathlib import Path
 import sys
 import yaml
+import logging
 from pydantic import BaseModel, Field, model_validator
 from typing import Self
+
+logger = logging.getLogger(__name__)
 
 USER_SETTINGS_PATH = Path("~/.avalon/user-settings.yaml").expanduser()
 
@@ -26,14 +29,14 @@ def load_user_settings(path: Path = USER_SETTINGS_PATH) -> UserSettings:
         raw = path.read_text(encoding="utf-8")
         data = yaml.safe_load(raw)
     except Exception as e:
-        print(f"Error parsing user settings file {path}: {e}", file=sys.stderr)
+        logger.exception("Error parsing user settings file %s: %s", path, e)
         sys.exit(1)
 
     if data is None:
         return UserSettings(avatar_zoom=1.0)
 
     if not isinstance(data, dict):
-        print(f"Error: user settings file {path} must contain a mapping.", file=sys.stderr)
+        logger.error("Error: user settings file %s must contain a mapping.", path)
         sys.exit(1)
 
     zoom_val = data.get("avatar_zoom", 1.0)
@@ -41,17 +44,19 @@ def load_user_settings(path: Path = USER_SETTINGS_PATH) -> UserSettings:
         zoom_val = 1.0
 
     if not isinstance(zoom_val, (int, float)) or isinstance(zoom_val, bool):
-        print(
-            f"Error: avatar_zoom in {path} must be a number between 0.5 and 1.5, got {zoom_val!r}",
-            file=sys.stderr,
+        logger.error(
+            "Error: avatar_zoom in %s must be a number between 0.5 and 1.5, got %r",
+            path,
+            zoom_val,
         )
         sys.exit(1)
 
     zoom = float(zoom_val)
     if not (0.5 <= zoom <= 1.5):
-        print(
-            f"Error: avatar_zoom in {path} must be between 0.5 and 1.5, got {zoom}",
-            file=sys.stderr,
+        logger.error(
+            "Error: avatar_zoom in %s must be between 0.5 and 1.5, got %s",
+            path,
+            zoom,
         )
         sys.exit(1)
 

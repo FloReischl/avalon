@@ -5,19 +5,19 @@ models:
 - key: gemma
   model: gemma4:e4b-it-q4_K_M-ctx16k
   tool_support: true
-- key: gemma4b
+- key: gemma-small
   model: gemma4:e4b-it-q4_K_M-ctx16k
   tool_support: true
-- key: gemma12b
+- key: gemma-large
   model: gemma4:12b-it-q4_K_M-ctx16k
   tool_support: true
 - key: qwen
   model: qwen2.5-coder:7b-instruct-ctx16k
   tool_support: true
-- key: qwen7b
+- key: qwen-small
   model: qwen2.5-coder:7b-instruct-ctx16k
   tool_support: true
-- key: qwen14b
+- key: qwen-large
   model: qwen2.5-coder:14b-instruct-ctx16k
   tool_support: true
 - key: uncensored

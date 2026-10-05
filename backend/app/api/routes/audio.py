@@ -4,8 +4,6 @@ import asyncio
 from collections.abc import AsyncIterator
 import logging
 
-import sys
-import traceback
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from fastapi.responses import StreamingResponse
 
@@ -114,18 +112,10 @@ async def start_audio_recording(
     try:
         await service.start_recording()
     except CaptureError as exc:
-        print(
-            f"[audio] start recording failed: {type(exc).__name__}: {exc}",
-            file=sys.stderr,
-        )
-        traceback.print_exc(file=sys.stderr)
+        logger.exception("[audio] start recording failed: %s: %s", type(exc).__name__, exc)
         raise HTTPException(status_code=409, detail="Audio recording unavailable.") from exc
     except Exception as exc:
-        print(
-            f"[audio] unexpected start recording failure: {type(exc).__name__}: {exc}",
-            file=sys.stderr,
-        )
-        traceback.print_exc(file=sys.stderr)
+        logger.exception("[audio] unexpected start recording failure: %s: %s", type(exc).__name__, exc)
         raise
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 

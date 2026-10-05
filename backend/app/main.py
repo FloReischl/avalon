@@ -1,8 +1,6 @@
 """FastAPI application entry point."""
 
 import logging
-import sys
-import traceback
 from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
 
@@ -92,7 +90,7 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
             finally:
                 engine.dispose()
         except Exception:
-            traceback.print_exc(file=sys.stderr)
+            logger.exception("[startup] backend initialization failed")
             raise
 
         try:
@@ -102,7 +100,7 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
 
 
 class StderrExceptionMiddleware:
-    """Write uncaught backend exceptions with their full traceback to stderr."""
+    """Log uncaught backend exceptions with their full traceback."""
 
     def __init__(self, app) -> None:
         self.app = app
@@ -111,7 +109,7 @@ class StderrExceptionMiddleware:
         try:
             await self.app(scope, receive, send)
         except Exception:
-            traceback.print_exc(file=sys.stderr)
+            logger.exception("[unhandled] uncaught exception in request handler")
             raise
 
 
