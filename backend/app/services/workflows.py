@@ -109,7 +109,7 @@ class WorkflowService:
             "avalon": {
                 "workflow_execution_id": execution.id,
                 "backend_url": backend_url,
-                "principal_bearer_token": bearer_token_for_principal(principal_id),
+                "bearer_token": bearer_token_for_principal(principal_id),
                 "model_persona": "" if identity is None else identity.persona,
                 "model_instructions": "" if identity is None else identity.instructions,
                 "model_context": model_context,

@@ -70,7 +70,7 @@ async def test_executes_registered_workflow_with_json_stdin(tmp_path: Path) -> N
         assert envelope["avalon"]["workflow_execution_id"] == execution_id
         assert envelope["avalon"]["backend_url"] == "http://localhost"
         assert principal_from_authorization(
-            f"Bearer {envelope['avalon']['principal_bearer_token']}"
+            f"Bearer {envelope['avalon']['bearer_token']}"
         ) == chat.principal_id
         assert envelope["avalon"]["model_persona"] == "Test Persona"
         assert envelope["avalon"]["model_instructions"] == "Test Instructions"

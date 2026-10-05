@@ -77,9 +77,24 @@ async def main() -> None:
             )
 
             # call LLM
+            source_word_count = len(re.findall(r"\b\w+\b", content))
+            source_word_count = max(400, min(1000, source_word_count))
+            podcast_instructions = f"""<format_rules>
+    <rule>Antworte bei Podcast-Generierungen stets audio-optimiert.</rule>
+    <rule>Verwende niemals Tabellen in deiner Ausgabe.</rule>
+    <rule>Die Länge des Podcasts soll ca. {source_word_count} Wörter betragen.</rule>
+</format_rules>
+
+<user_profile>
+    <name>Flo</name>
+    <gender>männlich</gender>
+    <birthdate>1977-10-12</birthdate>
+</user_profile>"""
+
             podcast_text = await workflow.llm(
                 PODCAST_PROMPT.format(content=content),
-                use_context=False,
+                instructions=podcast_instructions,
+                context=None,
             )
 
             output_file = OUTPUT_DIR / _file_name(index, url)

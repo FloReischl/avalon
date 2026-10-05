@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import json
 import sys
-from typing import Any
+from typing import Any, Optional
 
 import httpx2
 from mcp import Client
 from mcp.client.streamable_http import streamable_http_client
 
+DEFAULT = object()
 
 class AvalonWorkflowClient:
     """Thin client around the Avalon APIs exposed to workflow scripts."""
@@ -65,19 +66,31 @@ class AvalonWorkflowClient:
 
         return self._tool_result(result)
 
+    
     async def llm(
         self,
         prompt: str,
         *,
-        use_context: bool = False,
+        persona: Optional[str] | Any = DEFAULT,
+        instructions: Optional[str] | Any = DEFAULT,
+        context: Optional[str] | Any = DEFAULT,
     ) -> str:
         messages: list[dict[str, str]] = []
 
-        self._append_system(messages, self.model_persona)
-        self._append_system(messages, self.model_instructions)
+        # persona
+        active_persona = self.model_persona if persona is DEFAULT else persona
+        if active_persona:
+            self._append_system(messages, active_persona)
 
-        if use_context:
-            self._append_context(messages)
+        # instructions
+        active_instructions = (
+            self.model_instructions if instructions is DEFAULT else instructions
+        )
+        if active_instructions:
+            self._append_system(messages, active_instructions)
+
+        # context
+        self._append_context(messages, context)
 
         self._append_system(messages, self.current_datetime)
         messages.append({"role": "user", "content": prompt})
@@ -131,7 +144,7 @@ class AvalonWorkflowClient:
             if content:
                 messages.append({"role": "system", "content": content})
 
-    def _append_context(self, messages: list[dict[str, str]]) -> None:
+    def _append_context(self, messages: list[dict[str, str]], active_context: Optional[list] | Any = DEFAULT) -> None:
         context = self.model_context
         if not isinstance(context, list):
             return
