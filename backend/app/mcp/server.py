@@ -14,6 +14,7 @@ from app.mcp.music import register_music_tools
 from app.mcp.web import register_web_tools
 from app.mcp.workflow import register_workflow_tools
 from app.mcp.content import register_content_tools
+from app.mcp.file import register_file_tools
 from app.persistence.music_repository import MusicRepository
 from app.services.music import MusicService
 from app.services.web_search import WebSearchService
@@ -23,6 +24,8 @@ from app.persistence.authorization_repository import AuthorizationRepository
 from app.persistence.database import create_database_engine, create_session_factory
 from app.mcp.security import current_principal_id
 from app.services.workflows import WorkflowService
+from app.services.file_copy import FileCopyService
+from app.authorization.permissions import FileCopyPermission
 
 
 class AuthorizedMcpServer(MCPServer):
@@ -77,6 +80,19 @@ class AuthorizedMcpServer(MCPServer):
                 approved_arguments = permission.approved_arguments(approved_items, arguments)
                 if approved_arguments is None:
                     return CallToolResult(content=[])
+                if name == "file.copy":
+                    assert isinstance(permission, FileCopyPermission)
+                    definition = repository.get_principal_permission_by_catalog_id(
+                        principal_id, permission_catalog_id
+                    )
+                    assert definition is not None
+                    scope = permission.scope_for(definition, approved_items)
+                    if scope is None:
+                        raise PermissionDenied("file.copy is not allowed by principal scope.")
+                    self._file_copy_service.copy(
+                        approved_arguments["source"], approved_arguments["destination"], scope
+                    )
+                    return CallToolResult(content=[])
                 return await capability(name, approved_arguments, context)
 
             return await guard.execute(
@@ -121,6 +137,7 @@ def create_mcp_server(
     web_content_service: WebContentService | None = None,
     workflow_service: WorkflowService | None = None,
     audio_creation_service: AudioCreationService | None = None,
+    file_copy_service: FileCopyService | None = None,
 ) -> MCPServer:
     """Create the MCP server mounted by the FastAPI backend."""
     mcp = AuthorizedMcpServer("Avalon Backend")
@@ -135,4 +152,6 @@ def create_mcp_server(
     )
     register_workflow_tools(mcp, workflow_service or WorkflowService())
     register_content_tools(mcp, audio_creation_service or AudioCreationService())
+    mcp._file_copy_service = file_copy_service or FileCopyService()  # type: ignore[attr-defined]
+    register_file_tools(mcp, mcp._file_copy_service)  # type: ignore[attr-defined]
     return mcp

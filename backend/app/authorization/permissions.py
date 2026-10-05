@@ -7,6 +7,7 @@ from typing import Protocol
 
 from app.authorization.types import PERMANENT_VALID_TO_YEAR
 from app.persistence.models import PermissionGrant, PrincipalPermission
+from app.services.file_copy import FileCopyScope
 
 
 class Permission(Protocol):
@@ -260,6 +261,86 @@ class ContentCreateAudioPermission:
         return {"content": original_arguments["content"], "output_file": output_file}
 
 
+class FileCopyPermission:
+    """Authorize one copy operation against paired source/destination roots."""
+
+    @staticmethod
+    def _path(value: object, field: str) -> Path:
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(f"file.copy requires a non-empty {field} path.")
+        path = Path(value).expanduser()
+        if not path.is_absolute() or ".." in path.parts:
+            raise ValueError(f"file.copy {field} must be an absolute path without '..'.")
+        return path
+
+    def allows(self, principal_permission: PrincipalPermission, items: list[object]) -> bool:
+        return self.scope_for(principal_permission, items) is not None
+
+    def scope_for(
+        self, principal_permission: PrincipalPermission, items: list[object]
+    ) -> FileCopyScope | None:
+        if len(items) != 1 or not isinstance(items[0], dict):
+            return None
+        source = self._path(items[0].get("source"), "source")
+        destination = self._path(items[0].get("destination"), "destination")
+        try:
+            scope = json.loads(principal_permission.scope)
+        except json.JSONDecodeError:
+            return None
+        if not isinstance(scope, list):
+            return None
+        for entry in scope:
+            if not isinstance(entry, dict):
+                continue
+            try:
+                source_root = self._path(entry.get("source"), "scope source")
+                destination_root = self._path(entry.get("destination"), "scope destination")
+            except ValueError:
+                continue
+            if source.is_relative_to(source_root) and destination.is_relative_to(destination_root):
+                return FileCopyScope(source_root, destination_root)
+        return None
+
+    def check(
+        self,
+        principal_permission: PrincipalPermission,
+        grant: PermissionGrant,
+        items: list[object],
+        now: datetime,
+    ) -> bool:
+        if not self.allows(principal_permission, items):
+            return False
+        if grant.valid_from > now or grant.valid_to <= now:
+            return False
+        if principal_permission.validity_type == "range":
+            if grant.range is None:
+                return False
+            return all(item in json.loads(grant.range) for item in items)
+        return True
+
+    def format(self, item: object) -> str:
+        if not isinstance(item, dict):
+            raise ValueError("file.copy items require source and destination paths.")
+        return f"Datei kopieren: {item['source']} nach {item['destination']}"
+
+    def items(self, arguments: dict[str, object]) -> list[object]:
+        source = arguments.get("source")
+        destination = arguments.get("destination")
+        self._path(source, "source")
+        self._path(destination, "destination")
+        return [{"source": source, "destination": destination}]
+
+    def approved_arguments(
+        self, approved_items: list[object], original_arguments: dict[str, object]
+    ) -> dict[str, object] | None:
+        del original_arguments
+        if not approved_items:
+            return None
+        item = approved_items[0]
+        assert isinstance(item, dict)
+        return {"source": item["source"], "destination": item["destination"]}
+
+
 def build_permission_registry() -> PermissionRegistry:
     """Build the registry available in the first authorization slice."""
     registry = PermissionRegistry()
@@ -267,4 +348,5 @@ def build_permission_registry() -> PermissionRegistry:
     registry.register("web", "get-content", WebGetContentPermission())
     registry.register("workflow", "execute", WorkflowExecutePermission())
     registry.register("content", "create-audio", ContentCreateAudioPermission())
+    registry.register("file", "copy", FileCopyPermission())
     return registry
