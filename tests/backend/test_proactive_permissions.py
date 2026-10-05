@@ -25,7 +25,7 @@ def build_repository(tmp_path):
             select(Principal).where(Principal.key == "chat-default")
         )
         assert default_principal is not None
-        agent = Agent(key="one", principal_id=agent_principal.id)
+        agent = Agent(key="one", name="Agent One", principal_id=agent_principal.id)
         session.add(agent)
         session.flush()
         direct_chat = Chat(id=1, title="Direct", principal_id=direct_principal.id)

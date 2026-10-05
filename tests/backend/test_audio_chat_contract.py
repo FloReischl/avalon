@@ -6,6 +6,7 @@ from httpx import ASGITransport, AsyncClient
 from app.api.routes.audio import get_audio_chat_service
 from app.audio.capture import CaptureError
 from app.main import create_app
+from app.mcp.security import bearer_token_for_principal
 from app.services.audio_text_chat import AudioStreamEvent
 
 
@@ -66,7 +67,9 @@ def request(method: str, path: str, service: FakeAudioChatService, **kwargs):
         ] = override_audio_chat_service
         transport = ASGITransport(app=application)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            return await client.request(method, path, **kwargs)
+            headers = kwargs.pop("headers", {})
+            headers.setdefault("Authorization", f"Bearer {bearer_token_for_principal(1)}")
+            return await client.request(method, path, headers=headers, **kwargs)
 
     return asyncio.run(send_request())
 

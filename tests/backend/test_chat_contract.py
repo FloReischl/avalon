@@ -13,6 +13,7 @@ from app.api.routes.chat import (
 )
 from app.api.schemas import ChatRequest
 from app.main import create_app
+from app.mcp.security import bearer_token_for_principal
 from app.config import LlmConfig
 from app.services.chat import (
     ChatCompressionFailedError,
@@ -129,7 +130,11 @@ def post_chat(
 
         transport = ASGITransport(app=application)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            return await client.post("/api/v1/chat", json=payload)
+            return await client.post(
+                "/api/v1/chat",
+                json=payload,
+                headers={"Authorization": f"Bearer {bearer_token_for_principal(1)}"},
+            )
 
     return asyncio.run(request_chat())
 
