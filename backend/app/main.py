@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.router import api_router
-from app.config import LlmConfig, settings
+from app.config import LlmConfig, configure_logging, settings
 from app.avatars_config import initialize_avatars_config
 from app.models_config import initialize_models_config
 from app.mcp.server import create_mcp_server
@@ -150,6 +150,7 @@ async def require_api_principal(request: Request) -> None:
 
 def create_app() -> FastAPI:
     """Create the backend application."""
+    configure_logging()
 
     application = FastAPI(
         title=settings.app_name,

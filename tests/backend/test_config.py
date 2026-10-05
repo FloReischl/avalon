@@ -1,4 +1,6 @@
 from app.config import settings
+import logging
+from pathlib import Path
 import pytest
 
 def test_local_api_address_is_fixed() -> None:
@@ -20,6 +22,17 @@ def test_chatterbox_tts_settings_are_recorded() -> None:
         == "5bb1f6ee58e50c3b8d408bc82a6d3740c2db6e18"
     )
     assert settings.tts_idle_unload_seconds == 300.0
+
+
+def test_configure_logging() -> None:
+    from app.config import configure_logging
+    configure_logging()
+    
+    logger = logging.getLogger("test.avalon.logger")
+    logger.info("Test info message for logging configuration")
+    
+    log_path = Path(settings.log_file_path).expanduser()
+    assert log_path.parent.is_dir()
 
 
 if __name__ == "__main__":
