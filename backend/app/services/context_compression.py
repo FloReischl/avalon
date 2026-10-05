@@ -221,7 +221,7 @@ class ContextCompressionService:
         if chat is None or chat.compression_error_code is not None:
             return
 
-        messages = self._repository.get_messages(chat_id)
+        messages = self._repository.get_text_messages(chat_id)
         existing = parse_compressed_context(chat.compressed_context)
         identity = self._context_identity(chat.agent_id)
         active_context = build_active_context(

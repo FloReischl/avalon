@@ -138,18 +138,42 @@ class WorkflowService:
                 engine.dispose()
             raise
 
+    async def _pipe_log(self, stream: asyncio.StreamReader | None, log, workflow_key: str) -> None:
+        if stream is None:
+            return
+
+        while line := await stream.readline():
+            log(
+                "[workflow:%s] %s",
+                workflow_key,
+                line.decode("utf-8", errors="replace").rstrip(),
+            )
+
     async def _monitor(self, process, execution_id: int, workflow_key: str, repository: WorkflowExecutionRepository, engine: object | None) -> None:
         try:
-            stdout, stderr = await process.communicate()
+            await asyncio.gather(
+                self._pipe_log(process.stdout, logger.info, workflow_key),
+                self._pipe_log(process.stderr, logger.error, workflow_key),
+            )
+
+            returncode = await process.wait()
+
             current = repository.get(execution_id)
             if current is None or current.state != "running":
                 return
-            if process.returncode == 0:
-                updated = repository.update(execution_id, state="completed", progress_content=None, has_progress=False)
+
+            if returncode == 0:
+                updated = repository.update(
+                    execution_id,
+                    state="completed",
+                    progress_content=None,
+                    has_progress=False,
+                )
             else:
-                detail = f"Workflow failed (exit code {process.returncode})"
-                logger.error("workflow=%s exit_code=%s stdout=%r stderr=%r", workflow_key, process.returncode, stdout.decode("utf-8", errors="replace"), stderr.decode("utf-8", errors="replace"))
+                detail = f"Workflow failed (exit code {returncode})"
+                logger.error("workflow=%s exit_code=%s", workflow_key, returncode)
                 updated = repository.append_process_failure(execution_id, detail)
+
             if updated is not None:
                 self._publish(updated)
         finally:

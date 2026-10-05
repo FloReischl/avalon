@@ -128,6 +128,27 @@ class AvalonWorkflowClient:
             )
             response.raise_for_status()
 
+    def payload_as_list(self) -> list[Any]:
+        payload = self.payload
+
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload)
+            except json.JSONDecodeError as exc:
+                raise ValueError(
+                    "Workflow payload string must contain valid JSON."
+                ) from exc
+
+        if isinstance(payload, dict) and len(payload) == 1:
+            payload = next(iter(payload.values()))
+
+        if isinstance(payload, list):
+            return payload
+
+        raise ValueError(
+            "Workflow payload must be a list or contain exactly one list value."
+        )
+
     @staticmethod
     def _append_system(
         messages: list[dict[str, str]],

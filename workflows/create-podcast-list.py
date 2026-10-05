@@ -18,28 +18,45 @@ Artikel:
 {content}
 """
 
+OPINION_PROMPT = """Erstelle eine zweite Podcast-Episode als eigenständige Einordnung des folgenden Artikels.
 
-def _file_name(index: int, url: str) -> str:
+Gib nicht einfach den Artikel erneut wieder. Analysiere stattdessen das Thema und die Aussagen des Artikels kritisch und möglichst ausgewogen. Hinterfrage Argumente und Framing des Autors, berücksichtige relevante Gegenpositionen und benenne Unsicherheiten. Entwickle daraus eine begründete eigene Einschätzung.
+
+Artikel:
+{content}
+"""
+
+
+def _file_name(index: int, url: str, episode: str) -> str:
     parsed = urlparse(url)
     candidate = Path(parsed.path).stem or parsed.netloc or "podcast"
     candidate = re.sub(r"[^A-Za-z0-9._-]+", "-", candidate).strip("-._")
     candidate = candidate[:80] or "podcast"
-    return f"{index:03d}-{candidate}.mp3"
+    return f"{index:02d}-{candidate}-episode-{episode}.mp3"
+
+
+def _clean_podcast_text(text: str) -> str:
+    # Entfernt [Intro], (Musik), *Jingle*, etc.
+    text = re.sub(
+        r"[\(\[\{\*][^\)\]\}]*?(?:musik|jingle|intro|outro|sound|pause|lachen)[^\)\]\}]*?[\)\]\}\*]",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    )
+    # Entfernt doppelte Leerzeichen und leere Zeilen
+    text = re.sub(r"[ \t]+", " ", text)
+    return text.strip()
 
 
 async def main() -> None:
     # init workflow
     workflow = AvalonWorkflowClient.from_stdin()
 
-    payload = workflow.payload
-    if not isinstance(payload, dict):
-        raise ValueError("Workflow payload must be an object.")
-
     # remove context
     workflow.model_context = None
 
     # get urls from input payload
-    urls = payload.get("urls")
+    urls = workflow.payload_as_list()
     if not isinstance(urls, list) or not urls or not all(
         isinstance(url, str) and url for url in urls
     ):
@@ -57,6 +74,11 @@ async def main() -> None:
             await workflow.progress(
                 f"Artikel {index}/{len(urls)} wird geladen: {url}"
             )
+
+            podcast_audio_file = OUTPUT_DIR / _file_name(index, url, "A")
+            podcast_text_file = podcast_audio_file.with_suffix(".txt")
+            opinion_audio_file = OUTPUT_DIR / _file_name(index, url, "B")
+            opinion_text_file = opinion_audio_file.with_suffix(".txt")
 
             # get web content from url
             article = await workflow.call_tool(
@@ -76,13 +98,15 @@ async def main() -> None:
                 f"Podcast-Text {index}/{len(urls)} wird erzeugt."
             )
 
-            # call LLM
-            source_word_count = len(re.findall(r"\b\w+\b", content))
-            source_word_count = max(400, min(1000, source_word_count))
-            podcast_instructions = f"""<format_rules>
-    <rule>Antworte bei Podcast-Generierungen stets audio-optimiert.</rule>
+            # get content podcast text
+            word_count = len(re.findall(r"\b\w+\b", content))
+            word_count = max(400, min(1000, word_count))
+            podcast_instructions = """<format_rules>
+    <rule>Erstelle einen Podcast persönlich für den User.</rule>
+    <rule>Antworte stets audio-optimiert.</rule>
     <rule>Verwende niemals Tabellen in deiner Ausgabe.</rule>
-    <rule>Die Länge des Podcasts soll ca. {source_word_count} Wörter betragen.</rule>
+    <rule>Die Länge des Podcasts soll ca. ##word_count## Wörter betragen.</rule>
+    <rule>Generiere ausschließlich den gesprochenen Text. Erzeuge keinerlei Audio-Marker, Regieanweisungen, Szenenbeschreibungen oder Platzhalter für Musik/Jingles (wie z. B. [Intro-Musik], (Musik blendet ein), *Jingle* oder Sprecher-Namen).</rule>
 </format_rules>
 
 <user_profile>
@@ -93,31 +117,63 @@ async def main() -> None:
 
             podcast_text = await workflow.llm(
                 PODCAST_PROMPT.format(content=content),
-                instructions=podcast_instructions,
+                instructions=podcast_instructions.replace("##word_count##", str(word_count)),
                 context=None,
             )
 
-            output_file = OUTPUT_DIR / _file_name(index, url)
+            podcast_text = _clean_podcast_text(podcast_text)
+            podcast_text_file.write_text(podcast_text)
 
             # create audio
             workflow.log(
-                f"[{index}/{len(urls)}] creating audio {output_file}"
+                f"[{index}/{len(urls)}] creating audio {podcast_audio_file}"
             )
             await workflow.progress(
-                f"Audio {index}/{len(urls)} wird erzeugt: {output_file.name}"
+                f"Audio {index}/{len(urls)} wird erzeugt: {podcast_audio_file.name}"
             )
 
             await workflow.call_tool(
                 "content.create-audio",
                 {
                     "content": podcast_text,
-                    "output_file": str(output_file),
+                    "output_file": str(podcast_audio_file),
+                },
+            )
+
+            # create independent opinion episode
+            workflow.log(f"[{index}/{len(urls)}] generating opinion text")
+            await workflow.progress(
+                f"Meinungs-Episode {index}/{len(urls)} wird erzeugt."
+            )
+
+            opinion_text = await workflow.llm(
+                OPINION_PROMPT.format(content=content),
+                instructions=podcast_instructions.replace("##word_count##", str(max(word_count, 500))),
+                context=None,
+            )
+
+            opinion_text = _clean_podcast_text(opinion_text)
+            opinion_text_file.write_text(opinion_text)
+
+            workflow.log(
+                f"[{index}/{len(urls)}] creating audio {opinion_audio_file}"
+            )
+            await workflow.progress(
+                f"Meinungs-Audio {index}/{len(urls)} wird erzeugt: {opinion_audio_file.name}"
+            )
+
+            await workflow.call_tool(
+                "content.create-audio",
+                {
+                    "content": opinion_text,
+                    "output_file": str(opinion_audio_file),
                 },
             )
 
             succeeded += 1
             await workflow.progress(
-                f"Podcast {index}/{len(urls)} erstellt: {output_file}"
+                f"Podcast {index}/{len(urls)} erstellt: "
+                f"{podcast_audio_file.name}, {opinion_audio_file.name}"
             )
 
         except Exception as exc:
