@@ -52,7 +52,7 @@ agents:
       key: execute
     principal_permission:
       validity_type: duration
-      default_expiry: 7200
+      default_expiry: 36000
       scope: [ "create-podcast-list" ]
   - permission_catalog:   # web.search
       context: web
@@ -60,26 +60,26 @@ agents:
     principal_permission:
       scope: ["duckduckgo.com"]
       validity_type: duration
-      default_expiry: 7200
+      default_expiry: 36000
   - permission_catalog:   # web.get-content
       context: web
       key: get-content
     principal_permission:
       validity_type: duration
-      default_expiry: 7200
+      default_expiry: 36000
   - permission_catalog:   # content.create-audio
       context: content
       key: create-audio
     principal_permission:
       scope: [ "/tmp/avalon/audio"]
       validity_type: duration
-      default_expiry: 7200
+      default_expiry: 36000
   - permission_catalog:   # file.copy
       context: file
       key: copy
     principal_permission:
       validity_type: duration
-      default_expiry: 7200
+      default_expiry: 36000
       scope:
       - source: /tmp/avalon/audio
         destination: ~/Documents/podcasts
