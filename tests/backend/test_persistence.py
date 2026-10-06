@@ -22,8 +22,7 @@ def test_database_path_is_per_user(monkeypatch, tmp_path: Path) -> None:
 
 def test_migrations_create_initial_schema(tmp_path: Path) -> None:
     path = tmp_path / ".avalon" / "avalon.sqlite"
-
-    run_migrations(path)
+    _upgrade_prepared_authorization_database(path)
 
     assert path.is_file()
 
@@ -57,7 +56,7 @@ def test_migrations_create_initial_schema(tmp_path: Path) -> None:
 def test_migrations_are_idempotent(tmp_path: Path) -> None:
     path = tmp_path / ".avalon" / "avalon.sqlite"
 
-    run_migrations(path)
+    _upgrade_prepared_authorization_database(path)
     run_migrations(path)
 
     engine = create_database_engine(path)
@@ -87,22 +86,24 @@ def test_authorization_migration_marks_existing_permissions_active(tmp_path: Pat
     finally:
         engine.dispose()
 
+    command.upgrade(config, "0011")
+    _insert_default_agent(path)
     run_migrations(path)
     engine = create_database_engine(path)
     try:
         with engine.connect() as connection:
-            assert connection.execute(text("SELECT is_active FROM principal_permissions")).scalar_one() == 1
-            assert connection.execute(text("SELECT principal_permission_id FROM permission_grants")).scalar_one() == 1
+            assert connection.execute(text("SELECT is_active FROM permission_sets")).scalar_one() == 1
+            assert connection.execute(text("SELECT permission_set_id FROM permission_grants")).scalar_one() == 1
     finally:
         engine.dispose()
 
 
 def test_authorization_migration_downgrade_removes_active_column(tmp_path: Path) -> None:
     path = tmp_path / "avalon.sqlite"
-    run_migrations(path)
     config = Config()
     config.set_main_option("script_location", str(migration_script_location()))
     config.set_main_option("sqlalchemy.url", database_url(path))
+    command.upgrade(config, "0011")
     command.downgrade(config, "0005")
 
     engine = create_database_engine(path)
@@ -113,6 +114,85 @@ def test_authorization_migration_downgrade_removes_active_column(tmp_path: Path)
         }
     finally:
         engine.dispose()
+
+
+def test_principal_removal_migration_preserves_authorization_data(tmp_path: Path) -> None:
+    path = tmp_path / "avalon.sqlite"
+    config = Config()
+    config.set_main_option("script_location", str(migration_script_location()))
+    config.set_main_option("sqlalchemy.url", database_url(path))
+    command.upgrade(config, "0011")
+
+    engine = create_database_engine(path)
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text("INSERT INTO agents (id, key, principal_id, name) VALUES (1, 'default', 1, 'Default Agent')")
+            )
+            connection.execute(
+                text("INSERT INTO permission_catalog (id, context, key) VALUES (1, 'web', 'search')")
+            )
+            connection.execute(
+                text("INSERT INTO principal_permissions (id, principal_id, permission_catalog_id, scope, is_active, validity_type, default_expiry) VALUES (7, 1, 1, '[\"example.org\"]', 1, 'duration', 3600)")
+            )
+            connection.execute(
+                text("INSERT INTO permission_grants (id, principal_permission_id, valid_from, valid_to, range) VALUES (11, 7, '2026-01-01', '2026-01-02', NULL)")
+            )
+            connection.execute(
+                text("INSERT INTO chats (id, principal_id, agent_id, title, next_message_seq) VALUES (3, 1, NULL, 'History', 1)")
+            )
+    finally:
+        engine.dispose()
+
+    run_migrations(path)
+
+    engine = create_database_engine(path)
+    try:
+        inspector = inspect(engine)
+        assert "principals" not in inspector.get_table_names()
+        assert "principal_permissions" not in inspector.get_table_names()
+        assert {"id", "agent_id", "permission_catalog_id", "scope", "is_active", "validity_type", "default_expiry"} == {
+            column["name"] for column in inspector.get_columns("permission_sets")
+        }
+        assert "principal_id" not in {column["name"] for column in inspector.get_columns("agents")}
+        assert "principal_id" not in {column["name"] for column in inspector.get_columns("chats")}
+        assert next(column for column in inspector.get_columns("chats") if column["name"] == "agent_id")["nullable"] is False
+        assert "permission_set_id" in {column["name"] for column in inspector.get_columns("permission_grants")}
+        with engine.connect() as connection:
+            assert connection.execute(
+                text(
+                    "SELECT id, agent_id, permission_catalog_id, scope, is_active, "
+                    "validity_type, default_expiry FROM permission_sets"
+                )
+            ).one() == (7, 1, 1, '["example.org"]', 1, "duration", 3600)
+            assert connection.execute(text("SELECT id, permission_set_id FROM permission_grants")).one() == (11, 7)
+            assert connection.execute(text("SELECT agent_id FROM chats WHERE id = 3")).scalar_one() == 1
+    finally:
+        engine.dispose()
+
+
+def _insert_default_agent(path: Path) -> None:
+    engine = create_database_engine(path)
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO agents (id, key, principal_id, name) "
+                    "VALUES (1, 'default', 1, 'Default Agent')"
+                )
+            )
+    finally:
+        engine.dispose()
+
+
+def _upgrade_prepared_authorization_database(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    config = Config()
+    config.set_main_option("script_location", str(migration_script_location()))
+    config.set_main_option("sqlalchemy.url", database_url(path))
+    command.upgrade(config, "0011")
+    _insert_default_agent(path)
+    run_migrations(path)
 
 
 def test_sqlite_foreign_keys_are_enabled(tmp_path: Path) -> None:
@@ -158,6 +238,8 @@ def test_compression_migration_backfills_existing_message_sequences(
     finally:
         engine.dispose()
 
+    command.upgrade(config, "0011")
+    _insert_default_agent(path)
     run_migrations(path)
     engine = create_database_engine(path)
     try:
