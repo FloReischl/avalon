@@ -7,7 +7,7 @@ from httpx import ASGITransport, AsyncClient
 from mcp.server import MCPServer
 
 import app.main as main_module
-from app.mcp.security import bearer_token_for_principal
+from app.mcp.security import bearer_token_for_agent
 from app.mcp.music import register_music_tools
 from app.mcp.server import create_mcp_server
 
@@ -91,7 +91,7 @@ def test_mcp_is_available_at_backend_mcp_path(monkeypatch):
                     headers={
                         "Accept": "application/json, text/event-stream",
                         "Content-Type": "application/json",
-                        "Authorization": f"Bearer {bearer_token_for_principal(1)}",
+                        "Authorization": f"Bearer {bearer_token_for_agent(1)}",
                     },
                     json={
                         "jsonrpc": "2.0",

@@ -8,7 +8,7 @@ from mcp.server import MCPServer
 from app.authorization.exceptions import PermissionDenied
 from app.mcp.server import create_mcp_server
 from app.mcp.web import register_web_tools
-from app.mcp.security import current_principal_id
+from app.mcp.security import current_agent_id
 import app.mcp.server as mcp_server_module
 
 
@@ -56,16 +56,16 @@ def test_mcp_server_exposes_music_and_web_tools():
     ]
 
 
-def test_mcp_discovery_filters_only_principal_permissions(monkeypatch):
+def test_mcp_discovery_filters_only_permission_sets(monkeypatch):
     lookups = []
 
     class FakeRepository:
         def __init__(self, _):
             pass
 
-        def get_principal_permission_catalog_ids(self, principal_id):
-            lookups.append(principal_id)
-            assert principal_id == 7
+        def get_permission_set_catalog_ids(self, agent_id):
+            lookups.append(agent_id)
+            assert agent_id == 7
             return {11}
 
         def get_permission_catalog_id(self, context, key):
@@ -78,7 +78,7 @@ def test_mcp_discovery_filters_only_principal_permissions(monkeypatch):
     monkeypatch.setattr(mcp_server_module, "AuthorizationRepository", FakeRepository)
     monkeypatch.setattr(mcp_server_module, "create_database_engine", FakeEngine)
     monkeypatch.setattr(mcp_server_module, "create_session_factory", lambda _: object())
-    token = current_principal_id.set(7)
+    token = current_agent_id.set(7)
     try:
         mcp = create_mcp_server(
             FakeMusicService(), FakeWebSearchService(), FakeWebContentService()
@@ -86,7 +86,7 @@ def test_mcp_discovery_filters_only_principal_permissions(monkeypatch):
         tools = asyncio.run(mcp.list_tools())
         assert [tool.name for tool in asyncio.run(mcp.list_tools())] == ["web.search"]
     finally:
-        current_principal_id.reset(token)
+        current_agent_id.reset(token)
 
     assert [tool.name for tool in tools] == ["web.search"]
     assert lookups == [7]
@@ -97,8 +97,8 @@ def test_mcp_discovery_exposes_web_content_with_matching_permission(monkeypatch)
         def __init__(self, _):
             pass
 
-        def get_principal_permission_catalog_ids(self, principal_id):
-            assert principal_id == 7
+        def get_permission_set_catalog_ids(self, agent_id):
+            assert agent_id == 7
             return {12}
 
         def get_permission_catalog_id(self, context, key):
@@ -111,7 +111,7 @@ def test_mcp_discovery_exposes_web_content_with_matching_permission(monkeypatch)
     monkeypatch.setattr(mcp_server_module, "AuthorizationRepository", FakeRepository)
     monkeypatch.setattr(mcp_server_module, "create_database_engine", FakeEngine)
     monkeypatch.setattr(mcp_server_module, "create_session_factory", lambda _: object())
-    token = current_principal_id.set(7)
+    token = current_agent_id.set(7)
     try:
         tools = asyncio.run(
             create_mcp_server(
@@ -119,7 +119,7 @@ def test_mcp_discovery_exposes_web_content_with_matching_permission(monkeypatch)
             ).list_tools()
         )
     finally:
-        current_principal_id.reset(token)
+        current_agent_id.reset(token)
 
     assert [tool.name for tool in tools] == ["web.get-content"]
 
@@ -143,9 +143,9 @@ def test_mcp_call_uses_central_permission_guard(monkeypatch):
             pass
 
         async def execute(
-            self, principal_id, context, key, items, capability, source_label, **kwargs
+            self, agent_id, context, key, items, capability, source_label, **kwargs
         ):
-            calls.append((principal_id, context, key, items, source_label, kwargs))
+            calls.append((agent_id, context, key, items, source_label, kwargs))
             return await capability(items)
 
     monkeypatch.setattr(mcp_server_module, "AuthorizationRepository", FakeRepository)
@@ -153,7 +153,7 @@ def test_mcp_call_uses_central_permission_guard(monkeypatch):
     monkeypatch.setattr(mcp_server_module, "create_database_engine", FakeEngine)
     monkeypatch.setattr(mcp_server_module, "create_session_factory", lambda _: object())
     service = FakeWebSearchService()
-    token = current_principal_id.set(7)
+    token = current_agent_id.set(7)
     try:
         asyncio.run(
             create_mcp_server(FakeMusicService(), service, FakeWebContentService()).call_tool(
@@ -161,7 +161,7 @@ def test_mcp_call_uses_central_permission_guard(monkeypatch):
             )
         )
     finally:
-        current_principal_id.reset(token)
+        current_agent_id.reset(token)
 
     assert calls == [
         (
@@ -192,7 +192,7 @@ def test_mcp_call_denies_a_tool_without_catalog_entry(monkeypatch):
     monkeypatch.setattr(mcp_server_module, "AuthorizationRepository", FakeRepository)
     monkeypatch.setattr(mcp_server_module, "create_database_engine", FakeEngine)
     monkeypatch.setattr(mcp_server_module, "create_session_factory", lambda _: object())
-    token = current_principal_id.set(7)
+    token = current_agent_id.set(7)
     try:
         with pytest.raises(PermissionDenied, match="music.play_tracks"):
             asyncio.run(
@@ -203,7 +203,7 @@ def test_mcp_call_denies_a_tool_without_catalog_entry(monkeypatch):
                 )
             )
     finally:
-        current_principal_id.reset(token)
+        current_agent_id.reset(token)
 
 
 def test_web_tool_logs_full_query_and_delegates(caplog):

@@ -8,7 +8,7 @@ from mcp.server.mcpserver.context import Context
 from pydantic import JsonValue
 
 from app.config import settings
-from app.mcp.security import current_principal_id
+from app.mcp.security import current_agent_id
 from app.services.workflows import WorkflowService
 
 
@@ -43,6 +43,6 @@ def register_workflow_tools(mcp: MCPServer, service: WorkflowService) -> None:
             execution_context["chat_id"],
             execution_context["invocation_id"],
             f"http://{settings.api_host}:{settings.api_port}",
-            current_principal_id.get(),
+            current_agent_id.get(),
         )
         return {"workflow_execution_id": execution_id}

@@ -9,9 +9,9 @@ import pytest
 from app.authorization.permissions import ContentCreateAudioPermission
 from app.authorization.exceptions import PermissionDenied
 from app.mcp.server import create_mcp_server
-from app.mcp.security import current_principal_id
+from app.mcp.security import current_agent_id
 import app.mcp.server as mcp_server_module
-from app.persistence.models import PrincipalPermission
+from app.persistence.models import PermissionSet
 
 
 class FakeAudioCreationService:
@@ -24,7 +24,7 @@ class FakeAudioCreationService:
 
 def test_content_create_audio_permission_allows_paths_in_scope() -> None:
     permission = ContentCreateAudioPermission()
-    pp = PrincipalPermission(
+    pp = PermissionSet(
         scope=json.dumps(["/tmp/avalon/audio"]),
         validity_type="duration",
         default_expiry=7200,
@@ -74,16 +74,16 @@ async def test_mcp_call_denies_audio_creation_outside_scope(monkeypatch) -> None
         def __init__(self, _):
             pass
 
-        def get_principal_permission_catalog_ids(self, principal_id):
+        def get_permission_set_catalog_ids(self, agent_id):
             return {42}
 
         def get_permission_catalog_id(self, context, key):
             assert (context, key) == ("content", "create-audio")
             return 42
 
-        def get_principal_permission_by_catalog_id(self, principal_id, catalog_id):
-            return PrincipalPermission(
-                principal_id=principal_id,
+        def get_permission_set_by_catalog_id(self, agent_id, catalog_id):
+            return PermissionSet(
+                agent_id=agent_id,
                 permission_catalog_id=catalog_id,
                 scope=json.dumps(["/tmp/allowed"]),
                 validity_type="duration",
@@ -97,15 +97,15 @@ async def test_mcp_call_denies_audio_creation_outside_scope(monkeypatch) -> None
     monkeypatch.setattr(mcp_server_module, "create_database_engine", FakeEngine)
     monkeypatch.setattr(mcp_server_module, "create_session_factory", lambda _: object())
 
-    token = current_principal_id.set(7)
+    token = current_agent_id.set(7)
     try:
         service = FakeAudioCreationService()
         mcp = create_mcp_server(audio_creation_service=service)
-        with pytest.raises(PermissionDenied, match="content/create-audio is not allowed by principal scope"):
+        with pytest.raises(PermissionDenied, match="content/create-audio is not allowed by agent scope"):
             await mcp.call_tool(
                 "content.create-audio",
                 {"content": "Hello", "output_file": "/tmp/forbidden/audio.mp3"},
             )
         assert service.calls == []
     finally:
-        current_principal_id.reset(token)
+        current_agent_id.reset(token)

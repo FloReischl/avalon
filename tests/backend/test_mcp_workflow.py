@@ -7,7 +7,7 @@ from mcp.server import MCPServer
 from mcp.server.mcpserver.context import Context
 
 from app.mcp.workflow import register_workflow_tools
-from app.mcp.security import current_principal_id
+from app.mcp.security import current_agent_id
 from app.mcp.server import create_mcp_server
 import app.mcp.server as mcp_server_module
 
@@ -16,8 +16,8 @@ class FakeWorkflowService:
     def __init__(self) -> None:
         self.calls: list[tuple[str, object]] = []
 
-    async def execute(self, workflow_key: str, payload: object, chat_id: int, invocation_id: str, backend_url: str, principal_id: int | None) -> int:
-        self.calls.append((workflow_key, payload, chat_id, invocation_id, backend_url, principal_id))
+    async def execute(self, workflow_key: str, payload: object, chat_id: int, invocation_id: str, backend_url: str, agent_id: int | None) -> int:
+        self.calls.append((workflow_key, payload, chat_id, invocation_id, backend_url, agent_id))
         return 31
 
 
@@ -40,7 +40,7 @@ def test_workflow_tool_logs_and_delegates_json_payload(caplog) -> None:
     }
 
 
-def test_workflow_discovery_is_filtered_by_principal_permission(monkeypatch) -> None:
+def test_workflow_discovery_is_filtered_by_permission_set(monkeypatch) -> None:
     class FakeEngine:
         def dispose(self) -> None:
             pass
@@ -49,8 +49,8 @@ def test_workflow_discovery_is_filtered_by_principal_permission(monkeypatch) -> 
         def __init__(self, _) -> None:
             pass
 
-        def get_principal_permission_catalog_ids(self, principal_id: int) -> set[int]:
-            assert principal_id == 7
+        def get_permission_set_catalog_ids(self, agent_id: int) -> set[int]:
+            assert agent_id == 7
             return {13}
 
         def get_permission_catalog_id(self, context: str, key: str) -> int | None:
@@ -59,10 +59,10 @@ def test_workflow_discovery_is_filtered_by_principal_permission(monkeypatch) -> 
     monkeypatch.setattr(mcp_server_module, "AuthorizationRepository", FakeRepository)
     monkeypatch.setattr(mcp_server_module, "create_database_engine", FakeEngine)
     monkeypatch.setattr(mcp_server_module, "create_session_factory", lambda _: object())
-    token = current_principal_id.set(7)
+    token = current_agent_id.set(7)
     try:
         tools = asyncio.run(create_mcp_server(workflow_service=FakeWorkflowService()).list_tools())  # type: ignore[arg-type]
     finally:
-        current_principal_id.reset(token)
+        current_agent_id.reset(token)
 
     assert [tool.name for tool in tools] == ["workflow.execute"]

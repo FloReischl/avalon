@@ -22,24 +22,24 @@ from app.services.web_content import WebContentService
 from app.services.audio_creation import AudioCreationService
 from app.persistence.authorization_repository import AuthorizationRepository
 from app.persistence.database import create_database_engine, create_session_factory
-from app.mcp.security import current_principal_id
+from app.mcp.security import current_agent_id
 from app.services.workflows import WorkflowService
 from app.services.file_copy import FileCopyService
 from app.authorization.permissions import FileCopyPermission
 
 
 class AuthorizedMcpServer(MCPServer):
-    """Central principal-based discovery and authorization for MCP tools."""
+    """Central agent-based discovery and authorization for MCP tools."""
 
     async def list_tools(self):
         tools = await super().list_tools()
-        principal_id = current_principal_id.get()
-        if principal_id is None:
+        agent_id = current_agent_id.get()
+        if agent_id is None:
             return tools
         engine = create_database_engine()
         try:
             repository = AuthorizationRepository(create_session_factory(engine))
-            allowed = self._principal_permission_catalog_ids(principal_id, repository)
+            allowed = self._permission_set_catalog_ids(agent_id, repository)
             return [
                 tool
                 for tool in tools
@@ -51,8 +51,8 @@ class AuthorizedMcpServer(MCPServer):
 
     async def call_tool(self, name: str, arguments: dict[str, Any], context=None):
         """Authorize every HTTP MCP capability call before delegation."""
-        principal_id = current_principal_id.get()
-        if principal_id is None:
+        agent_id = current_agent_id.get()
+        if agent_id is None:
             return await super().call_tool(name, arguments, context)
         try:
             permission_context, permission_key = name.split(".", 1)
@@ -64,7 +64,7 @@ class AuthorizedMcpServer(MCPServer):
             repository = AuthorizationRepository(create_session_factory(engine))
             resolved = self._resolve_permission(name, repository)
             if resolved is None:
-                raise PermissionDenied(f"{name} is not grantable for principal.")
+                raise PermissionDenied(f"{name} is not grantable for agent.")
             permission_context, permission_key, permission_catalog_id = resolved
             registry = build_permission_registry()
             permission = registry.get(permission_context, permission_key)
@@ -82,13 +82,13 @@ class AuthorizedMcpServer(MCPServer):
                     return CallToolResult(content=[])
                 if name == "file.copy":
                     assert isinstance(permission, FileCopyPermission)
-                    definition = repository.get_principal_permission_by_catalog_id(
-                        principal_id, permission_catalog_id
+                    definition = repository.get_permission_set_by_catalog_id(
+                        agent_id, permission_catalog_id
                     )
                     assert definition is not None
                     scope = permission.scope_for(definition, approved_items)
                     if scope is None:
-                        raise PermissionDenied("file.copy is not allowed by principal scope.")
+                        raise PermissionDenied("file.copy is not allowed by agent scope.")
                     self._file_copy_service.copy(
                         approved_arguments["source"], approved_arguments["destination"], scope
                     )
@@ -96,7 +96,7 @@ class AuthorizedMcpServer(MCPServer):
                 return await capability(name, approved_arguments, context)
 
             return await guard.execute(
-                principal_id,
+                agent_id,
                 permission_context,
                 permission_key,
                 items,
@@ -107,15 +107,15 @@ class AuthorizedMcpServer(MCPServer):
         finally:
             engine.dispose()
 
-    def _principal_permission_catalog_ids(
-        self, principal_id: int, repository: AuthorizationRepository
+    def _permission_set_catalog_ids(
+        self, agent_id: int, repository: AuthorizationRepository
     ) -> set[int]:
-        if not hasattr(self, "_principal_permission_cache"):
-            self._principal_permission_cache: dict[int, set[int]] = {}
-        cache = self._principal_permission_cache
-        if principal_id not in cache:
-            cache[principal_id] = repository.get_principal_permission_catalog_ids(principal_id)
-        return cache[principal_id]
+        if not hasattr(self, "_permission_set_cache"):
+            self._permission_set_cache: dict[int, set[int]] = {}
+        cache = self._permission_set_cache
+        if agent_id not in cache:
+            cache[agent_id] = repository.get_permission_set_catalog_ids(agent_id)
+        return cache[agent_id]
 
     @staticmethod
     def _resolve_permission(

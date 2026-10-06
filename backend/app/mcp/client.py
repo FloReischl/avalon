@@ -9,7 +9,7 @@ from mcp import Client
 from mcp.client.streamable_http import streamable_http_client
 
 from app.config import settings
-from app.mcp.security import bearer_token_for_principal
+from app.mcp.security import bearer_token_for_agent
 
 
 Result = TypeVar("Result")
@@ -18,13 +18,13 @@ Result = TypeVar("Result")
 class HttpMcpToolClient:
     _REQUEST_TIMEOUT_SECONDS = 60 * 60
 
-    def __init__(self, principal_id: int, chat_id: int | None = None) -> None:
-        self._principal_id = principal_id
+    def __init__(self, agent_id: int, chat_id: int | None = None) -> None:
+        self._agent_id = agent_id
         self._chat_id = chat_id
         self._invocation_id = str(uuid.uuid4())
 
     async def _request(self, operation: Callable[[Client], Awaitable[Result]]) -> Result:
-        headers = {"Authorization": f"Bearer {bearer_token_for_principal(self._principal_id)}"}
+        headers = {"Authorization": f"Bearer {bearer_token_for_agent(self._agent_id)}"}
         async with httpx2.AsyncClient(
             headers=headers, timeout=self._REQUEST_TIMEOUT_SECONDS
         ) as http:
