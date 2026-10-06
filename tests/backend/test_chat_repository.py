@@ -23,7 +23,6 @@ def repository(tmp_path: Path):
 
     engine = create_database_engine(path)
     session_factory = create_session_factory(engine)
-
     try:
         yield ChatRepository(session_factory), session_factory
     finally:

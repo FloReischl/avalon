@@ -20,7 +20,7 @@ from app.services.context_compression import (
 )
 from app.services.workflow_events import WorkflowExecutionEvent, get_workflow_event_manager
 from app.state import get_avalon_state
-from app.mcp.security import bearer_token_for_principal
+from app.mcp.security import bearer_token_for_agent
 
 
 logger = logging.getLogger(__name__)
@@ -73,9 +73,9 @@ class WorkflowService:
             )
         return configured_agent
 
-    async def execute(self, workflow_key: str, payload: JsonValue, chat_id: int, invocation_id: str, backend_url: str, principal_id: int) -> int:
-        if not isinstance(principal_id, int) or isinstance(principal_id, bool) or principal_id < 1:
-            raise WorkflowExecutionError("Workflow execution requires a parent principal.")
+    async def execute(self, workflow_key: str, payload: JsonValue, chat_id: int, invocation_id: str, backend_url: str, agent_id: int) -> int:
+        if not isinstance(agent_id, int) or isinstance(agent_id, bool) or agent_id < 1:
+            raise WorkflowExecutionError("Workflow execution requires a parent agent.")
         config = self._config or get_workflows_config()
         try:
             workflow = config.get(workflow_key)
@@ -83,10 +83,10 @@ class WorkflowService:
             raise WorkflowExecutionError(f"Unknown workflow: {workflow_key}") from exc
 
         repository, chat_repository, engine = self._repositories_for_call()
-        if not repository.chat_matches_principal(chat_id, principal_id):
+        if not repository.chat_matches_agent(chat_id, agent_id):
             if engine is not None:
                 engine.dispose()
-            raise WorkflowExecutionError("Workflow execution context does not belong to principal.")
+            raise WorkflowExecutionError("Workflow execution context does not belong to agent.")
 
         chat = chat_repository.get_chat(chat_id)
         if chat is None:
@@ -109,7 +109,7 @@ class WorkflowService:
             "avalon": {
                 "workflow_execution_id": execution.id,
                 "backend_url": backend_url,
-                "bearer_token": bearer_token_for_principal(principal_id),
+                "bearer_token": bearer_token_for_agent(agent_id),
                 "model_persona": "" if identity is None else identity.persona,
                 "model_instructions": "" if identity is None else identity.instructions,
                 "model_context": model_context,

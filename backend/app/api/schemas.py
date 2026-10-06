@@ -50,15 +50,15 @@ class UiConfigResponse(BaseModel):
     """Configuration intentionally exposed to the frontend."""
 
     name: str
-    principalBearerToken: str
+    agentBearerToken: str
     avatarZoom: float
     avatar: UiAvatarResponse
 
 
-class PrincipalTokenResponse(BaseModel):
-    """Bearer token for one persisted principal."""
+class AgentTokenResponse(BaseModel):
+    """Bearer token for one persisted agent."""
 
-    principalBearerToken: str
+    agentBearerToken: str
 
 
 class UserSettingsUpdateRequest(BaseModel):
@@ -186,7 +186,7 @@ class ChatSummaryResponse(BaseModel):
     id: int
     title: str
     pinned: bool
-    principal_id: int
+    agent_id: int
     agent_name: str | None = None
     created_at: datetime
 

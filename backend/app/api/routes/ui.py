@@ -8,7 +8,7 @@ from app.api.schemas import (
     UiAnimationResponse,
     UiAvatarResponse,
     UiConfigResponse,
-    PrincipalTokenResponse,
+    AgentTokenResponse,
     UiSpriteRegionResponse,
     UiStandardImageResponse,
     UserSettingsUpdateRequest,
@@ -17,7 +17,7 @@ from app.state import get_avalon_state
 from app.user_settings import get_user_settings, save_user_settings
 from app.persistence.authorization_repository import AuthorizationRepository
 from app.api.routes.chats import get_authorization_repository
-from app.mcp.security import bearer_token_for_principal
+from app.mcp.security import bearer_token_for_agent
 
 
 router = APIRouter(prefix="/ui", tags=["ui"])
@@ -48,14 +48,14 @@ async def ui_config(
     """Return only configuration intentionally exposed to the frontend."""
     state = get_avalon_state()
     avatar = state.current_avatar
-    principal = repository.get_principal_by_key(state.user_config.chat_default_principal_key)
-    if principal is None:
-        raise RuntimeError("Configured default chat principal does not exist.")
-    principal_token = bearer_token_for_principal(principal.id)
+    agent = repository.get_agent_by_key(state.user_config.chat_default_agent_key)
+    if agent is None:
+        raise RuntimeError("Configured default chat agent does not exist.")
+    agent_token = bearer_token_for_agent(agent.id)
 
     return UiConfigResponse(
         name=state.user_config.name,
-        principalBearerToken=principal_token,
+        agentBearerToken=agent_token,
         avatarZoom=get_user_settings().avatar_zoom,
         avatar=UiAvatarResponse(
             greetingAudioUrl=_avatar_asset_url(
@@ -95,16 +95,16 @@ async def ui_config(
     )
 
 
-@router.get("/token", response_model=PrincipalTokenResponse)
-async def ui_principal_token(
-    principal_id: int = Query(gt=0),
+@router.get("/token", response_model=AgentTokenResponse)
+async def ui_agent_token(
+    agent_id: int = Query(gt=0),
     repository: AuthorizationRepository = Depends(get_authorization_repository),
-) -> PrincipalTokenResponse:
-    """Return a fresh local bearer token for one persisted principal."""
-    if repository.get_principal_by_id(principal_id) is None:
-        raise HTTPException(status_code=404, detail="Principal does not exist.")
-    return PrincipalTokenResponse(
-        principalBearerToken=bearer_token_for_principal(principal_id)
+) -> AgentTokenResponse:
+    """Return a fresh local bearer token for one persisted agent."""
+    if repository.get_agent_by_id(agent_id) is None:
+        raise HTTPException(status_code=404, detail="Agent does not exist.")
+    return AgentTokenResponse(
+        agentBearerToken=bearer_token_for_agent(agent_id)
     )
 
 

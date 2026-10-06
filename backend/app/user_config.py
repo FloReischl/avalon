@@ -8,7 +8,6 @@ from typing import Annotated, Self
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator, model_validator
 
-from app.agents_config import AgentPermissionConfig
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -73,10 +72,9 @@ class TtsUserConfig(StrictConfigModel):
 
 
 class ChatUserConfig(StrictConfigModel):
-    """Default chat principal and its grantable capabilities."""
+    """Default chat agent."""
 
-    principal_key: NonEmptyStr
-    permissions: list[AgentPermissionConfig] = Field(default_factory=list)
+    agent_key: NonEmptyStr
 
 
 class UserConfig(StrictConfigModel):
@@ -86,9 +84,9 @@ class UserConfig(StrictConfigModel):
     chat: ChatUserConfig
     tts: TtsUserConfig
     @property
-    def chat_default_principal_key(self) -> str:
-        """Return the configured default chat principal key."""
-        return self.chat.principal_key
+    def chat_default_agent_key(self) -> str:
+        """Return the configured default chat agent key."""
+        return self.chat.agent_key
 
 
 _user_config: UserConfig | None = None

@@ -22,6 +22,13 @@ from app.services.chat import (
 )
 
 
+DEFAULT_AGENT = SimpleNamespace(
+    key="default",
+    persona="Du bist Frieda.",
+    instructions="Antworte kurz.",
+)
+
+
 class FakeRuntime:
     def __init__(self, chunks: list[str] | None = None) -> None:
         self.chunks = chunks or ["Hallo ", "Flo"]
@@ -39,12 +46,20 @@ class FakeRuntime:
 
 
 def assert_runtime_context(
-    messages: list[dict[str, str]], expected_context: list[dict[str, str]]
+    messages: list[dict[str, str]],
+    expected_context: list[dict[str, str]],
+    identity=DEFAULT_AGENT,
 ) -> None:
     assert messages[0]["role"] == "system"
     assert messages[0]["content"].startswith("Aktuelles Datum und Uhrzeit: ")
     assert "Aktueller Ort: München, Deutschland" in messages[0]["content"]
-    assert messages[1:] == expected_context
+    assert messages[1:] == [
+        {
+            "role": "system",
+            "content": f"{identity.persona}\n\n{identity.instructions}",
+        },
+        *expected_context,
+    ]
 
 
 @pytest.fixture
@@ -56,7 +71,7 @@ def service(tmp_path: Path):
     runtime = FakeRuntime()
 
     try:
-        yield ChatService(runtime, repository), repository, runtime
+        yield ChatService(runtime, repository, agents=(DEFAULT_AGENT,)), repository, runtime
     finally:
         engine.dispose()
 
@@ -105,6 +120,7 @@ async def test_command_turn_persists_request_and_response_without_runtime(
         runtime,
         repository,
         command_registry=registry,
+        agents=(DEFAULT_AGENT,),
     )
 
     turn = chat_service.start_turn(None, "/test echo hello   world")
@@ -129,13 +145,7 @@ async def test_unknown_slash_command_is_processed_by_runtime(service) -> None:
 
     assert chunks == ["Hallo ", "Flo"]
     assert len(runtime.calls) == 1
-    assert runtime.calls[0][0]["role"] == "system"
-    assert runtime.calls[0][0]["content"].startswith(
-        "Aktuelles Datum und Uhrzeit: "
-    )
-    assert runtime.calls[0][1:] == [
-        {"role": "user", "content": "/avatar foo test"}
-    ]
+    assert_runtime_context(runtime.calls[0], [{"role": "user", "content": "/avatar foo test"}])
 
     messages = repository.get_messages(turn.chat_id)
     assert [(message.role, message.content) for message in messages] == [
@@ -153,13 +163,7 @@ async def test_incomplete_slash_command_is_processed_by_runtime(service) -> None
 
     assert chunks == ["Hallo ", "Flo"]
     assert len(runtime.calls) == 1
-    assert runtime.calls[0][0]["role"] == "system"
-    assert runtime.calls[0][0]["content"].startswith(
-        "Aktuelles Datum und Uhrzeit: "
-    )
-    assert runtime.calls[0][1:] == [
-        {"role": "user", "content": "/avatar"}
-    ]
+    assert_runtime_context(runtime.calls[0], [{"role": "user", "content": "/avatar"}])
 
     messages = repository.get_messages(turn.chat_id)
     assert [(message.role, message.content) for message in messages] == [
@@ -169,16 +173,17 @@ async def test_incomplete_slash_command_is_processed_by_runtime(service) -> None
 
 
 @pytest.mark.asyncio
-async def test_avatar_system_prompt_precedes_persisted_context(service) -> None:
+async def test_default_agent_system_prompt_precedes_persisted_context(service) -> None:
     _, repository, runtime = service
-    avatar = SimpleNamespace(
+    agent = SimpleNamespace(
+        key="default",
         persona="Du bist Frieda.",
         instructions="Antworte kurz.",
     )
     chat_service = ChatService(
         runtime,
         repository,
-        avatar,  # type: ignore[arg-type]
+        agents=(agent,),
     )
 
     turn = chat_service.start_turn(None, "Hallo")
@@ -187,10 +192,8 @@ async def test_avatar_system_prompt_precedes_persisted_context(service) -> None:
     assert runtime.messages is not None
     assert_runtime_context(
         runtime.messages,
-        [
-            {"role": "system", "content": "Du bist Frieda.\n\nAntworte kurz."},
-            {"role": "user", "content": "Hallo"},
-        ],
+        [{"role": "user", "content": "Hallo"}],
+        agent,
     )
 
 @pytest.mark.asyncio
@@ -251,6 +254,7 @@ async def test_finalize_schedules_compression_without_waiting_for_it(service) ->
         runtime,
         repository,
         compression_service=BlockingCompression(),  # type: ignore[arg-type]
+        agents=(DEFAULT_AGENT,),
     )
     turn = chat_service.start_turn(None, "Hallo")
     _ = [chunk async for chunk in chat_service.stream_response(turn)]
@@ -373,9 +377,9 @@ async def test_model_context_contains_all_uncompressed_messages(service) -> None
     _ = [chunk async for chunk in chat_service.stream_response(turn)]
 
     assert runtime.messages is not None
-    assert len(runtime.messages) == 102
+    assert len(runtime.messages) == 103
     assert runtime.messages[0]["content"].startswith("Aktuelles Datum und Uhrzeit: ")
-    assert runtime.messages[1]["content"] == "Message 0"
+    assert runtime.messages[2]["content"] == "Message 0"
     assert runtime.messages[-1]["content"] == "Message 100"
 
 

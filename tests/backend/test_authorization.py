@@ -23,12 +23,12 @@ class FakeAuthorizationRepository:
         self.grants = grants or []
         self.created = []
 
-    def get_principal_permission(self, principal_id, context, key):
-        del principal_id, context, key
+    def get_permission_set(self, agent_id, context, key):
+        del agent_id, context, key
         return self.definition
 
-    def get_grants(self, principal_permission_id):
-        del principal_permission_id
+    def get_grants(self, permission_set_id):
+        del permission_set_id
         return self.grants
 
     def create_grant(self, *args):
@@ -93,7 +93,7 @@ async def test_workflow_scope_denies_unlisted_or_empty_keys(scope):
         del items
         executed = True
 
-    with pytest.raises(PermissionDenied, match="principal scope"):
+    with pytest.raises(PermissionDenied, match="agent scope"):
         await guard.execute(1, "workflow", "execute", ["test-workflow"], capability)
 
     assert not executed
@@ -113,7 +113,7 @@ async def test_workflow_scope_denies_empty_items() -> None:
         del items
         executed = True
 
-    with pytest.raises(PermissionDenied, match="principal scope"):
+    with pytest.raises(PermissionDenied, match="agent scope"):
         await guard.execute(1, "workflow", "execute", [], capability)
 
     assert not executed
@@ -212,9 +212,9 @@ class FakeGuard:
     def __init__(self):
         self.execute_calls = 0
 
-    async def execute(self, principal_id, context, key, items, capability, source_label):
+    async def execute(self, agent_id, context, key, items, capability, source_label):
         self.execute_calls += 1
-        assert (principal_id, context, key) == (3, "web", "search")
+        assert (agent_id, context, key) == (3, "web", "search")
         return await capability(items)
 
 
@@ -234,7 +234,7 @@ class FakeMcpClient:
 @pytest.mark.asyncio
 async def test_tool_runner_returns_final_text_after_authorized_tool_result():
     ToolRunner._tool_definition_cache = {}
-    runner = ToolRunner(FakeToolRuntime(), lambda principal_id, chat_id: FakeMcpClient())
+    runner = ToolRunner(FakeToolRuntime(), lambda agent_id, chat_id: FakeMcpClient())
     assert [chunk async for chunk in runner.stream_response(3, [{"role": "user", "content": "Suche Avalon"}], "Chat: Suche", 1)] == ["Hier ist das Ergebnis."]
 
 
@@ -256,7 +256,7 @@ async def test_tool_runner_reuses_a_duplicate_web_search_result_within_one_turn(
             yield self.responses.pop(0)
 
     client = FakeMcpClient()
-    runner = ToolRunner(RepeatingToolRuntime(), lambda principal_id, chat_id: client)
+    runner = ToolRunner(RepeatingToolRuntime(), lambda agent_id, chat_id: client)
 
     assert [
         chunk
@@ -268,7 +268,7 @@ async def test_tool_runner_reuses_a_duplicate_web_search_result_within_one_turn(
 
 
 @pytest.mark.asyncio
-async def test_tool_runner_caches_discovery_for_a_principal():
+async def test_tool_runner_caches_discovery_for_a_agent():
     ToolRunner._tool_definition_cache = {}
 
     class Runtime:
@@ -288,7 +288,7 @@ async def test_tool_runner_caches_discovery_for_a_principal():
 
     client = Client()
     for _ in range(2):
-        runner = ToolRunner(Runtime(), lambda principal_id, chat_id: client)
+        runner = ToolRunner(Runtime(), lambda agent_id, chat_id: client)
         assert [chunk async for chunk in runner.stream_response(3, [], "Chat", 1)] == ["Fertig."]
     assert client.list_calls == 1
 

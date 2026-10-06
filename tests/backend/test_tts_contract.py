@@ -6,7 +6,7 @@ from httpx import ASGITransport, AsyncClient
 
 from app.api.routes.tts import get_tts_service
 from app.main import create_app
-from app.mcp.security import bearer_token_for_principal
+from app.mcp.security import bearer_token_for_agent
 from app.services.tts import TtsBusyError, TtsResult
 
 
@@ -46,7 +46,7 @@ def request(
             base_url="http://test",
         ) as client:
             headers = kwargs.pop("headers", {})
-            headers.setdefault("Authorization", f"Bearer {bearer_token_for_principal(1)}")
+            headers.setdefault("Authorization", f"Bearer {bearer_token_for_agent(1)}")
             return await client.request(method, path, headers=headers, **kwargs)
 
     return asyncio.run(send_request())

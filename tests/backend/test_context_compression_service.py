@@ -4,6 +4,7 @@ from collections.abc import AsyncIterator
 from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -17,6 +18,13 @@ from app.services.context_compression import (
     _available_compression_chars,
     build_active_context,
     parse_compressed_context,
+)
+
+
+DEFAULT_AGENT = SimpleNamespace(
+    key="default",
+    persona="Du bist Frieda.",
+    instructions="Antworte kurz.",
 )
 
 
@@ -69,6 +77,10 @@ def add_roundtrips(repository: ChatRepository, count: int) -> int:
     return chat.id
 
 
+def compression_service(runtime: FakeRuntime, repository: ChatRepository) -> ContextCompressionService:
+    return ContextCompressionService(runtime, repository, agents=(DEFAULT_AGENT,))
+
+
 @pytest.mark.asyncio
 async def test_compression_represents_only_unprotected_old_roundtrips(
     repository: ChatRepository,
@@ -77,7 +89,7 @@ async def test_compression_represents_only_unprotected_old_roundtrips(
     chat_id = add_roundtrips(repository, 3)
     runtime = FakeRuntime(['{"summaries":["frueher"],"stars":["Ziel"]}'])
 
-    await ContextCompressionService(runtime, repository).compress_if_needed(chat_id)
+    await compression_service(runtime, repository).compress_if_needed(chat_id)
 
     chat = repository.get_chat(chat_id)
     assert chat is not None
@@ -89,7 +101,7 @@ async def test_compression_represents_only_unprotected_old_roundtrips(
     assert '"seq":2' in submitted
     assert '"seq":3' not in submitted
     protected = repository.get_messages(chat_id)[2:]
-    expected_max_chars = _available_compression_chars(protected, None)
+    expected_max_chars = _available_compression_chars(protected, DEFAULT_AGENT)
     assert (
         f"max_chars-Budgets bleiben: {expected_max_chars} Zeichen"
         in runtime.prompts[0][0]["content"]
@@ -117,11 +129,11 @@ async def test_compressor_receives_recalculated_budget_after_protected_retry(
     output = '{"summaries":[],"stars":["' + ("x" * 300) + '"]}'
     runtime = FakeRuntime([output, output, output])
 
-    await ContextCompressionService(runtime, repository).compress_if_needed(chat_id)
+    await compression_service(runtime, repository).compress_if_needed(chat_id)
 
     messages = repository.get_messages(chat_id)
-    normal_max_chars = _available_compression_chars(messages[2:], None)
-    fallback_max_chars = _available_compression_chars([], None)
+    normal_max_chars = _available_compression_chars(messages[2:], DEFAULT_AGENT)
+    fallback_max_chars = _available_compression_chars([], DEFAULT_AGENT)
     assert normal_max_chars < fallback_max_chars
     assert len(runtime.prompts) == 3
     assert (
@@ -149,7 +161,7 @@ async def test_context_at_or_below_trigger_does_not_call_compressor(
     chat_id = add_roundtrips(repository, 1)
     runtime = FakeRuntime([])
 
-    await ContextCompressionService(runtime, repository).compress_if_needed(chat_id)
+    await compression_service(runtime, repository).compress_if_needed(chat_id)
 
     assert runtime.prompts == []
 
@@ -162,7 +174,7 @@ async def test_invalid_results_are_retried_but_do_not_set_terminal_error(
     chat_id = add_roundtrips(repository, 3)
     runtime = FakeRuntime(["not json", "not json", "not json"])
 
-    await ContextCompressionService(runtime, repository).compress_if_needed(chat_id)
+    await compression_service(runtime, repository).compress_if_needed(chat_id)
 
     chat = repository.get_chat(chat_id)
     assert chat is not None
@@ -179,7 +191,7 @@ async def test_runtime_failure_does_not_change_compression_state(
     chat_id = add_roundtrips(repository, 3)
     runtime = FakeRuntime(["RUNTIME_ERROR"])
 
-    await ContextCompressionService(runtime, repository).compress_if_needed(chat_id)
+    await compression_service(runtime, repository).compress_if_needed(chat_id)
 
     chat = repository.get_chat(chat_id)
     assert chat is not None
@@ -209,7 +221,7 @@ async def test_unfulfillable_star_budget_sets_terminal_error(
         ['{"summaries":[],"stars":["unverzichtbar"]}'] * 3
     )
 
-    await ContextCompressionService(runtime, repository).compress_if_needed(chat_id)
+    await compression_service(runtime, repository).compress_if_needed(chat_id)
 
     chat = repository.get_chat(chat_id)
     assert chat is not None

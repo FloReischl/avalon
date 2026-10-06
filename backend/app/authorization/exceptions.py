@@ -2,7 +2,7 @@
 
 
 class PermissionDenied(Exception):
-    """Raised when a principal cannot request a permission."""
+    """Raised when an agent cannot request a permission."""
 
 
 class AbortException(Exception):

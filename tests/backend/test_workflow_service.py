@@ -11,7 +11,7 @@ from app.persistence.chat_repository import ChatRepository
 from app.persistence.database import create_database_engine, create_session_factory
 from app.persistence.migrations import run_migrations
 from app.persistence.workflow_execution_repository import WorkflowExecutionRepository
-from app.mcp.security import principal_from_authorization
+from app.mcp.security import agent_from_authorization
 
 
 WORKFLOW_FILE = Path(__file__).resolve().parents[1] / "data" / "test-workflow.py"
@@ -26,12 +26,14 @@ def workflow_config(path: Path = WORKFLOW_FILE) -> WorkflowsConfig:
 
 @pytest.fixture(autouse=True)
 def configured_avatar_state(monkeypatch: pytest.MonkeyPatch) -> None:
+    agent = SimpleNamespace(
+        persona="Test Persona", instructions="Test Instructions"
+    )
     monkeypatch.setattr(
         "app.services.workflows.get_avalon_state",
         lambda: SimpleNamespace(
-            current_avatar=SimpleNamespace(
-                persona="Test Persona", instructions="Test Instructions"
-            )
+            current_avatar=agent,
+            get_agent=lambda key: agent if key == "default" else None,
         ),
     )
 
@@ -48,10 +50,6 @@ async def test_executes_registered_workflow_with_json_stdin(tmp_path: Path) -> N
     chat = chat_repository.create_chat_with_message(
         "Workflow", "user", "Starte den Workflow"
     )
-    avatar = SimpleNamespace(
-        persona="Test Persona",
-        instructions="Test Instructions",
-    )
     service = WorkflowService(
         workflow_config(),
         WorkflowExecutionRepository(factory),
@@ -59,7 +57,7 @@ async def test_executes_registered_workflow_with_json_stdin(tmp_path: Path) -> N
     )
 
     execution_id = await service.execute(
-        "test-workflow", payload, chat.id, "turn-1", "http://localhost", chat.principal_id
+        "test-workflow", payload, chat.id, "turn-1", "http://localhost", chat.agent_id
     )
     await asyncio.sleep(0.1)
 
@@ -69,9 +67,9 @@ async def test_executes_registered_workflow_with_json_stdin(tmp_path: Path) -> N
         assert envelope["payload"] == payload
         assert envelope["avalon"]["workflow_execution_id"] == execution_id
         assert envelope["avalon"]["backend_url"] == "http://localhost"
-        assert principal_from_authorization(
+        assert agent_from_authorization(
             f"Bearer {envelope['avalon']['bearer_token']}"
-        ) == chat.principal_id
+        ) == chat.agent_id
         assert envelope["avalon"]["model_persona"] == "Test Persona"
         assert envelope["avalon"]["model_instructions"] == "Test Instructions"
         assert envelope["avalon"]["model_context"] == [
@@ -106,7 +104,7 @@ async def test_unknown_workflow_does_not_start_a_process(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_missing_parent_principal_fails_before_workflow_resolution_or_start(
+async def test_missing_parent_agent_fails_before_workflow_resolution_or_start(
     monkeypatch,
 ) -> None:
     started = False
@@ -119,7 +117,7 @@ async def test_missing_parent_principal_fails_before_workflow_resolution_or_star
 
     monkeypatch.setattr("app.services.workflows.asyncio.create_subprocess_exec", create_process)
 
-    with pytest.raises(WorkflowExecutionError, match="parent principal"):
+    with pytest.raises(WorkflowExecutionError, match="parent agent"):
         await WorkflowService(workflow_config()).execute(
             "test-workflow", {}, 1, "turn-1", "http://localhost", None  # type: ignore[arg-type]
         )
@@ -144,7 +142,7 @@ async def test_nonzero_workflow_exit_marks_execution_failed(tmp_path: Path) -> N
             repository,
             ChatRepository(factory),
         ).execute(
-            "test-workflow", ["payload"], chat.id, "turn-1", "http://localhost", chat.principal_id
+            "test-workflow", ["payload"], chat.id, "turn-1", "http://localhost", chat.agent_id
         )
         await asyncio.sleep(0.1)
         execution = repository.get(execution_id)

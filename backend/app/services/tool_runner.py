@@ -21,11 +21,11 @@ class ToolRunner:
         self._mcp_client_factory = mcp_client_factory
 
     async def stream_response(
-        self, principal_id: int, messages: list[dict[str, str]], source_label: str, chat_id: int
+        self, agent_id: int, messages: list[dict[str, str]], source_label: str, chat_id: int
     ) -> AsyncIterator[str]:
         del source_label
-        client = self._mcp_client_factory(principal_id, chat_id)
-        tools = await self._tools_for_principal(principal_id, client)
+        client = self._mcp_client_factory(agent_id, chat_id)
+        tools = await self._tools_for_agent(agent_id, client)
         tool_messages: list[dict[str, object]] = list(messages)
         tool_result_cache: dict[str, object] = {}
         for _ in range(5):
@@ -85,15 +85,15 @@ class ToolRunner:
         raise RuntimeError("Tool calling exceeded five iterations.")
 
     @classmethod
-    async def _tools_for_principal(
-        cls, principal_id: int, client: McpToolClient
+    async def _tools_for_agent(
+        cls, agent_id: int, client: McpToolClient
     ) -> list[dict[str, object]]:
-        if principal_id not in cls._tool_definition_cache:
+        if agent_id not in cls._tool_definition_cache:
             try:
-                cls._tool_definition_cache[principal_id] = await client.list_tools()
+                cls._tool_definition_cache[agent_id] = await client.list_tools()
             except Exception as exc:
                 raise RuntimeError("MCP tools/list failed.") from exc
-        return cls._tool_definition_cache[principal_id]
+        return cls._tool_definition_cache[agent_id]
 
     @staticmethod
     def _parse_call(call: object) -> tuple[str, dict[str, object]]:

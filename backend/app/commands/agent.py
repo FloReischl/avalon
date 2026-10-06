@@ -153,16 +153,7 @@ class AgentUnloadCommand:
                 else persisted_agent.key
             )
 
-        try:
-            principal_key = get_user_config().chat_default_principal_key
-        except RuntimeError:
-            principal_key = "chat-default"
-
-        principal = self._repository.get_principal_by_key(principal_key)
-        if principal is None:
-            raise RuntimeError("Configured chat default principal is missing.")
-
-        if not self._repository.unload_agent(context.chat_id, principal.id):
+        if not self._repository.unload_agent(context.chat_id):
             raise RuntimeError(f"Chat {context.chat_id} does not exist.")
 
         return f"Agent {agent_name} unloaded."

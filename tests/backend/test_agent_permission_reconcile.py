@@ -7,7 +7,7 @@ from app.agents_config import AgentsConfig
 from app.persistence.authorization_repository import AuthorizationRepository
 from app.persistence.database import create_database_engine, create_session_factory
 from app.persistence.migrations import run_migrations
-from app.persistence.models import Agent, PermissionCatalog, PrincipalPermission
+from app.persistence.models import Agent, PermissionCatalog, PermissionSet
 
 
 def _config(permissions: list[dict]) -> AgentsConfig:
@@ -19,7 +19,7 @@ def _config(permissions: list[dict]) -> AgentsConfig:
 def _permission(context="web", key="search", scope=None, expiry=7200) -> dict:
     return {
         "permission_catalog": {"context": context, "key": key},
-        "principal_permission": {
+        "permission_set": {
             "scope": [] if scope is None else scope,
             "validity_type": "duration",
             "default_expiry": expiry,
@@ -40,10 +40,10 @@ def repository(tmp_path: Path):
 
 def _permissions(session_factory):
     with session_factory() as session:
-        return list(session.scalars(select(PrincipalPermission).order_by(PrincipalPermission.id)))
+        return list(session.scalars(select(PermissionSet).order_by(PermissionSet.id)))
 
 
-def test_reconcile_creates_catalog_and_principal_permission(repository) -> None:
+def test_reconcile_creates_catalog_and_permission_set(repository) -> None:
     repo, session_factory = repository
     repo.reconcile_agents_permissions(_config([_permission()]))
 
@@ -111,8 +111,11 @@ def test_reconcile_rolls_back_every_change_after_a_failure(repository, monkeypat
 
     with session_factory() as session:
         assert session.scalars(select(PermissionCatalog)).all() == []
-        assert session.scalars(select(Agent)).all() == []
-        assert session.scalars(select(PrincipalPermission)).all() == []
+        agents = list(session.scalars(select(Agent)))
+        assert [(agent.key, agent.name) for agent in agents] == [
+            ("default", "Default Agent")
+        ]
+        assert session.scalars(select(PermissionSet)).all() == []
 
 
 def test_reconcile_persists_and_updates_agent_name(repository) -> None:
@@ -134,4 +137,3 @@ def test_reconcile_persists_and_updates_agent_name(repository) -> None:
     with session_factory() as session:
         agent = session.scalar(select(Agent).where(Agent.key == "podcast"))
         assert agent.name == "Hedwig Updated"
-

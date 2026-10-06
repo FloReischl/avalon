@@ -3,9 +3,8 @@
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session, selectinload, selectin_polymorphic, sessionmaker
 
-from app.persistence.models import (
-    Agent, Attachment, Chat, Message, Principal, ProgressMessage, TextMessage,
-)
+from app.user_config import get_user_config
+from app.persistence.models import Agent, Attachment, Chat, Message, ProgressMessage, TextMessage
 
 
 
@@ -20,14 +19,14 @@ class ChatRepository:
         """Expose the shared factory for collaborating repositories."""
         return self._session_factory
 
-    def create_chat(self, title: str, principal_id: int | None = None) -> Chat:
+    def create_chat(self, title: str, agent_id: int | None = None) -> Chat:
         """Create one persistent chat."""
         normalized_title = self._validate_title(title)
 
         with self._session_factory() as session:
             chat = Chat(
                 title=normalized_title,
-                principal_id=self._resolve_principal_id(session, principal_id),
+                agent_id=self._resolve_agent_id(session, agent_id),
             )
             session.add(chat)
             session.commit()
@@ -39,7 +38,7 @@ class ChatRepository:
         title: str,
         role: str,
         content: str,
-        principal_id: int | None = None,
+        agent_id: int | None = None,
     ) -> Chat:
         """Create a chat and its first message atomically."""
         normalized_title = self._validate_title(title)
@@ -48,7 +47,7 @@ class ChatRepository:
         with self._session_factory() as session:
             chat = Chat(
                 title=normalized_title,
-                principal_id=self._resolve_principal_id(session, principal_id),
+                agent_id=self._resolve_agent_id(session, agent_id),
                 next_message_seq=2,
             )
             message = TextMessage(
@@ -119,17 +118,6 @@ class ChatRepository:
                 .options(selectinload(Chat.agent))
             )
 
-    def get_principal_by_key(self, key: str) -> Principal | None:
-        """Resolve a configured chat principal."""
-        with self._session_factory() as session:
-            principal = session.scalar(select(Principal).where(Principal.key == key))
-            if principal is None and key == "chat-default":
-                principal = Principal(key=key, chat_assignable=True)
-                session.add(principal)
-                session.commit()
-                session.refresh(principal)
-            return principal
-
     def get_agent_by_key(self, key: str) -> Agent | None:
         """Resolve one reconciled agent by its configured key."""
         with self._session_factory() as session:
@@ -141,39 +129,38 @@ class ChatRepository:
             return session.get(Agent, agent_id)
 
     def assign_agent(self, chat_id: int, agent_id: int) -> bool:
-        """Atomically replace a chat principal with one agent identity."""
+        """Atomically replace a chat agent."""
         with self._session_factory() as session:
             result = session.execute(
                 update(Chat)
                 .where(Chat.id == chat_id)
-                .values(principal_id=None, agent_id=agent_id)
+                .values(agent_id=agent_id)
             )
             session.commit()
             return result.rowcount == 1
 
-    def unload_agent(self, chat_id: int, principal_id: int) -> bool:
-        """Atomically restore the normal chat authorization identity."""
+    def unload_agent(self, chat_id: int) -> bool:
+        """Atomically restore the default agent."""
         with self._session_factory() as session:
+            default_agent_key = get_user_config().chat_default_agent_key
+            default_agent = session.scalar(select(Agent).where(Agent.key == default_agent_key))
+            if default_agent is None:
+                return False
             result = session.execute(
                 update(Chat)
                 .where(Chat.id == chat_id)
-                .values(principal_id=principal_id, agent_id=None)
+                .values(agent_id=default_agent.id)
             )
             session.commit()
             return result.rowcount == 1
 
-    def get_effective_principal_id(self, chat_id: int) -> int | None:
-        """Resolve the principal currently authorizing one chat."""
+    def get_agent_id(self, chat_id: int) -> int | None:
+        """Resolve the agent currently authorizing one chat."""
         with self._session_factory() as session:
             chat = session.get(Chat, chat_id)
             if chat is None:
                 return None
-            if chat.principal_id is not None:
-                return chat.principal_id
-            if chat.agent_id is None:
-                return None
-            agent = session.get(Agent, chat.agent_id)
-            return None if agent is None else agent.principal_id
+            return None if chat is None else chat.agent_id
 
     def get_messages(self, chat_id: int) -> list[Message]:
 
@@ -371,19 +358,15 @@ class ChatRepository:
             return True
 
     @staticmethod
-    def _resolve_principal_id(session: Session, principal_id: int | None) -> int:
-        """Use the bootstrap default for legacy callers and focused tests."""
-        if principal_id is not None:
-            return principal_id
-
-        principal = session.scalar(
-            select(Principal).where(Principal.key == "chat-default")
-        )
-        if principal is None:
-            principal = Principal(key="chat-default", chat_assignable=True)
-            session.add(principal)
-            session.flush()
-        return principal.id
+    def _resolve_agent_id(session: Session, agent_id: int | None) -> int:
+        """Use the reconciled default agent for ordinary chats."""
+        if agent_id is not None:
+            return agent_id
+        default_agent_key = get_user_config().chat_default_agent_key
+        agent = session.scalar(select(Agent).where(Agent.key == default_agent_key))
+        if agent is None:
+            raise RuntimeError("The default agent has not been reconciled.")
+        return agent.id
 
     @staticmethod
     def _validate_message(role: str, content: str) -> None:

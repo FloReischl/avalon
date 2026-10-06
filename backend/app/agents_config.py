@@ -23,7 +23,7 @@ class PermissionCatalogConfig(StrictAgentsConfigModel):
     key: NonEmptyStr
 
 
-class PrincipalPermissionConfig(StrictAgentsConfigModel):
+class PermissionSetConfig(StrictAgentsConfigModel):
     scope: JsonValue = Field(default_factory=list)
     validity_type: Literal["permanent", "duration", "range"]
     default_expiry: int = Field(ge=0)
@@ -38,7 +38,7 @@ class PrincipalPermissionConfig(StrictAgentsConfigModel):
 
 class AgentPermissionConfig(StrictAgentsConfigModel):
     permission_catalog: PermissionCatalogConfig
-    principal_permission: PrincipalPermissionConfig
+    permission_set: PermissionSetConfig
 
 
 class AgentConfig(StrictAgentsConfigModel):
@@ -63,7 +63,7 @@ class AgentsConfig(StrictAgentsConfigModel):
                 (
                     permission.permission_catalog.context,
                     permission.permission_catalog.key,
-                    permission.principal_permission.canonical_scope,
+                    permission.permission_set.canonical_scope,
                 )
                 for permission in agent.permissions
             ]

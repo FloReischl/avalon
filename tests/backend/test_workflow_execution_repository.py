@@ -107,7 +107,12 @@ async def test_start_failure_appends_clear_system_progress(monkeypatch, reposito
     monkeypatch.setattr(
         "app.services.workflows.get_avalon_state",
         lambda: SimpleNamespace(
-            current_avatar=SimpleNamespace(persona="Test", instructions="Test")
+            current_avatar=SimpleNamespace(persona="Test", instructions="Test"),
+            get_agent=lambda key: (
+                SimpleNamespace(persona="Test", instructions="Test")
+                if key == "default"
+                else None
+            ),
         ),
     )
     service = WorkflowService(Config(), repo, ChatRepository(repo._session_factory))
@@ -115,7 +120,7 @@ async def test_start_failure_appends_clear_system_progress(monkeypatch, reposito
 
     with pytest.raises(OSError, match="permission denied"):
         await service.execute(
-            "podcast", {}, chat.id, "invocation-1", "http://localhost", chat.principal_id
+            "podcast", {}, chat.id, "invocation-1", "http://localhost", chat.agent_id
         )
 
     execution = repo.get(1)

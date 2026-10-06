@@ -58,7 +58,7 @@ async def test_stream_response_yields_text_chunks_immediately() -> None:
         [[{"content": "Hallo "}, {"content": "Flo"}]]
     )
     client = FakeMcpClient()
-    runner = ToolRunner(runtime, lambda principal_id, chat_id: client)
+    runner = ToolRunner(runtime, lambda agent_id, chat_id: client)
 
     stream = runner.stream_response(
         1,
@@ -88,7 +88,7 @@ async def test_stream_response_continues_after_tool_call() -> None:
         ]
     )
     client = FakeMcpClient()
-    runner = ToolRunner(runtime, lambda principal_id, chat_id: client)
+    runner = ToolRunner(runtime, lambda agent_id, chat_id: client)
 
     chunks = [
         chunk
@@ -129,7 +129,7 @@ async def test_stream_response_keeps_prior_text_visible_when_tool_fails() -> Non
         ]
     )
     client = FakeMcpClient(RuntimeError("tool failed"))
-    runner = ToolRunner(runtime, lambda principal_id, chat_id: client)
+    runner = ToolRunner(runtime, lambda agent_id, chat_id: client)
 
     stream = runner.stream_response(
         1,

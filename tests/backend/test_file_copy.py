@@ -11,15 +11,15 @@ from pathlib import Path
 import pytest
 
 from app.authorization.permissions import FileCopyPermission
-from app.mcp.security import current_principal_id
+from app.mcp.security import current_agent_id
 from app.mcp.server import create_mcp_server
 import app.mcp.server as mcp_server_module
-from app.persistence.models import PrincipalPermission
+from app.persistence.models import PermissionSet
 from app.services.file_copy import FileCopyScope, FileCopyService
 
 
-def _scope(source: Path, destination: Path) -> PrincipalPermission:
-    return PrincipalPermission(
+def _scope(source: Path, destination: Path) -> PermissionSet:
+    return PermissionSet(
         scope=json.dumps([{"source": str(source), "destination": str(destination)}]),
         validity_type="duration",
         default_expiry=7200,
@@ -141,16 +141,16 @@ async def test_mcp_guard_passes_the_selected_scope_to_file_copy(tmp_path: Path, 
     class Repository:
         def __init__(self, _): pass
         def get_permission_catalog_id(self, context, key): return 7 if (context, key) == ("file", "copy") else None
-        def get_principal_permission_by_catalog_id(self, principal_id, catalog_id):
+        def get_permission_set_by_catalog_id(self, agent_id, catalog_id):
             return _scope(source_root, destination_root)
         def get_grants(self, definition_id):
             return [type("Grant", (), {"valid_from": datetime.now() - timedelta(seconds=1), "valid_to": datetime.now() + timedelta(seconds=1), "range": None})()]
     monkeypatch.setattr(mcp_server_module, "AuthorizationRepository", Repository)
     monkeypatch.setattr(mcp_server_module, "create_database_engine", Engine)
     monkeypatch.setattr(mcp_server_module, "create_session_factory", lambda _: object())
-    token = current_principal_id.set(1)
+    token = current_agent_id.set(1)
     try:
         await create_mcp_server().call_tool("file.copy", {"source": str(source_root / "input"), "destination": str(destination_root / "output")})
     finally:
-        current_principal_id.reset(token)
+        current_agent_id.reset(token)
     assert (destination_root / "output").read_text() == "ok"

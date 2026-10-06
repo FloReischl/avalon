@@ -16,7 +16,7 @@ RequestObserver = Callable[[AuthorizationRequest], None]
 
 
 class PermissionGuard:
-    """Authorize one complete capability call for one trusted principal."""
+    """Authorize one complete capability call for one trusted agent."""
 
     def __init__(
         self,
@@ -34,7 +34,7 @@ class PermissionGuard:
 
     async def execute(
         self,
-        principal_id: int,
+        agent_id: int,
         context: str,
         key: str,
         items: list[object],
@@ -43,17 +43,17 @@ class PermissionGuard:
         permission_catalog_id: int | None = None,
     ) -> Result:
         definition = (
-            self._repository.get_principal_permission_by_catalog_id(
-                principal_id, permission_catalog_id
+            self._repository.get_permission_set_by_catalog_id(
+                agent_id, permission_catalog_id
             )
             if permission_catalog_id is not None
-            else self._repository.get_principal_permission(principal_id, context, key)
+            else self._repository.get_permission_set(agent_id, context, key)
         )
         if definition is None:
-            raise PermissionDenied(f"{context}/{key} is not grantable for principal.")
+            raise PermissionDenied(f"{context}/{key} is not grantable for agent.")
         permission = self._registry.get(context, key)
         if not permission.allows(definition, items):
-            raise PermissionDenied(f"{context}/{key} is not allowed by principal scope.")
+            raise PermissionDenied(f"{context}/{key} is not allowed by agent scope.")
         now = self._clock()
         for grant in self._repository.get_grants(definition.id):
             if permission.check(definition, grant, items, now):

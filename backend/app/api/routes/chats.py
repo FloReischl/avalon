@@ -48,14 +48,9 @@ async def get_authorization_repository():
         engine.dispose()
 
 
-def _effective_principal_id(chat) -> int:
-    """Return the direct or agent-owned principal required by a persisted chat."""
-    principal_id = chat.principal_id
-    if principal_id is None and chat.agent is not None:
-        principal_id = chat.agent.principal_id
-    if principal_id is None:
-        raise RuntimeError(f"Chat {chat.id} has no effective principal.")
-    return principal_id
+def _agent_id(chat) -> int:
+    """Return the agent required by a persisted chat."""
+    return chat.agent_id
 
 
 def _summary_response(chat) -> ChatSummaryResponse:
@@ -65,7 +60,7 @@ def _summary_response(chat) -> ChatSummaryResponse:
         id=chat.id,
         title=chat.title,
         pinned=chat.pinned,
-        principal_id=_effective_principal_id(chat),
+        agent_id=_agent_id(chat),
         agent_name=agent_name,
         created_at=chat.created_at,
     )
@@ -105,7 +100,7 @@ def get_chat(
         id=chat.id,
         title=chat.title,
         pinned=chat.pinned,
-        principal_id=_effective_principal_id(chat),
+        agent_id=_agent_id(chat),
         agent_name=chat.agent.name if chat.agent is not None else None,
         created_at=chat.created_at,
         compression_error_code=chat.compression_error_code,
@@ -191,16 +186,16 @@ def set_chat_pinned(
 def _proactive_permissions(
     chat_id: int,
     repository: AuthorizationRepository,
-    default_chat_principal_key: str = "chat-default",
+    default_chat_agent_key: str = "default",
 ) -> list[ProactivePermissionResponse]:
-    principal_id = repository.get_effective_principal_id_for_chat(
-        chat_id, default_chat_principal_key
+    agent_id = repository.get_agent_id_for_chat(
+        chat_id
     )
-    if principal_id is None:
+    if agent_id is None:
         raise HTTPException(status_code=404, detail=f"Chat {chat_id} does not exist.")
     now = datetime.now()
     result: list[ProactivePermissionResponse] = []
-    for permission, catalog in repository.get_active_principal_permissions(principal_id):
+    for permission, catalog in repository.get_active_permission_sets(agent_id):
         grant = repository.get_active_grant(permission.id, now)
         if permission.validity_type == "range" and grant is None:
             continue
@@ -226,9 +221,9 @@ def list_proactive_permissions(
     chat_id: int,
     repository: AuthorizationRepository = Depends(get_authorization_repository),
 ) -> list[ProactivePermissionResponse]:
-    """Show active grants/configured permissions for one chat's effective principal."""
+    """Show active grants/configured permissions for one chat's agent."""
     return _proactive_permissions(
-        chat_id, repository, get_user_config().chat_default_principal_key
+        chat_id, repository, get_user_config().chat_default_agent_key
     )
 
 
@@ -240,15 +235,13 @@ def save_proactive_permission(
     repository: AuthorizationRepository = Depends(get_authorization_repository),
 ) -> ProactivePermissionResponse:
     """Directly persist a proactive duration or permanent grant for this chat."""
-    principal_id = repository.get_effective_principal_id_for_chat(
-        chat_id, get_user_config().chat_default_principal_key
-    )
-    if principal_id is None:
+    agent_id = repository.get_agent_id_for_chat(chat_id)
+    if agent_id is None:
         raise HTTPException(status_code=404, detail=f"Chat {chat_id} does not exist.")
     permission = next(
         (
             definition
-            for definition, _ in repository.get_active_principal_permissions(principal_id)
+            for definition, _ in repository.get_active_permission_sets(agent_id)
             if definition.id == permission_id
         ),
         None,
@@ -270,7 +263,7 @@ def save_proactive_permission(
     return next(
         item
         for item in _proactive_permissions(
-            chat_id, repository, get_user_config().chat_default_principal_key
+            chat_id, repository, get_user_config().chat_default_agent_key
         )
         if item.id == permission_id
     )

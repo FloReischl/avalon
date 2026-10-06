@@ -20,7 +20,7 @@ def _valid_config(tmp_path: Path) -> tuple[dict, Path]:
 
     data = {
         "name": "Frieda",
-        "chat": {"principal_key": "chat-default"},
+        "chat": {"agent_key": "default"},
         "tts": {
             "chatterbox": {
                 "reference_audio": str(tmp_path / "missing-chatterbox.wav"),
@@ -51,7 +51,7 @@ def test_loads_and_normalizes_valid_user_config(tmp_path: Path) -> None:
     config = load_user_config(config_path)
 
     assert config.name == "Frieda"
-    assert config.chat.principal_key == "chat-default"
+    assert config.chat.agent_key == "default"
     assert config.tts.kokoro.model == (tmp_path / "tts" / "model.pth").resolve()
 
 

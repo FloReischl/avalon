@@ -13,7 +13,7 @@ from app.config import LlmConfig, configure_logging, settings
 from app.avatars_config import initialize_avatars_config
 from app.models_config import initialize_models_config
 from app.mcp.server import create_mcp_server
-from app.mcp.security import current_principal_id, principal_from_authorization
+from app.mcp.security import current_agent_id, agent_from_authorization
 from app.persistence.migrations import run_migrations
 from app.persistence.authorization_repository import AuthorizationRepository
 from app.persistence.database import create_database_engine, create_session_factory
@@ -85,7 +85,6 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
             engine = create_database_engine()
             try:
                 repository = AuthorizationRepository(create_session_factory(engine))
-                repository.reconcile_chat_permissions(user_config.chat)
                 repository.reconcile_agents_permissions(agents_config)
             finally:
                 engine.dispose()
@@ -113,7 +112,7 @@ class StderrExceptionMiddleware:
             raise
 
 
-class PrincipalBearerMiddleware:
+class AgentBearerMiddleware:
     """Resolve the local bearer token for mounted MCP requests."""
 
     def __init__(self, app) -> None:
@@ -125,25 +124,25 @@ class PrincipalBearerMiddleware:
             return
         try:
             authorization = dict(scope["headers"]).get(b"authorization", b"").decode("ascii")
-            principal_id = principal_from_authorization(authorization)
+            agent_id = agent_from_authorization(authorization)
         except (HTTPException, UnicodeDecodeError) as exc:
             detail = exc.detail if isinstance(exc, HTTPException) else "Invalid bearer token."
             await JSONResponse({"detail": detail}, status_code=401)(scope, receive, send)
             return
-        token = current_principal_id.set(principal_id)
+        token = current_agent_id.set(agent_id)
         try:
             await self.app(scope, receive, send)
         finally:
-            current_principal_id.reset(token)
+            current_agent_id.reset(token)
 
 
-async def require_api_principal(request: Request) -> None:
-    """Resolve the bearer principal for API routes where identity matters."""
+async def require_api_agent(request: Request) -> None:
+    """Resolve the bearer agent for API routes where identity matters."""
     path = request.url.path
     if not path.startswith("/api/v1/") or path in {"/api/v1/ui/config", "/api/v1/ui/token", "/api/v1/ui/settings"} or path.startswith("/api/v1/assets/avatar/") or (path.endswith("/download") and path.startswith("/api/v1/attachments/")) or path in {"/api/v1/authorization-requests/events", "/api/v1/workflow-executions/events"}:
         return
-    principal_id = principal_from_authorization(request.headers.get("Authorization"))
-    request.scope["avalon.principal_id"] = principal_id
+    agent_id = agent_from_authorization(request.headers.get("Authorization"))
+    request.scope["avalon.agent_id"] = agent_id
 
 
 def create_app() -> FastAPI:
@@ -153,9 +152,9 @@ def create_app() -> FastAPI:
     application = FastAPI(
         title=settings.app_name,
         lifespan=lifespan,
-        dependencies=[Depends(require_api_principal)],
+        dependencies=[Depends(require_api_agent)],
     )
-    application.add_middleware(PrincipalBearerMiddleware)
+    application.add_middleware(AgentBearerMiddleware)
     application.add_middleware(StderrExceptionMiddleware)
     application.add_middleware(
         CORSMiddleware,

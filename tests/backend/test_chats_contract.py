@@ -7,7 +7,7 @@ from httpx import ASGITransport, AsyncClient
 
 from app.api.routes.chats import get_chat, get_chat_repository
 from app.main import create_app
-from app.mcp.security import bearer_token_for_principal
+from app.mcp.security import bearer_token_for_agent
 from app.persistence.models import Chat, TextMessage
 
 
@@ -19,7 +19,7 @@ class FakeChatRepository:
                 title="Erster Chat",
                 title_is_manual=False,
                 pinned=False,
-                principal_id=1,
+                agent_id=1,
                 created_at=datetime(2026, 9, 7, 20, 0, 0),
             ),
             2: Chat(
@@ -27,7 +27,7 @@ class FakeChatRepository:
                 title="Zweiter Chat",
                 title_is_manual=False,
                 pinned=True,
-                principal_id=2,
+                agent_id=2,
                 created_at=datetime(2026, 9, 7, 21, 0, 0),
             ),
 
@@ -114,7 +114,7 @@ def request(method: str, path: str, json=None):
                 method,
                 path,
                 json=json,
-                headers={"Authorization": f"Bearer {bearer_token_for_principal(1)}"},
+                headers={"Authorization": f"Bearer {bearer_token_for_agent(1)}"},
             )
 
     return asyncio.run(send())
@@ -133,7 +133,7 @@ def test_list_chats_returns_repository_order() -> None:
         True,
         False,
     ]
-    assert [chat["principal_id"] for chat in response.json()] == [2, 1]
+    assert [chat["agent_id"] for chat in response.json()] == [2, 1]
 
 
 def test_get_chat_returns_complete_history() -> None:
@@ -146,7 +146,7 @@ def test_get_chat_returns_complete_history() -> None:
     assert payload["id"] == 1
     assert payload["title"] == "Erster Chat"
     assert payload["pinned"] is False
-    assert payload["principal_id"] == 1
+    assert payload["agent_id"] == 1
     assert payload["compression_error_code"] is None
     assert [message["id"] for message in payload["messages"]] == [10, 11]
 
@@ -278,9 +278,9 @@ def test_chat_summary_includes_agent_name_or_none() -> None:
         def __init__(self):
             super().__init__()
             self.chats[1].agent = None
-            agent = Agent(key="test-agent", name="Hedwig Agent", principal_id=99)
+            agent = Agent(key="test-agent", name="Hedwig Agent", agent_id=99)
             self.chats[2].agent = agent
-            self.chats[2].principal_id = None
+            self.chats[2].agent_id = None
 
     async def run_test():
         application = create_app()
@@ -289,13 +289,13 @@ def test_chat_summary_includes_agent_name_or_none() -> None:
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             response = await client.get(
                 "/api/v1/chats",
-                headers={"Authorization": f"Bearer {bearer_token_for_principal(1)}"},
+                headers={"Authorization": f"Bearer {bearer_token_for_agent(1)}"},
             )
             assert response.status_code == 200
             data = response.json()
             assert data[0]["id"] == 2
             assert data[0]["agent_name"] == "Hedwig Agent"
-            assert data[0]["principal_id"] == 99
+            assert data[0]["agent_id"] == 99
             assert data[1]["id"] == 1
             assert data[1]["agent_name"] is None
 

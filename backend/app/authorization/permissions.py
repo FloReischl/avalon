@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Protocol
 
 from app.authorization.types import PERMANENT_VALID_TO_YEAR
-from app.persistence.models import PermissionGrant, PrincipalPermission
+from app.persistence.models import PermissionGrant, PermissionSet
 from app.services.file_copy import FileCopyScope
 
 
@@ -15,15 +15,15 @@ class Permission(Protocol):
 
     def check(
         self,
-        principal_permission: PrincipalPermission,
+        permission_set: PermissionSet,
         grant: PermissionGrant,
         items: list[object],
         now: datetime,
     ) -> bool:
         ...
 
-    def allows(self, principal_permission: PrincipalPermission, items: list[object]) -> bool:
-        """Return whether the static principal scope permits these items."""
+    def allows(self, permission_set: PermissionSet, items: list[object]) -> bool:
+        """Return whether the static agent scope permits these items."""
         ...
 
     def format(self, item: object) -> str:
@@ -61,23 +61,23 @@ class WebSearchPermission:
 
     _DOMAIN = "duckduckgo.com"
 
-    def allows(self, principal_permission: PrincipalPermission, items: list[object]) -> bool:
+    def allows(self, permission_set: PermissionSet, items: list[object]) -> bool:
         del items
-        scope = json.loads(principal_permission.scope)
+        scope = json.loads(permission_set.scope)
         return isinstance(scope, list) and self._DOMAIN in scope
 
     def check(
         self,
-        principal_permission: PrincipalPermission,
+        permission_set: PermissionSet,
         grant: PermissionGrant,
         items: list[object],
         now: datetime,
     ) -> bool:
-        if not self.allows(principal_permission, items):
+        if not self.allows(permission_set, items):
             return False
         if grant.valid_from > now or grant.valid_to <= now:
             return False
-        if principal_permission.validity_type == "range":
+        if permission_set.validity_type == "range":
             if grant.range is None:
                 return False
             return all(item in json.loads(grant.range) for item in items)
@@ -108,20 +108,20 @@ class WebSearchPermission:
 class WebGetContentPermission:
     """Authorize individual web-content retrieval requests by URL."""
 
-    def allows(self, principal_permission: PrincipalPermission, items: list[object]) -> bool:
-        del principal_permission, items
+    def allows(self, permission_set: PermissionSet, items: list[object]) -> bool:
+        del permission_set, items
         return True
 
     def check(
         self,
-        principal_permission: PrincipalPermission,
+        permission_set: PermissionSet,
         grant: PermissionGrant,
         items: list[object],
         now: datetime,
     ) -> bool:
         if grant.valid_from > now or grant.valid_to <= now:
             return False
-        if principal_permission.validity_type == "range":
+        if permission_set.validity_type == "range":
             if grant.range is None:
                 return False
             return all(item in json.loads(grant.range) for item in items)
@@ -152,8 +152,8 @@ class WebGetContentPermission:
 class WorkflowExecutePermission:
     """Authorize workflow execution by the configured workflow-key allowlist."""
 
-    def allows(self, principal_permission: PrincipalPermission, items: list[object]) -> bool:
-        scope = json.loads(principal_permission.scope)
+    def allows(self, permission_set: PermissionSet, items: list[object]) -> bool:
+        scope = json.loads(permission_set.scope)
         return (
             isinstance(scope, list)
             and len(items) == 1
@@ -163,16 +163,16 @@ class WorkflowExecutePermission:
 
     def check(
         self,
-        principal_permission: PrincipalPermission,
+        permission_set: PermissionSet,
         grant: PermissionGrant,
         items: list[object],
         now: datetime,
     ) -> bool:
-        if not self.allows(principal_permission, items):
+        if not self.allows(permission_set, items):
             return False
         if grant.valid_from > now or grant.valid_to <= now:
             return False
-        if principal_permission.validity_type == "range":
+        if permission_set.validity_type == "range":
             if grant.range is None:
                 return False
             return all(item in json.loads(grant.range) for item in items)
@@ -202,10 +202,10 @@ class WorkflowExecutePermission:
 
 
 class ContentCreateAudioPermission:
-    """Authorize audio file creation within principal-allowed path scopes."""
+    """Authorize audio file creation within agent-allowed path scopes."""
 
-    def allows(self, principal_permission: PrincipalPermission, items: list[object]) -> bool:
-        scope = json.loads(principal_permission.scope)
+    def allows(self, permission_set: PermissionSet, items: list[object]) -> bool:
+        scope = json.loads(permission_set.scope)
         if not isinstance(scope, list):
             return False
         allowed_dirs = [Path(d).expanduser().resolve() for d in scope if isinstance(d, str)]
@@ -222,16 +222,16 @@ class ContentCreateAudioPermission:
 
     def check(
         self,
-        principal_permission: PrincipalPermission,
+        permission_set: PermissionSet,
         grant: PermissionGrant,
         items: list[object],
         now: datetime,
     ) -> bool:
-        if not self.allows(principal_permission, items):
+        if not self.allows(permission_set, items):
             return False
         if grant.valid_from > now or grant.valid_to <= now:
             return False
-        if principal_permission.validity_type == "range":
+        if permission_set.validity_type == "range":
             if grant.range is None:
                 return False
             return all(item in json.loads(grant.range) for item in items)
@@ -273,18 +273,18 @@ class FileCopyPermission:
             raise ValueError(f"file.copy {field} must be an absolute path without '..'.")
         return path
 
-    def allows(self, principal_permission: PrincipalPermission, items: list[object]) -> bool:
-        return self.scope_for(principal_permission, items) is not None
+    def allows(self, permission_set: PermissionSet, items: list[object]) -> bool:
+        return self.scope_for(permission_set, items) is not None
 
     def scope_for(
-        self, principal_permission: PrincipalPermission, items: list[object]
+        self, permission_set: PermissionSet, items: list[object]
     ) -> FileCopyScope | None:
         if len(items) != 1 or not isinstance(items[0], dict):
             return None
         source = self._path(items[0].get("source"), "source")
         destination = self._path(items[0].get("destination"), "destination")
         try:
-            scope = json.loads(principal_permission.scope)
+            scope = json.loads(permission_set.scope)
         except json.JSONDecodeError:
             return None
         if not isinstance(scope, list):
@@ -303,16 +303,16 @@ class FileCopyPermission:
 
     def check(
         self,
-        principal_permission: PrincipalPermission,
+        permission_set: PermissionSet,
         grant: PermissionGrant,
         items: list[object],
         now: datetime,
     ) -> bool:
-        if not self.allows(principal_permission, items):
+        if not self.allows(permission_set, items):
             return False
         if grant.valid_from > now or grant.valid_to <= now:
             return False
-        if principal_permission.validity_type == "range":
+        if permission_set.validity_type == "range":
             if grant.range is None:
                 return False
             return all(item in json.loads(grant.range) for item in items)

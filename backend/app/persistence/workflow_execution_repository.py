@@ -58,15 +58,12 @@ class WorkflowExecutionRepository:
                 )
             )
 
-    def chat_matches_principal(self, chat_id: int, principal_id: int) -> bool:
+    def chat_matches_agent(self, chat_id: int, agent_id: int) -> bool:
         with self._session_factory() as session:
             chat = session.get(Chat, chat_id)
             if chat is None:
                 return False
-            if chat.principal_id is not None:
-                return chat.principal_id == principal_id
-            agent = session.get(Agent, chat.agent_id) if chat.agent_id is not None else None
-            return agent is not None and agent.principal_id == principal_id
+            return chat.agent_id == agent_id
 
     def update(self, execution_id: int, *, state: str | None, progress_content: list[str] | None, has_progress: bool) -> WorkflowExecution | None:
         """Apply one validated snapshot update; return None when it was identical."""

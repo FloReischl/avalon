@@ -10,38 +10,34 @@ from app.persistence.models import (
     Chat,
     PermissionCatalog,
     PermissionGrant,
-    Principal,
-    PrincipalPermission,
+    PermissionSet,
 )
 from app.agents_config import AgentConfig, AgentPermissionConfig, AgentsConfig
 from app.authorization.types import PERMANENT_VALID_TO_YEAR
-from app.user_config import ChatUserConfig
 
 
 class AuthorizationRepository:
-    """Store principals, permission definitions, and grants."""
+    """Store agent-owned permission definitions and grants."""
 
     def __init__(self, session_factory: sessionmaker[Session]) -> None:
         self._session_factory = session_factory
 
-    def get_principal_by_key(self, key: str) -> Principal | None:
+    def get_agent_by_key(self, key: str) -> Agent | None:
         with self._session_factory() as session:
-            return session.scalar(select(Principal).where(Principal.key == key))
+            return session.scalar(select(Agent).where(Agent.key == key))
 
-    def get_principal_by_id(self, principal_id: int) -> Principal | None:
+    def get_agent_by_id(self, agent_id: int) -> Agent | None:
         with self._session_factory() as session:
-            return session.get(Principal, principal_id)
+            return session.get(Agent, agent_id)
 
-    def get_principal_permission(
-        self, principal_id: int, context: str, key: str
-    ) -> PrincipalPermission | None:
+    def get_permission_set(self, agent_id: int, context: str, key: str) -> PermissionSet | None:
         with self._session_factory() as session:
             statement = (
-                select(PrincipalPermission)
+                select(PermissionSet)
                 .join(PermissionCatalog)
                 .where(
-                    PrincipalPermission.principal_id == principal_id,
-                    PrincipalPermission.is_active.is_(True),
+                    PermissionSet.agent_id == agent_id,
+                    PermissionSet.is_active.is_(True),
                     PermissionCatalog.context == context,
                     PermissionCatalog.key == key,
                 )
@@ -58,39 +54,39 @@ class AuthorizationRepository:
                 )
             )
 
-    def get_principal_permission_by_catalog_id(
-        self, principal_id: int, permission_catalog_id: int
-    ) -> PrincipalPermission | None:
+    def get_permission_set_by_catalog_id(
+        self, agent_id: int, permission_catalog_id: int
+    ) -> PermissionSet | None:
         with self._session_factory() as session:
             return session.scalar(
-                select(PrincipalPermission).where(
-                    PrincipalPermission.principal_id == principal_id,
-                    PrincipalPermission.permission_catalog_id == permission_catalog_id,
-                    PrincipalPermission.is_active.is_(True),
+                select(PermissionSet).where(
+                    PermissionSet.agent_id == agent_id,
+                    PermissionSet.permission_catalog_id == permission_catalog_id,
+                    PermissionSet.is_active.is_(True),
                 )
             )
 
-    def get_principal_permission_catalog_ids(self, principal_id: int) -> set[int]:
+    def get_permission_set_catalog_ids(self, agent_id: int) -> set[int]:
         """Return statically cacheable permission IDs, independent of grants."""
         with self._session_factory() as session:
             return set(
                 session.scalars(
-                    select(PrincipalPermission.permission_catalog_id).where(
-                        PrincipalPermission.principal_id == principal_id,
-                        PrincipalPermission.is_active.is_(True),
+                    select(PermissionSet.permission_catalog_id).where(
+                        PermissionSet.agent_id == agent_id,
+                        PermissionSet.is_active.is_(True),
                     )
                 )
             )
 
-    def get_principal_capability_names(self, principal_id: int) -> set[str]:
+    def get_agent_capability_names(self, agent_id: int) -> set[str]:
         """Return grantable MCP tool names; grants deliberately do not apply here."""
         with self._session_factory() as session:
             rows = session.execute(
                 select(PermissionCatalog.context, PermissionCatalog.key)
-                .join(PrincipalPermission)
+                .join(PermissionSet)
                 .where(
-                    PrincipalPermission.principal_id == principal_id,
-                    PrincipalPermission.is_active.is_(True),
+                    PermissionSet.agent_id == agent_id,
+                    PermissionSet.is_active.is_(True),
                 )
             )
             return {f"{context}.{key}" for context, key in rows}
@@ -104,13 +100,9 @@ class AuthorizationRepository:
     def _reconcile_agent(self, session: Session, agent_config: AgentConfig) -> None:
         agent = session.scalar(select(Agent).where(Agent.key == agent_config.key))
         if agent is None:
-            principal = Principal(key=f"agent:{agent_config.key}")
-            session.add(principal)
-            session.flush()
             agent = Agent(
                 key=agent_config.key,
                 name=agent_config.name,
-                principal_id=principal.id,
             )
             session.add(agent)
             session.flush()
@@ -118,32 +110,12 @@ class AuthorizationRepository:
             agent.name = agent_config.name
             session.flush()
 
-        self._reconcile_principal_permissions(
-            session, agent.principal_id, agent_config.permissions
-        )
+        self._reconcile_permission_sets(session, agent.id, agent_config.permissions)
 
-    def reconcile_chat_permissions(self, config: ChatUserConfig) -> Principal:
-        """Synchronize the configured default chat principal and permissions."""
-        with self._session_factory.begin() as session:
-            principal = session.scalar(
-                select(Principal).where(Principal.key == config.principal_key)
-            )
-            if principal is None:
-                principal = Principal(key=config.principal_key, chat_assignable=True)
-                session.add(principal)
-                session.flush()
-            elif not principal.chat_assignable:
-                raise ValueError(
-                    f"Configured principal '{config.principal_key}' is not chat assignable."
-                )
-
-            self._reconcile_principal_permissions(session, principal.id, config.permissions)
-            return principal
-
-    def _reconcile_principal_permissions(
+    def _reconcile_permission_sets(
         self,
         session: Session,
-        principal_id: int,
+        agent_id: int,
         configured_permissions: list[AgentPermissionConfig],
     ) -> None:
         configured_ids: set[tuple[int, str]] = set()
@@ -162,21 +134,21 @@ class AuthorizationRepository:
                 session.add(catalog)
                 session.flush()
 
-            permission_config = configured.principal_permission
+            permission_config = configured.permission_set
             scope = permission_config.canonical_scope
             identity = (catalog.id, scope)
             configured_ids.add(identity)
             permission = session.scalar(
-                select(PrincipalPermission).where(
-                    PrincipalPermission.principal_id == principal_id,
-                    PrincipalPermission.permission_catalog_id == catalog.id,
-                    PrincipalPermission.scope == scope,
+                select(PermissionSet).where(
+                    PermissionSet.agent_id == agent_id,
+                    PermissionSet.permission_catalog_id == catalog.id,
+                    PermissionSet.scope == scope,
                 )
             )
             if permission is None:
                 session.add(
-                    PrincipalPermission(
-                        principal_id=principal_id,
+                    PermissionSet(
+                        agent_id=agent_id,
                         permission_catalog_id=catalog.id,
                         scope=scope,
                         is_active=True,
@@ -190,70 +162,57 @@ class AuthorizationRepository:
                 permission.default_expiry = permission_config.default_expiry
 
         permissions = session.scalars(
-            select(PrincipalPermission).where(
-                PrincipalPermission.principal_id == principal_id
+            select(PermissionSet).where(
+                PermissionSet.agent_id == agent_id
             )
         )
         for permission in permissions:
             if (permission.permission_catalog_id, permission.scope) not in configured_ids:
                 permission.is_active = False
 
-    def get_grants(self, principal_permission_id: int) -> list[PermissionGrant]:
+    def get_grants(self, permission_set_id: int) -> list[PermissionGrant]:
         with self._session_factory() as session:
             return list(
                 session.scalars(
                     select(PermissionGrant).where(
-                        PermissionGrant.principal_permission_id
-                        == principal_permission_id
+                        PermissionGrant.permission_set_id == permission_set_id
                     )
                 )
             )
 
-    def get_effective_principal_id_for_chat(
-        self, chat_id: int, default_chat_principal_key: str = "chat-default"
-    ) -> int | None:
-        """Resolve the authorization principal stored directly or via an agent."""
+    def get_agent_id_for_chat(self, chat_id: int) -> int | None:
+        """Resolve the authorization agent stored by a chat."""
         with self._session_factory() as session:
             chat = session.get(Chat, chat_id)
-            if chat is None:
-                return None
-            if chat.principal_id is not None:
-                return chat.principal_id
-            if chat.agent_id is not None:
-                return session.scalar(
-                    select(Agent.principal_id).where(Agent.id == chat.agent_id)
-                )
-            return session.scalar(
-                select(Principal.id).where(Principal.key == default_chat_principal_key)
-            )
+            return None if chat is None else chat.agent_id
 
     def get_active_grant(
-        self, principal_permission_id: int, now: datetime
+        self, permission_set_id: int, now: datetime
     ) -> PermissionGrant | None:
         """Return the longest currently effective grant for display/editing."""
         with self._session_factory() as session:
             return session.scalar(
                 select(PermissionGrant)
                 .where(
-                    PermissionGrant.principal_permission_id == principal_permission_id,
+                    PermissionGrant.permission_set_id == permission_set_id,
                     PermissionGrant.valid_from <= now,
                     PermissionGrant.valid_to > now,
                 )
                 .order_by(PermissionGrant.valid_to.desc(), PermissionGrant.id.desc())
             )
 
-    def get_active_principal_permissions(
-        self, principal_id: int
-    ) -> list[tuple[PrincipalPermission, PermissionCatalog]]:
-        """Return all currently configured permission definitions for one principal."""
+    def get_active_permission_sets(
+        self, agent_id: int
+    ) -> list[tuple[PermissionSet, PermissionCatalog]]:
+        """Return all active permission definitions for one agent."""
         with self._session_factory() as session:
             return list(
                 session.execute(
-                    select(PrincipalPermission, PermissionCatalog)
+                    select(PermissionSet, PermissionCatalog)
                     .join(PermissionCatalog)
                     .where(
-                        PrincipalPermission.principal_id == principal_id,
-                        PrincipalPermission.is_active.is_(True),
+                        PermissionSet.agent_id == agent_id,
+                        PermissionSet.is_active.is_(True),
                     )
                     .order_by(PermissionCatalog.context, PermissionCatalog.key)
                 )
@@ -261,16 +220,16 @@ class AuthorizationRepository:
 
     def save_proactive_grant(
         self,
-        principal_permission_id: int,
+        permission_set_id: int,
         validity_type: str,
         expires_at: datetime | None,
         now: datetime,
     ) -> PermissionGrant:
         """Create or update the one displayed direct grant without a request."""
         with self._session_factory.begin() as session:
-            permission = session.get(PrincipalPermission, principal_permission_id)
+            permission = session.get(PermissionSet, permission_set_id)
             if permission is None or not permission.is_active:
-                raise KeyError("Principal permission does not exist.")
+                raise KeyError("Permission set does not exist.")
             if permission.validity_type != validity_type:
                 raise ValueError("Permission validity type does not match.")
             if validity_type == "range":
@@ -283,7 +242,7 @@ class AuthorizationRepository:
             grant = session.scalar(
                 select(PermissionGrant)
                 .where(
-                    PermissionGrant.principal_permission_id == principal_permission_id,
+                    PermissionGrant.permission_set_id == permission_set_id,
                     PermissionGrant.valid_from <= now,
                     PermissionGrant.valid_to > now,
                 )
@@ -296,7 +255,7 @@ class AuthorizationRepository:
             )
             if grant is None:
                 grant = PermissionGrant(
-                    principal_permission_id=principal_permission_id,
+                    permission_set_id=permission_set_id,
                     valid_from=now,
                     valid_to=valid_to,
                     range=None,
@@ -310,7 +269,7 @@ class AuthorizationRepository:
 
     def revoke_proactive_grant(
         self,
-        principal_permission_id: int,
+        permission_set_id: int,
         now: datetime,
     ) -> None:
         """Remove any currently active grant for this proactive permission."""
@@ -318,7 +277,7 @@ class AuthorizationRepository:
             grants = session.scalars(
                 select(PermissionGrant)
                 .where(
-                    PermissionGrant.principal_permission_id == principal_permission_id,
+                    PermissionGrant.permission_set_id == permission_set_id,
                     PermissionGrant.valid_from <= now,
                     PermissionGrant.valid_to > now,
                 )
@@ -328,14 +287,14 @@ class AuthorizationRepository:
 
     def create_grant(
         self,
-        principal_permission_id: int,
+        permission_set_id: int,
         valid_from: datetime,
         valid_to: datetime,
         item_range: str | None,
     ) -> PermissionGrant:
         with self._session_factory() as session:
             grant = PermissionGrant(
-                principal_permission_id=principal_permission_id,
+                permission_set_id=permission_set_id,
                 valid_from=valid_from,
                 valid_to=valid_to,
                 range=item_range,

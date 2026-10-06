@@ -21,7 +21,7 @@ def test_load_agents_config_canonicalizes_nested_scope_key_order(tmp_path: Path)
                         "permissions": [
                             {
                                 "permission_catalog": {"context": "file", "key": "copy"},
-                                "principal_permission": {
+                                "permission_set": {
                                     "scope": [{"destination": "b", "source": "a"}],
                                     "validity_type": "duration",
                                     "default_expiry": 7200,
@@ -38,7 +38,7 @@ def test_load_agents_config_canonicalizes_nested_scope_key_order(tmp_path: Path)
 
     config = load_agents_config(path)
 
-    assert config.agents[0].permissions[0].principal_permission.canonical_scope == (
+    assert config.agents[0].permissions[0].permission_set.canonical_scope == (
         '[{"destination":"b","source":"a"}]'
     )
 
@@ -47,7 +47,7 @@ def test_duplicate_agent_permission_identity_is_invalid(tmp_path: Path) -> None:
     path = tmp_path / "agents.yaml"
     permission = {
         "permission_catalog": {"context": "web", "key": "search"},
-        "principal_permission": {
+        "permission_set": {
             "scope": [], "validity_type": "duration", "default_expiry": 1
         },
     }
@@ -84,4 +84,3 @@ def test_agent_config_rejects_missing_null_or_empty_name(tmp_path: Path, invalid
 
     with pytest.raises(ValidationError):
         load_agents_config(path)
-

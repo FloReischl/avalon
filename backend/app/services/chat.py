@@ -80,17 +80,17 @@ class ChatService:
         if chat_id is None:
             title = datetime.now().strftime("New %Y-%m-%d %H:%M:%S")
             try:
-                principal_key = get_user_config().chat_default_principal_key
+                agent_key = get_user_config().chat_default_agent_key
             except RuntimeError:
-                principal_key = "chat-default"
-            principal = self._repository.get_principal_by_key(principal_key)
-            if principal is None:
-                raise RuntimeError("Configured chat default principal is missing.")
+                agent_key = "default"
+            agent = self._repository.get_agent_by_key(agent_key)
+            if agent is None:
+                raise RuntimeError("Configured chat default agent is missing.")
             chat = self._repository.create_chat_with_message(
                 title,
                 "user",
                 message,
-                principal.id,
+                agent.id,
             )
             chat_id = chat.id
         else:
@@ -162,12 +162,12 @@ class ChatService:
         response_chunks: list[str] = []
 
         if self._tool_runner is not None:
-            principal_id = self._repository.get_effective_principal_id(
+            agent_id = self._repository.get_agent_id(
                 turn.chat_id
             )
-            assert principal_id is not None
+            assert agent_id is not None
             chunks = self._tool_runner.stream_response(
-                principal_id, turn.messages, turn.authorization_source_label, turn.chat_id
+                agent_id, turn.messages, turn.authorization_source_label, turn.chat_id
             )
 
         else:
