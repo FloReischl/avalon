@@ -14,8 +14,8 @@ import {
   streamAudioResponse,
   streamChatMessage,
   streamDialogResponse,
-  loadPrincipalBearerToken,
-  setPrincipalBearerToken,
+  loadAgentBearerToken,
+  setAgentBearerToken,
   type ChatDetail,
   type ChatStreamHandlers,
   type ChatStreamRequest,
@@ -39,7 +39,7 @@ export type AudioStreamer = (
   chatId?: number,
 ) => Promise<void>;
 
-export type PrincipalTokenLoader = (principalId: number) => Promise<string>;
+export type AgentTokenLoader = (agentId: number) => Promise<string>;
 
 export interface DialogTurnResult {
   assistantIndex: number;
@@ -125,7 +125,7 @@ export function useTransientChat(
   streamAudio: AudioStreamer = streamAudioResponse,
   chatManagement: ChatManagementClient = defaultChatManagementClient,
   streamDialog: AudioStreamer = streamDialogResponse,
-  loadPrincipalToken: PrincipalTokenLoader = loadPrincipalBearerToken,
+  loadAgentToken: AgentTokenLoader = loadAgentBearerToken,
 ) {
 
   const currentState = ref<ChatState>(createChatState());
@@ -311,7 +311,7 @@ export function useTransientChat(
       if (summary === undefined) {
         throw new Error("Selected chat is missing from the chat list");
       }
-      setPrincipalBearerToken(await loadPrincipalToken(summary.principal_id));
+      setAgentBearerToken(await loadAgentToken(summary.agent_id));
 
       const runningState = chatStates.get(chatId);
       if (runningState?.activeTurn) {

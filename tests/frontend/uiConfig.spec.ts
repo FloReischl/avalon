@@ -8,19 +8,19 @@ import {
 } from "vitest";
 
 const {
-  setPrincipalBearerTokenMock,
+  setAgentBearerTokenMock,
 } = vi.hoisted(() => ({
-  setPrincipalBearerTokenMock: vi.fn(),
+  setAgentBearerTokenMock: vi.fn(),
 }));
 
 vi.mock("../../frontend/src/services/backend", () => ({
   BACKEND_BASE_URL: "http://127.0.0.1:8095",
-  setPrincipalBearerToken: setPrincipalBearerTokenMock,
+  setAgentBearerToken: setAgentBearerTokenMock,
 }));
 
 const uiConfigResponse = {
   name: "Frieda",
-  principalBearerToken: "test-token",
+  agentBearerToken: "test-token",
   avatar: {
     greetingAudioUrl:
       "http://127.0.0.1:8095/api/v1/assets/avatar/greeting",
@@ -56,7 +56,7 @@ async function loadFreshUiConfigModule() {
 describe("uiConfig", () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    setPrincipalBearerTokenMock.mockReset();
+    setAgentBearerTokenMock.mockReset();
     vi.stubGlobal("fetch", vi.fn());
   });
 
@@ -77,8 +77,8 @@ describe("uiConfig", () => {
     expect(fetchMock).toHaveBeenCalledWith(
       "http://127.0.0.1:8095/api/v1/ui/config",
     );
-    expect(setPrincipalBearerTokenMock).toHaveBeenCalledOnce();
-    expect(setPrincipalBearerTokenMock).toHaveBeenCalledWith(
+    expect(setAgentBearerTokenMock).toHaveBeenCalledOnce();
+    expect(setAgentBearerTokenMock).toHaveBeenCalledWith(
       "test-token",
     );
   });

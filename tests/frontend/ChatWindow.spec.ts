@@ -38,6 +38,8 @@ const {
   exportChatToMarkdownMock,
   getChatMarkdownMock,
   loadUiConfigMock,
+  loadAgentBearerTokenMock,
+  setAgentBearerTokenMock,
   setChatWindowTitleMock,
 } = vi.hoisted(() => ({
 
@@ -58,6 +60,8 @@ const {
   exportChatToMarkdownMock: vi.fn(),
   getChatMarkdownMock: vi.fn(),
   loadUiConfigMock: vi.fn(),
+  loadAgentBearerTokenMock: vi.fn(),
+  setAgentBearerTokenMock: vi.fn(),
   setChatWindowTitleMock: vi.fn(),
 }));
 
@@ -82,6 +86,8 @@ vi.mock("../../frontend/src/services/backend", async (importOriginal) => {
     startAudioCall: startAudioCallMock,
     getAudioCallStatus: getAudioCallStatusMock,
     listenToWorkflowExecutions: listenToWorkflowExecutionsMock,
+    loadAgentBearerToken: loadAgentBearerTokenMock,
+    setAgentBearerToken: setAgentBearerTokenMock,
 
   };
 });
@@ -204,6 +210,9 @@ describe("ChatWindow", () => {
     );
 
     loadUiConfigMock.mockReset();
+    loadAgentBearerTokenMock.mockReset();
+    loadAgentBearerTokenMock.mockResolvedValue("agent-token");
+    setAgentBearerTokenMock.mockReset();
     loadUiConfigMock.mockResolvedValue({
       name: "Frieda",
       avatar: {
@@ -224,6 +233,7 @@ describe("ChatWindow", () => {
     getChatsMock.mockResolvedValue([
       {
         id: 42,
+        agent_id: 1,
         title: "Mein Chat",
         pinned: false,
         created_at: "2026-09-07T10:00:00",
@@ -231,6 +241,7 @@ describe("ChatWindow", () => {
     ]);
     getChatMock.mockResolvedValue({
       id: 42,
+      agent_id: 1,
       title: "Mein Chat",
       pinned: false,
       created_at: "2026-09-07T10:00:00",
@@ -329,6 +340,7 @@ describe("ChatWindow", () => {
 
     getChatMock.mockResolvedValue({
       id: 42,
+      agent_id: 1,
       title: "Chat",
       pinned: false,
       created_at: "2026-09-07T10:00:00",
@@ -346,6 +358,7 @@ describe("ChatWindow", () => {
     getChatsMock.mockResolvedValue([
       {
         id: 42,
+        agent_id: 1,
         title: "Chat",
         pinned: false,
         created_at: "2026-09-07T10:00:00",
@@ -429,8 +442,8 @@ describe("ChatWindow", () => {
   });
 
   it("delegates a persisted chat call to the avatar backend", async () => {
-    getChatsMock.mockResolvedValue([{ id: 42, title: "Chat", pinned: false, created_at: "2026-01-01" }]);
-    getChatMock.mockResolvedValue({ id: 42, title: "Chat", pinned: false, created_at: "2026-01-01", messages: [] });
+    getChatsMock.mockResolvedValue([{ id: 42, agent_id: 1, title: "Chat", pinned: false, created_at: "2026-01-01" }]);
+    getChatMock.mockResolvedValue({ id: 42, agent_id: 1, title: "Chat", pinned: false, created_at: "2026-01-01", messages: [] });
     getAudioCallStatusMock.mockResolvedValue({ active: false, chat_id: null, turn_active: false, pending_speech: null });
     startAudioCallMock.mockResolvedValue({ active: true, chat_id: 42, turn_active: false, pending_speech: null });
     const wrapper = mount(ChatWindow);
@@ -461,6 +474,7 @@ describe("ChatWindow", () => {
     getChatsMock.mockResolvedValue([
       {
         id: 42,
+        agent_id: 1,
         title: "Avatar Chat",
         pinned: false,
         created_at: "2026-09-11T18:00:00",
@@ -488,6 +502,7 @@ describe("ChatWindow", () => {
     getChatsMock.mockResolvedValue([
       {
         id: 42,
+        agent_id: 1,
         title: "Call Chat",
         pinned: false,
         created_at: "2026-09-11T18:00:00",
@@ -497,6 +512,7 @@ describe("ChatWindow", () => {
     getChatMock
       .mockResolvedValueOnce({
         id: 42,
+        agent_id: 1,
         title: "Call Chat",
         pinned: false,
         created_at: "2026-09-11T18:00:00",
@@ -504,6 +520,7 @@ describe("ChatWindow", () => {
       })
       .mockResolvedValue({
         id: 42,
+        agent_id: 1,
         title: "Call Chat",
         pinned: false,
         created_at: "2026-09-11T18:00:00",
@@ -1294,12 +1311,14 @@ describe("ChatWindow", () => {
     getChatsMock.mockResolvedValue([
       {
         id: 42,
+        agent_id: 1,
         title: "Angeheftet",
         pinned: true,
         created_at: "2026-09-07T10:00:00",
       },
       {
         id: 7,
+        agent_id: 1,
         title: "Normal",
         pinned: false,
         created_at: "2026-09-06T10:00:00",
@@ -1331,6 +1350,7 @@ describe("ChatWindow", () => {
     getChatsMock.mockResolvedValue([
       {
         id: 42,
+        agent_id: 1,
         title: "Chat",
         pinned: false,
         created_at: "2026-09-07T10:00:00",
@@ -1368,6 +1388,7 @@ describe("ChatWindow", () => {
     getChatsMock.mockResolvedValue([
       {
         id: 42,
+        agent_id: 1,
         title: "Chat",
         pinned: false,
         created_at: "2026-09-07T10:00:00",
@@ -1417,6 +1438,7 @@ describe("ChatWindow", () => {
     getChatsMock.mockResolvedValue([
       {
         id: 42,
+        agent_id: 1,
         title: "Chat",
         pinned: false,
         created_at: "2026-09-07T10:00:00",
@@ -1461,6 +1483,7 @@ describe("ChatWindow", () => {
     getChatsMock.mockResolvedValue([
       {
         id: 42,
+        agent_id: 1,
         title: "Chat",
         pinned: false,
         created_at: "2026-09-07T10:00:00",
@@ -1493,6 +1516,7 @@ describe("ChatWindow", () => {
     getChatsMock.mockResolvedValue([
       {
         id: 42,
+        agent_id: 1,
         title: "Chat",
         pinned: false,
         created_at: "2026-09-07T10:00:00",
@@ -1531,6 +1555,7 @@ describe("ChatWindow", () => {
     getChatsMock.mockResolvedValue([
       {
         id: 42,
+        agent_id: 1,
         title: "Alter Name",
         pinned: false,
         created_at: "2026-09-07T10:00:00",
@@ -1570,6 +1595,7 @@ describe("ChatWindow", () => {
     getChatsMock.mockResolvedValue([
       {
         id: 42,
+        agent_id: 1,
         title: "Mein Chat",
         pinned: false,
         created_at: "2026-09-07T10:00:00",
@@ -1595,12 +1621,14 @@ describe("ChatWindow", () => {
     getChatsMock.mockResolvedValue([
       {
         id: 42,
+        agent_id: 1,
         title: "Persistenter Chat",
         pinned: false,
         created_at: "2026-09-07T10:00:00",
       },
       {
         id: 7,
+        agent_id: 1,
         title: "Älterer Chat",
         pinned: false,
         created_at: "2026-09-06T10:00:00",
@@ -1625,6 +1653,7 @@ describe("ChatWindow", () => {
     getChatsMock.mockResolvedValue([
       {
         id: 42,
+        agent_id: 1,
         title: "Persistenter Chat",
         pinned: false,
         created_at: "2026-09-07T10:00:00",
@@ -1633,6 +1662,7 @@ describe("ChatWindow", () => {
 
     getChatMock.mockResolvedValue({
       id: 42,
+      agent_id: 1,
       title: "Persistenter Chat",
       pinned: false,
       created_at: "2026-09-07T10:00:00",
@@ -1682,6 +1712,7 @@ describe("ChatWindow", () => {
     getChatsMock.mockResolvedValue([
       {
         id: 42,
+        agent_id: 1,
         title: "Zu großer Kontext",
         pinned: false,
         created_at: "2026-09-07T10:00:00",
@@ -1689,6 +1720,7 @@ describe("ChatWindow", () => {
     ]);
     getChatMock.mockResolvedValue({
       id: 42,
+      agent_id: 1,
       title: "Zu großer Kontext",
       pinned: false,
       created_at: "2026-09-07T10:00:00",
@@ -1718,6 +1750,7 @@ describe("ChatWindow", () => {
     getChatsMock.mockResolvedValue([
       {
         id: 42,
+        agent_id: 1,
         title: "Persistenter Chat",
         pinned: false,
         created_at: "2026-09-07T10:00:00",
@@ -1726,6 +1759,7 @@ describe("ChatWindow", () => {
 
     getChatMock.mockResolvedValue({
       id: 42,
+      agent_id: 1,
       title: "Persistenter Chat",
       pinned: false,
       created_at: "2026-09-07T10:00:00",
@@ -1761,6 +1795,7 @@ describe("ChatWindow", () => {
     getChatsMock.mockResolvedValue([
       {
         id: 42,
+        agent_id: 1,
         title: "Kaputter Chat",
         pinned: false,
         created_at: "2026-09-07T10:00:00",

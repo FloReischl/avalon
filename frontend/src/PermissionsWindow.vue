@@ -4,7 +4,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import PermissionDetails from "./components/PermissionDetails.vue";
 import { loadUiConfig } from "./uiConfig";
 import { getProactivePermissionsChat, type ProactivePermissionsChat } from "./services/permissionsWindow";
-import { BACKEND_BASE_URL, abortAuthorization, confirmAuthorization, getChatPermissions, getPendingAuthorizationRequests, loadPrincipalBearerToken, saveChatPermission, setPrincipalBearerToken, type PendingAuthorizationRequest, type ProactivePermission } from "./services/backend";
+import { BACKEND_BASE_URL, abortAuthorization, confirmAuthorization, getChatPermissions, getPendingAuthorizationRequests, loadAgentBearerToken, saveChatPermission, setAgentBearerToken, type PendingAuthorizationRequest, type ProactivePermission } from "./services/backend";
 
 const requests = ref<PendingAuthorizationRequest[]>([]);
 const selectedId = ref<string>();
@@ -12,7 +12,7 @@ const selected = computed(() => requests.value.find((request) => request.id === 
 const selectedItems = ref<number[]>([]);
 const durationHours = ref(10);
 const proactiveChatId = ref<number>();
-const proactivePrincipalId = ref<number>();
+const proactiveAgentId = ref<number>();
 const proactivePermissions = ref<ProactivePermission[]>([]);
 const proactiveSelection = ref<Record<number, { granted: boolean; expiresAt: string }>>({});
 const loadError = ref(false);
@@ -41,14 +41,14 @@ function initializeProactiveSelection(permissions: ProactivePermission[]) {
     expiresAt: localDateTime(permission.grant ? new Date(permission.grant.expiresAt) : new Date(Date.now() + permission.defaultExpiry * 1000)),
   }]));
 }
-async function openProactivePermissions({ chatId, principalId }: ProactivePermissionsChat) {
+async function openProactivePermissions({ chatId, agentId }: ProactivePermissionsChat) {
   stopRefreshPolling();
   proactiveChatId.value = chatId;
-  proactivePrincipalId.value = principalId;
+  proactiveAgentId.value = agentId;
   proactivePermissions.value = [];
   proactiveSelection.value = {};
   try {
-    setPrincipalBearerToken(await loadPrincipalBearerToken(principalId));
+    setAgentBearerToken(await loadAgentBearerToken(agentId));
     proactivePermissions.value = await getChatPermissions(chatId);
     initializeProactiveSelection(proactivePermissions.value);
     loadError.value = false;
@@ -59,7 +59,7 @@ async function openProactivePermissions({ chatId, principalId }: ProactivePermis
 }
 async function openReactivePermissions() {
   proactiveChatId.value = undefined;
-  proactivePrincipalId.value = undefined;
+  proactiveAgentId.value = undefined;
   proactivePermissions.value = [];
   proactiveSelection.value = {};
   refreshForEventWindow();
@@ -98,9 +98,9 @@ async function saveProactive() {
     const expiresAt = permission.validityType === "duration" && granted ? selection?.expiresAt : undefined;
     await saveChatPermission(chatId, permission.id, granted, expiresAt);
   }
-  const principalId = proactivePrincipalId.value;
-  if (principalId === undefined) return;
-  await openProactivePermissions({ chatId, principalId });
+  const agentId = proactiveAgentId.value;
+  if (agentId === undefined) return;
+  await openProactivePermissions({ chatId, agentId });
 }
 function cancelProactive() { void openReactivePermissions(); }
 onMounted(async () => {

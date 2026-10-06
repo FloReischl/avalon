@@ -1,4 +1,4 @@
-import { BACKEND_BASE_URL, setPrincipalBearerToken } from "./services/backend";
+import { BACKEND_BASE_URL, setAgentBearerToken } from "./services/backend";
 
 export type UiSpriteRegion = {
   x: number;
@@ -16,7 +16,7 @@ export type UiAvatarAnimation = {
 
 export type UiConfig = {
   name: string;
-  principalBearerToken: string;
+  agentBearerToken: string;
   avatarZoom: number;
   avatar: {
     greetingAudioUrl: string;
@@ -56,7 +56,7 @@ async function requestUiConfigOnce(): Promise<UiConfig> {
   }
 
   const config = await response.json() as UiConfig;
-  setPrincipalBearerToken(config.principalBearerToken);
+  setAgentBearerToken(config.agentBearerToken);
   return config;
 }
 

@@ -1,16 +1,16 @@
 export const BACKEND_BASE_URL = "http://127.0.0.1:8095";
 
-let principalBearerToken: string | undefined;
+let agentBearerToken: string | undefined;
 
-export function setPrincipalBearerToken(token: string): void {
-  if (!token) throw new Error("UI config returned an empty principal bearer token");
-  principalBearerToken = token;
+export function setAgentBearerToken(token: string): void {
+  if (!token) throw new Error("UI config returned an empty agent bearer token");
+  agentBearerToken = token;
 }
 
 function authenticatedFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
-  if (!principalBearerToken) throw new Error("Principal bearer token is not initialized");
+  if (!agentBearerToken) throw new Error("Agent bearer token is not initialized");
   const headers = new Headers(init.headers);
-  headers.set("Authorization", `Bearer ${principalBearerToken}`);
+  headers.set("Authorization", `Bearer ${agentBearerToken}`);
   return fetch(input, { ...init, headers });
 }
 
@@ -65,7 +65,7 @@ export interface ChatSummary {
   id: number;
   title: string;
   pinned: boolean;
-  principal_id: number;
+  agent_id: number;
   agent_name: string | null;
   created_at: string;
 }
@@ -110,18 +110,18 @@ export interface ChatDetail extends ChatSummary {
   compression_error_code?: string | null;
 }
 
-export async function loadPrincipalBearerToken(principalId: number): Promise<string> {
+export async function loadAgentBearerToken(agentId: number): Promise<string> {
   const response = await fetch(
-    `${BACKEND_BASE_URL}/api/v1/ui/token?principal_id=${encodeURIComponent(String(principalId))}`,
+    `${BACKEND_BASE_URL}/api/v1/ui/token?agent_id=${encodeURIComponent(String(agentId))}`,
   );
   if (!response.ok) {
-    throw new Error(`Failed to load principal bearer token: ${response.status}`);
+    throw new Error(`Failed to load agent bearer token: ${response.status}`);
   }
-  const payload = await response.json() as { principalBearerToken?: unknown };
-  if (typeof payload.principalBearerToken !== "string" || !payload.principalBearerToken) {
-    throw new Error("Principal token response is invalid");
+  const payload = await response.json() as { agentBearerToken?: unknown };
+  if (typeof payload.agentBearerToken !== "string" || !payload.agentBearerToken) {
+    throw new Error("Agent token response is invalid");
   }
-  return payload.principalBearerToken;
+  return payload.agentBearerToken;
 }
 
 export function listenToWorkflowExecutions(onChange: () => void): () => void {

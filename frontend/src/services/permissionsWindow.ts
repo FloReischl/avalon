@@ -6,14 +6,14 @@ export async function showPermissionsWindow(): Promise<void> {
 
 export interface ProactivePermissionsChat {
   chatId: number;
-  principalId: number;
+  agentId: number;
 }
 
 export async function showPermissionsWindowForChat(
   chatId: number,
-  principalId: number,
+  agentId: number,
 ): Promise<void> {
-  await invoke("show_permissions_window_for_chat", { chatId, principalId });
+  await invoke("show_permissions_window_for_chat", { chatId, agentId });
 }
 
 export async function getProactivePermissionsChat(): Promise<ProactivePermissionsChat | null> {

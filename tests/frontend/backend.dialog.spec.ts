@@ -1,13 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { setPrincipalBearerToken, streamDialogResponse } from "../../frontend/src/services/backend";
+import { setAgentBearerToken, streamDialogResponse } from "../../frontend/src/services/backend";
 
 
 afterEach(() => {
   vi.restoreAllMocks();
 });
 
-beforeEach(() => setPrincipalBearerToken("test-token"));
+beforeEach(() => setAgentBearerToken("test-token"));
 
 
 describe("streamDialogResponse", () => {

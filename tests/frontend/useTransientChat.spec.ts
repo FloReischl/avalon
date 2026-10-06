@@ -21,29 +21,29 @@ function createChatManagement(
 
 
 describe("useTransientChat", () => {
-  it("loads a fresh token for the effective principal before each chat switch", async () => {
+  it("loads a fresh token for the effective agent before each chat switch", async () => {
     const management = createChatManagement({
       getChats: vi.fn().mockResolvedValue([
-        { id: 1, title: "Direkt", pinned: false, principal_id: 11, agent_name: null, created_at: "2026-09-07T10:00:00" },
-        { id: 2, title: "Agent", pinned: false, principal_id: 22, agent_name: "Research", created_at: "2026-09-07T10:00:00" },
+        { id: 1, title: "Direkt", pinned: false, agent_id: 11, agent_name: null, created_at: "2026-09-07T10:00:00" },
+        { id: 2, title: "Agent", pinned: false, agent_id: 22, agent_name: "Research", created_at: "2026-09-07T10:00:00" },
       ]),
       getChat: vi.fn().mockImplementation((id: number) => Promise.resolve({
-        id, title: `Chat ${id}`, pinned: false, principal_id: id === 1 ? 11 : 22,
+        id, title: `Chat ${id}`, pinned: false, agent_id: id === 1 ? 11 : 22,
         agent_name: id === 1 ? null : "Research", created_at: "2026-09-07T10:00:00", messages: [],
       })),
     });
-    const loadPrincipalToken = vi.fn()
+    const loadAgentToken = vi.fn()
       .mockResolvedValueOnce("token-11")
       .mockResolvedValueOnce("token-22");
-    const chat = useTransientChat(undefined, undefined, management, undefined, loadPrincipalToken);
+    const chat = useTransientChat(undefined, undefined, management, undefined, loadAgentToken);
 
     await chat.refreshChats();
     await chat.selectChat(1);
     await chat.selectChat(2);
 
-    expect(loadPrincipalToken).toHaveBeenNthCalledWith(1, 11);
-    expect(loadPrincipalToken).toHaveBeenNthCalledWith(2, 22);
-    expect(loadPrincipalToken.mock.invocationCallOrder[0]).toBeLessThan(
+    expect(loadAgentToken).toHaveBeenNthCalledWith(1, 11);
+    expect(loadAgentToken).toHaveBeenNthCalledWith(2, 22);
+    expect(loadAgentToken.mock.invocationCallOrder[0]).toBeLessThan(
       (management.getChat as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0],
     );
   });
@@ -63,7 +63,7 @@ describe("useTransientChat", () => {
         id: 42,
         title: "Zu groß",
         pinned: false,
-        principal_id: 1,
+        agent_id: 1,
         agent_name: null,
         created_at: "2026-09-07T10:00:00",
       }]),
@@ -95,7 +95,7 @@ describe("useTransientChat", () => {
           id: 42,
           title: "Original",
           pinned: false,
-          principal_id: 1,
+          agent_id: 1,
           agent_name: null,
           created_at: "2026-09-07T10:00:00",
         },
@@ -104,7 +104,7 @@ describe("useTransientChat", () => {
         id: 42,
         title: "Neuer Name",
         pinned: false,
-        principal_id: 1,
+        agent_id: 1,
         agent_name: null,
         created_at: "2026-09-07T10:00:00",
       }),
@@ -134,7 +134,7 @@ describe("useTransientChat", () => {
           id: 42,
           title: "Original",
           pinned: false,
-          principal_id: 1,
+          agent_id: 1,
           agent_name: null,
           created_at: "2026-09-07T10:00:00",
         },
@@ -167,7 +167,7 @@ describe("useTransientChat", () => {
           id: 42,
           title: "Chat",
           pinned: false,
-          principal_id: 1,
+          agent_id: 1,
           agent_name: null,
           created_at: "2026-09-07T10:00:00",
         },
@@ -176,7 +176,7 @@ describe("useTransientChat", () => {
         id: 42,
         title: "Chat",
         pinned: true,
-        principal_id: 1,
+        agent_id: 1,
         agent_name: null,
         created_at: "2026-09-07T10:00:00",
       }),
@@ -206,7 +206,7 @@ describe("useTransientChat", () => {
           id: 42,
           title: "Chat",
           pinned: false,
-          principal_id: 1,
+          agent_id: 1,
           agent_name: null,
           created_at: "2026-09-07T10:00:00",
         },
@@ -239,7 +239,7 @@ describe("useTransientChat", () => {
           id: 42,
           title: "Chat",
           pinned: false,
-          principal_id: 1,
+          agent_id: 1,
           agent_name: null,
           created_at: "2026-09-07T10:00:00",
         },
@@ -248,7 +248,7 @@ describe("useTransientChat", () => {
         id: 42,
         title: "Chat",
         pinned: false,
-        principal_id: 1,
+        agent_id: 1,
         agent_name: null,
         created_at: "2026-09-07T10:00:00",
         messages: [
@@ -289,7 +289,7 @@ describe("useTransientChat", () => {
           id: 42,
           title: "Chat",
           pinned: false,
-          principal_id: 1,
+          agent_id: 1,
           agent_name: null,
           created_at: "2026-09-07T10:00:00",
         },

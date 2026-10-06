@@ -5,8 +5,8 @@ const {
   getChatPermissionsMock,
   getPendingAuthorizationRequestsMock,
   getProactivePermissionsChatMock,
-  loadPrincipalBearerTokenMock,
-  setPrincipalBearerTokenMock,
+  loadAgentBearerTokenMock,
+  setAgentBearerTokenMock,
   loadUiConfigMock,
   saveChatPermissionMock,
   callbacks,
@@ -15,8 +15,8 @@ const {
   getChatPermissionsMock: vi.fn(),
   getPendingAuthorizationRequestsMock: vi.fn(),
   getProactivePermissionsChatMock: vi.fn(),
-  loadPrincipalBearerTokenMock: vi.fn(),
-  setPrincipalBearerTokenMock: vi.fn(),
+  loadAgentBearerTokenMock: vi.fn(),
+  setAgentBearerTokenMock: vi.fn(),
   loadUiConfigMock: vi.fn(),
   saveChatPermissionMock: vi.fn(),
   callbacks: new Map<number, (event: { payload: unknown }) => void>(),
@@ -29,9 +29,9 @@ vi.mock("../../frontend/src/services/backend", () => ({
   confirmAuthorization: vi.fn(),
   getChatPermissions: getChatPermissionsMock,
   getPendingAuthorizationRequests: getPendingAuthorizationRequestsMock,
-  loadPrincipalBearerToken: loadPrincipalBearerTokenMock,
+  loadAgentBearerToken: loadAgentBearerTokenMock,
   saveChatPermission: saveChatPermissionMock,
-  setPrincipalBearerToken: setPrincipalBearerTokenMock,
+  setAgentBearerToken: setAgentBearerTokenMock,
 }));
 
 vi.mock("../../frontend/src/services/permissionsWindow", () => ({
@@ -75,8 +75,8 @@ afterEach(() => {
   getChatPermissionsMock.mockReset();
   getPendingAuthorizationRequestsMock.mockReset();
   getProactivePermissionsChatMock.mockReset();
-  loadPrincipalBearerTokenMock.mockReset();
-  setPrincipalBearerTokenMock.mockReset();
+  loadAgentBearerTokenMock.mockReset();
+  setAgentBearerTokenMock.mockReset();
   loadUiConfigMock.mockReset();
   saveChatPermissionMock.mockReset();
 });
@@ -84,16 +84,16 @@ afterEach(() => {
 describe("PermissionsWindow", () => {
   it("switches to proactive mode for the chat selected by the desktop command", async () => {
     getPendingAuthorizationRequestsMock.mockResolvedValue([]);
-    getProactivePermissionsChatMock.mockResolvedValue({ chatId: 42, principalId: 7 });
-    loadPrincipalBearerTokenMock.mockResolvedValue("token-7");
+    getProactivePermissionsChatMock.mockResolvedValue({ chatId: 42, agentId: 7 });
+    loadAgentBearerTokenMock.mockResolvedValue("token-7");
     getChatPermissionsMock.mockResolvedValue([]);
 
     const wrapper = mount(PermissionsWindow);
     await flushPromises();
 
     expect(getChatPermissionsMock).toHaveBeenCalledWith(42);
-    expect(loadPrincipalBearerTokenMock).toHaveBeenCalledWith(7);
-    expect(setPrincipalBearerTokenMock).toHaveBeenCalledWith("token-7");
+    expect(loadAgentBearerTokenMock).toHaveBeenCalledWith(7);
+    expect(setAgentBearerTokenMock).toHaveBeenCalledWith("token-7");
     expect(loadUiConfigMock).not.toHaveBeenCalled();
     expect(wrapper.text()).toContain("Permissions des Chats");
     expect(wrapper.text()).not.toContain("Keine offenen Permissions.");
@@ -103,13 +103,13 @@ describe("PermissionsWindow", () => {
     getPendingAuthorizationRequestsMock.mockResolvedValue([]);
     loadUiConfigMock.mockResolvedValue({});
     getProactivePermissionsChatMock.mockResolvedValue(null);
-    loadPrincipalBearerTokenMock.mockResolvedValue("token-7");
+    loadAgentBearerTokenMock.mockResolvedValue("token-7");
     getChatPermissionsMock.mockResolvedValue([]);
 
     const wrapper = mount(PermissionsWindow);
     await flushPromises();
     const callbackId = eventCallbackIds.get("proactive-permissions-for-chat");
-    callbacks.get(callbackId ?? -1)?.({ payload: { chatId: 42, principalId: 7 } });
+    callbacks.get(callbackId ?? -1)?.({ payload: { chatId: 42, agentId: 7 } });
     await flushPromises();
 
     expect(getChatPermissionsMock).toHaveBeenCalledWith(42);
@@ -118,8 +118,8 @@ describe("PermissionsWindow", () => {
 
   it("revokes permission when unchecked and saved", async () => {
     getPendingAuthorizationRequestsMock.mockResolvedValue([]);
-    getProactivePermissionsChatMock.mockResolvedValue({ chatId: 42, principalId: 7 });
-    loadPrincipalBearerTokenMock.mockResolvedValue("token-7");
+    getProactivePermissionsChatMock.mockResolvedValue({ chatId: 42, agentId: 7 });
+    loadAgentBearerTokenMock.mockResolvedValue("token-7");
     getChatPermissionsMock.mockResolvedValue([
       {
         id: 1,
@@ -154,7 +154,7 @@ describe("PermissionsWindow", () => {
     expect(saveChatPermissionMock).toHaveBeenCalledWith(42, 1, false, undefined);
   });
 
-  it("initializes the default UI principal only in reactive mode", async () => {
+  it("initializes the default UI agent only in reactive mode", async () => {
     getPendingAuthorizationRequestsMock.mockResolvedValue([]);
     getProactivePermissionsChatMock.mockResolvedValue(null);
     loadUiConfigMock.mockResolvedValue({});
@@ -167,8 +167,8 @@ describe("PermissionsWindow", () => {
   });
 
   it("shows a load error instead of the proactive empty state", async () => {
-    getProactivePermissionsChatMock.mockResolvedValue({ chatId: 42, principalId: 7 });
-    loadPrincipalBearerTokenMock.mockResolvedValue("token-7");
+    getProactivePermissionsChatMock.mockResolvedValue({ chatId: 42, agentId: 7 });
+    loadAgentBearerTokenMock.mockResolvedValue("token-7");
     getChatPermissionsMock.mockRejectedValue(new Error("backend unavailable"));
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
@@ -181,9 +181,9 @@ describe("PermissionsWindow", () => {
     errorSpy.mockRestore();
   });
 
-  it("shows a load error when the proactive principal token cannot be loaded", async () => {
-    getProactivePermissionsChatMock.mockResolvedValue({ chatId: 42, principalId: 7 });
-    loadPrincipalBearerTokenMock.mockRejectedValue(new Error("token unavailable"));
+  it("shows a load error when the proactive agent token cannot be loaded", async () => {
+    getProactivePermissionsChatMock.mockResolvedValue({ chatId: 42, agentId: 7 });
+    loadAgentBearerTokenMock.mockRejectedValue(new Error("token unavailable"));
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     const wrapper = mount(PermissionsWindow);
@@ -195,8 +195,8 @@ describe("PermissionsWindow", () => {
   });
 
   it("shows the proactive empty state after a successful empty load", async () => {
-    getProactivePermissionsChatMock.mockResolvedValue({ chatId: 42, principalId: 7 });
-    loadPrincipalBearerTokenMock.mockResolvedValue("token-7");
+    getProactivePermissionsChatMock.mockResolvedValue({ chatId: 42, agentId: 7 });
+    loadAgentBearerTokenMock.mockResolvedValue("token-7");
     getChatPermissionsMock.mockResolvedValue([]);
 
     const wrapper = mount(PermissionsWindow);

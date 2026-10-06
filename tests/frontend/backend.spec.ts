@@ -7,7 +7,7 @@ import {
   streamAudioResponse,
   streamChatMessage,
   synthesizeSpeech,
-  setPrincipalBearerToken,
+  setAgentBearerToken,
 } from "../../frontend/src/services/backend";
 
 
@@ -32,7 +32,7 @@ function createStreamingResponse(parts: string[]): Response {
 }
 
 describe("tts", () => {
-  beforeEach(() => setPrincipalBearerToken("test-token"));
+  beforeEach(() => setAgentBearerToken("test-token"));
   afterEach(() => {
     vi.restoreAllMocks();
   });
@@ -103,7 +103,7 @@ describe("tts", () => {
 });
 
 describe("streamChatMessage", () => {
-  beforeEach(() => setPrincipalBearerToken("test-token"));
+  beforeEach(() => setAgentBearerToken("test-token"));
   afterEach(() => {
     vi.restoreAllMocks();
   });

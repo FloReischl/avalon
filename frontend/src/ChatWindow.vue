@@ -465,7 +465,7 @@ async function openPermissionsDialog(chatId: number) {
     if (chat === undefined) {
       throw new Error("Chat is missing from the chat list");
     }
-    await showPermissionsWindowForChat(chatId, chat.principal_id);
+    await showPermissionsWindowForChat(chatId, chat.agent_id);
   } catch (error) {
     console.error("[permissions] failed to show chat permissions", error);
     errorMessage.value = "Permissions konnten nicht geöffnet werden.";
