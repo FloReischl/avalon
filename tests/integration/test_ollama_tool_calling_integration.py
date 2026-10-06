@@ -158,7 +158,7 @@ async def test_qwen_text_json_fallback_completes_tool_runner_loop(model: str) ->
     mcp = _FakeMcpClient()
     runner = ToolRunner(
         _TracingToolRuntime(model, _runtime_for(model)),
-        lambda principal_id: mcp,
+        lambda agent_id: mcp,
     )
 
     answer = "".join(

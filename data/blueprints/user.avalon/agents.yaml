@@ -31,14 +31,14 @@ agents:
   - permission_catalog:   # web.search
       context: web
       key: search
-    principal_permission:
+    permission_set:
       scope: ["duckduckgo.com"]
       validity_type: duration
       default_expiry: 36000
   - permission_catalog:   # web.get-content
       context: web
       key: get-content
-    principal_permission:
+    permission_set:
       validity_type: duration
       default_expiry: 36000
 - name: Hedwig
@@ -85,34 +85,34 @@ agents:
   - permission_catalog:   # workflow.execute
       context: workflow
       key: execute
-    principal_permission:
+    permission_set:
       validity_type: duration
       default_expiry: 36000
       scope: [ "create-podcast-list" ]
   - permission_catalog:   # web.search
       context: web
       key: search
-    principal_permission:
+    permission_set:
       scope: ["duckduckgo.com"]
       validity_type: duration
       default_expiry: 36000
   - permission_catalog:   # web.get-content
       context: web
       key: get-content
-    principal_permission:
+    permission_set:
       validity_type: duration
       default_expiry: 36000
   - permission_catalog:   # content.create-audio
       context: content
       key: create-audio
-    principal_permission:
+    permission_set:
       scope: [ "/tmp/avalon/audio"]
       validity_type: duration
       default_expiry: 36000
   - permission_catalog:   # file.copy
       context: file
       key: copy
-    principal_permission:
+    permission_set:
       validity_type: duration
       default_expiry: 36000
       scope:
@@ -129,7 +129,7 @@ agents:
   - permission_catalog:
       context: workflow
       key: execute
-    principal_permission:
+    permission_set:
       scope: ["test-workflow"]
       validity_type: permanent
       default_expiry: 0

@@ -1,20 +1,6 @@
 name: Frieda
 chat:
-  principal_key: chat-default
-  permissions:
-  - permission_catalog:   # web.search
-      context: web
-      key: search
-    principal_permission:
-      scope: ["duckduckgo.com"]
-      validity_type: duration
-      default_expiry: 36000
-  - permission_catalog:   # web.get-content
-      context: web
-      key: get-content
-    principal_permission:
-      validity_type: duration
-      default_expiry: 36000
+  agent_key: default
 tts:
   chatterbox:
     reference_audio: data/tts/chatterbox/frieda1.wav
