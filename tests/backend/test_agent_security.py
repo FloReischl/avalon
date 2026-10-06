@@ -9,7 +9,6 @@ from httpx import ASGITransport, AsyncClient
 from app.main import AgentBearerMiddleware, require_api_agent
 from app.mcp.security import (
     bearer_token_for_agent,
-    current_agent_id,
     agent_from_authorization,
 )
 
