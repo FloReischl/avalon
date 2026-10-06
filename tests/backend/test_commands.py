@@ -13,6 +13,9 @@ class StubCommand:
         self.response = response
         self.payloads: list[str] = []
 
+    def get_help(self) -> str:
+        return f"help: {self.key}"
+
     async def execute(
         self,
         payload: str,
@@ -178,6 +181,17 @@ def test_registry_reports_registered_command():
 
     assert registry.contains(CommandRequest(key="test", payload="hello"))
     assert not registry.contains(CommandRequest(key="missing", payload="hello"))
+
+
+def test_registry_commands_returns_an_immutable_snapshot():
+    command = StubCommand()
+    registry = CommandRegistry()
+    registry.register(command)
+
+    commands = registry.commands()
+
+    assert commands == (command,)
+    assert not hasattr(commands, "append")
 
 
 @pytest.mark.asyncio

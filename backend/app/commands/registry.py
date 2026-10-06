@@ -17,12 +17,16 @@ class CommandRegistry:
         self._commands: dict[str, Command] = {}
 
     def register(self, command: Command) -> None:
-        key = self._normalize_key(command.key)
+        key = self.normalize_key(command.key)
 
         if key in self._commands:
             raise ValueError(f"duplicate command key: {command.key}")
 
         self._commands[key] = command
+
+    def commands(self) -> tuple[Command, ...]:
+        """Return an immutable snapshot of registered commands."""
+        return tuple(self._commands.values())
 
     def match(self, request: CommandRequest) -> CommandRequest | None:
         """Resolve a parsed invocation to its longest registered key."""
@@ -72,7 +76,8 @@ class CommandRegistry:
             return f"command failed!\n\nmessage: {exc}"
 
     @staticmethod
-    def _normalize_key(key: str) -> str:
+    def normalize_key(key: str) -> str:
+        """Normalize and validate a command key using registry semantics."""
         parts = key.split()
         if not parts or any(
             not _IDENTIFIER_PATTERN.fullmatch(part) for part in parts

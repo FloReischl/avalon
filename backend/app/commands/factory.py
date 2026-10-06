@@ -4,6 +4,7 @@ from app.state import AvalonState
 
 from .agent import AgentInviteCommand, AgentUnloadCommand
 from .avatar_set import AvatarCommand
+from .help import HelpCommand
 from .llm_set import LlmCommand
 from .registry import CommandRegistry
 
@@ -25,5 +26,5 @@ def build_command_registry(
     if repository is not None:
         registry.register(AgentInviteCommand(repository, state.agents))
         registry.register(AgentUnloadCommand(repository, state.agents))
+    registry.register(HelpCommand(registry))
     return registry
-
