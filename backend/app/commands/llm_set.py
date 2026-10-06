@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 class LlmCommand:
     """Select the process-local current LLM."""
 
-    key = "llm_set"
+    key = "llm set"
 
     def __init__(
         self,

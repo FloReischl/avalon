@@ -8,7 +8,7 @@ from .base import CommandContext
 class AgentInviteCommand:
     """Assign one configured agent to the current chat."""
 
-    key = "agent_invite"
+    key = "agent invite"
 
     def __init__(
         self,
@@ -110,7 +110,7 @@ class AgentInviteCommand:
 class AgentUnloadCommand:
     """Remove the current agent and restore the normal chat identity."""
 
-    key = "agent_unload"
+    key = "agent unload"
 
     def __init__(
         self,

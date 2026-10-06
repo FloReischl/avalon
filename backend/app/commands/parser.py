@@ -14,18 +14,16 @@ class CommandRequest:
 def parse_command(text: str) -> CommandRequest | None:
     stripped = text.lstrip()
 
-    parts = stripped.split(None, 2)
-    if len(parts) < 2:
+    parts = stripped.split(None, 1)
+    if not parts:
         return None
 
-    group = parts[0]
-    if not group.startswith("/") or not _IDENTIFIER_PATTERN.fullmatch(group[1:]):
+    identifier = parts[0]
+    if (
+        not identifier.startswith("/")
+        or not _IDENTIFIER_PATTERN.fullmatch(identifier[1:])
+    ):
         return None
 
-    command = parts[1]
-    if not _IDENTIFIER_PATTERN.fullmatch(command):
-        return None
-
-    key = f"{group[1:].lower()}_{command.lower()}"
-    payload = parts[2] if len(parts) == 3 else ""
-    return CommandRequest(key=key, payload=payload)
+    payload = parts[1] if len(parts) == 2 else ""
+    return CommandRequest(key=identifier[1:], payload=payload)

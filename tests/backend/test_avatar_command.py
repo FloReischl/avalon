@@ -4,7 +4,7 @@ import pytest
 
 from app.commands.avatar_set import AvatarCommand
 from app.commands.factory import build_command_registry
-from app.commands.parser import CommandRequest
+from app.commands.parser import CommandRequest, parse_command
 
 
 class FakeState:
@@ -62,12 +62,14 @@ async def test_avatar_command_payload_is_case_sensitive() -> None:
 async def test_command_registry_factory_registers_avatar_command() -> None:
     state = FakeState()
     registry = build_command_registry(state)  # type: ignore[arg-type]
+    request = parse_command("/avatar set second")
+
+    assert request is not None
+    matched = registry.match(request)
+    assert matched == CommandRequest(key="avatar set", payload="second")
 
     response = await registry.execute(
-        CommandRequest(
-            key="avatar_set",
-            payload="second",
-        )
+        matched
     )
 
     assert response == "ok"

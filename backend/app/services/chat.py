@@ -105,10 +105,9 @@ class ChatService:
             self._repository.add_message(chat_id, "user", message)
 
         command_request = parse_command(message)
-        if (
-            command_request is not None
-            and self._command_registry.contains(command_request)
-        ):
+        if command_request is not None:
+            command_request = self._command_registry.match(command_request)
+        if command_request is not None:
             return ChatTurn(
                 chat_id=chat_id,
                 messages=[],

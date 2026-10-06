@@ -103,7 +103,7 @@ async def test_command_turn_persists_request_and_response_without_runtime(
     _, repository, runtime = service
 
     class EchoCommand:
-        key = "test_echo"
+        key = "test echo"
 
         async def execute(
             self,
