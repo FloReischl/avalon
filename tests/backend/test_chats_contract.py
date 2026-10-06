@@ -278,7 +278,7 @@ def test_chat_summary_includes_agent_name_or_none() -> None:
         def __init__(self):
             super().__init__()
             self.chats[1].agent = None
-            agent = Agent(key="test-agent", name="Hedwig Agent", agent_id=99)
+            agent = Agent(key="test-agent", name="Hedwig Agent", id=99)
             self.chats[2].agent = agent
             self.chats[2].agent_id = None
 

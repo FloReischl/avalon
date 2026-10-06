@@ -50,7 +50,7 @@ async def get_authorization_repository():
 
 def _agent_id(chat) -> int:
     """Return the agent required by a persisted chat."""
-    return chat.agent_id
+    return chat.agent.id if chat.agent is not None else chat.agent_id
 
 
 def _summary_response(chat) -> ChatSummaryResponse:
