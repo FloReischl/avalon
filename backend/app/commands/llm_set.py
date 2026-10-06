@@ -23,6 +23,16 @@ class LlmCommand:
         self._state = state
         self._runtime = runtime
 
+    def get_help(self) -> str:
+        llms = "\n".join(f"  {llm.key}" for llm in self._state.llms)
+        if not llms:
+            llms = "  (none)"
+        return (
+            "/llm set <llm>\n\n"
+            "Changes the active LLM.\n\n"
+            f"Available LLMs:\n{llms}"
+        )
+
     async def execute(
         self,
         payload: str,

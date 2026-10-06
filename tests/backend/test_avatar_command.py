@@ -15,6 +15,10 @@ class FakeState:
             "second": SimpleNamespace(key="second"),
         }
 
+    @property
+    def avatars(self):
+        return tuple(self._avatars.values())
+
     def set_current_avatar(self, key: str) -> bool:
         avatar = self._avatars.get(key)
         if avatar is None:
@@ -56,6 +60,28 @@ async def test_avatar_command_payload_is_case_sensitive() -> None:
 
     assert response == "invalid avatar key"
     assert state.current_avatar.key == "standard"
+
+
+def test_avatar_command_help_uses_current_state_avatars_without_side_effects() -> None:
+    state = FakeState()
+    command = AvatarCommand(state)  # type: ignore[arg-type]
+    selected = state.current_avatar
+
+    help_text = command.get_help()
+
+    assert "/avatar set <avatar>" in help_text
+    assert "Changes the avatar theme." in help_text
+    assert "standard" in help_text
+    assert "second" in help_text
+    assert state.current_avatar is selected
+
+
+def test_avatar_command_help_handles_empty_avatar_catalog() -> None:
+    state = FakeState()
+    state._avatars = {}
+    command = AvatarCommand(state)  # type: ignore[arg-type]
+
+    assert "Available avatars:\n  (none)" in command.get_help()
 
 
 @pytest.mark.asyncio

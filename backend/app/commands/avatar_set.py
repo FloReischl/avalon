@@ -9,6 +9,16 @@ class AvatarCommand:
     def __init__(self, state: AvalonState) -> None:
         self._state = state
 
+    def get_help(self) -> str:
+        avatars = "\n".join(f"  {avatar.key}" for avatar in self._state.avatars)
+        if not avatars:
+            avatars = "  (none)"
+        return (
+            "/avatar set <avatar>\n\n"
+            "Changes the avatar theme.\n\n"
+            f"Available avatars:\n{avatars}"
+        )
+
     async def execute(
         self,
         payload: str,

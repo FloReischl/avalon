@@ -37,6 +37,10 @@ class FakeState:
     def get_llm(self, key: str):
         return next((llm for llm in MODELS if llm.key == key), None)
 
+    @property
+    def llms(self):
+        return MODELS
+
 
 class FakeRuntime:
     def __init__(self) -> None:
@@ -61,6 +65,31 @@ class FakeRuntime:
 
 def optional_llm():
     return MODELS[1]
+
+
+def test_llm_command_help_uses_configured_llms_without_state_change() -> None:
+    state = FakeState()
+    command = LlmCommand(state, FakeRuntime())  # type: ignore[arg-type]
+    selected = state.current_llm
+
+    help_text = command.get_help()
+
+    assert "/llm set <llm>" in help_text
+    assert "Changes the active LLM." in help_text
+    assert "standard" in help_text
+    assert "optional" in help_text
+    assert state.current_llm is selected
+
+
+def test_llm_command_help_handles_empty_llm_catalog() -> None:
+    class EmptyLlmState(FakeState):
+        @property
+        def llms(self):
+            return ()
+
+    command = LlmCommand(EmptyLlmState(), FakeRuntime())  # type: ignore[arg-type]
+
+    assert "Available LLMs:\n  (none)" in command.get_help()
 
 
 @pytest.mark.asyncio

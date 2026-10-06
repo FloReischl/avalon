@@ -18,6 +18,18 @@ class AgentInviteCommand:
         self._repository = repository
         self._agents = agents
 
+    def get_help(self) -> str:
+        agents = "\n".join(f"  {agent.name}" for agent in self._agents)
+        if not agents:
+            agents = "  (none)"
+        return (
+            "/agent invite <agent> [-force]\n\n"
+            "Invites an agent into the current chat.\n\n"
+            "Options:\n"
+            "  -force    Replaces the currently active agent.\n\n"
+            f"Available agents:\n{agents}"
+        )
+
     async def execute(
         self,
         payload: str,
@@ -119,6 +131,13 @@ class AgentUnloadCommand:
     ) -> None:
         self._repository = repository
         self._agents = agents
+
+    def get_help(self) -> str:
+        return (
+            "/agent unload\n\n"
+            "Unloads the current agent and switches back to the default agent.\n"
+            "No action if the default agent is already active."
+        )
 
     async def execute(
         self,

@@ -10,10 +10,13 @@ class CommandContext:
 class Command(Protocol):
     key: str
 
+    def get_help(self) -> str:
+        """Return the human-readable help text for this command."""
+        ...
+
     async def execute(
         self,
         payload: str,
         context: CommandContext | None = None,
     ) -> str:
         ...
-

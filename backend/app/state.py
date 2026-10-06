@@ -49,6 +49,16 @@ class AvalonState:
     def agents(self) -> tuple[AgentConfig, ...]:
         return tuple(self._agents_config.agents)
 
+    @property
+    def avatars(self) -> tuple[AvatarConfig, ...]:
+        """Return the configured avatar catalog without changing it."""
+        return tuple(self._avatars_config.avatars)
+
+    @property
+    def llms(self) -> tuple[LlmConfig, ...]:
+        """Return the configured LLM catalog without changing it."""
+        return tuple(self._llm_models)
+
     def get_agent(self, key: str) -> AgentConfig | None:
         normalized = key.casefold()
         return next(
