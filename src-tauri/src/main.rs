@@ -11,7 +11,7 @@ use tauri::{Emitter, Manager};
 #[serde(rename_all = "camelCase")]
 struct ProactivePermissionsChat {
     chat_id: i64,
-    principal_id: i64,
+    agent_id: i64,
 }
 
 #[derive(Default)]
@@ -87,11 +87,11 @@ fn show_permissions_window_for_chat(
     app: tauri::AppHandle,
     state: tauri::State<'_, PermissionsWindowState>,
     chat_id: i64,
-    principal_id: i64,
+    agent_id: i64,
 ) -> Result<(), String> {
     let chat = ProactivePermissionsChat {
         chat_id,
-        principal_id,
+        agent_id,
     };
     *state
         .proactive_chat

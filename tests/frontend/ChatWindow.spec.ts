@@ -35,11 +35,13 @@ const {
   listenToAudioCallChangedMock,
   listenToWorkflowExecutionsMock,
   publishAudioCallChangedMock,
+  publishAvatarRuntimeStateMock,
   exportChatToMarkdownMock,
   getChatMarkdownMock,
   loadUiConfigMock,
   loadAgentBearerTokenMock,
   setAgentBearerTokenMock,
+  warmUpRuntimeMock,
   setChatWindowTitleMock,
 } = vi.hoisted(() => ({
 
@@ -57,11 +59,13 @@ const {
   listenToAudioCallChangedMock: vi.fn(),
   listenToWorkflowExecutionsMock: vi.fn(),
   publishAudioCallChangedMock: vi.fn(),
+  publishAvatarRuntimeStateMock: vi.fn(),
   exportChatToMarkdownMock: vi.fn(),
   getChatMarkdownMock: vi.fn(),
   loadUiConfigMock: vi.fn(),
   loadAgentBearerTokenMock: vi.fn(),
   setAgentBearerTokenMock: vi.fn(),
+  warmUpRuntimeMock: vi.fn(),
   setChatWindowTitleMock: vi.fn(),
 }));
 
@@ -88,6 +92,7 @@ vi.mock("../../frontend/src/services/backend", async (importOriginal) => {
     listenToWorkflowExecutions: listenToWorkflowExecutionsMock,
     loadAgentBearerToken: loadAgentBearerTokenMock,
     setAgentBearerToken: setAgentBearerTokenMock,
+    warmUpRuntime: warmUpRuntimeMock,
 
   };
 });
@@ -95,6 +100,10 @@ vi.mock("../../frontend/src/services/backend", async (importOriginal) => {
 vi.mock("../../frontend/src/services/audioCallEvents", () => ({
   listenToAudioCallChanged: listenToAudioCallChangedMock,
   publishAudioCallChanged: publishAudioCallChangedMock,
+}));
+
+vi.mock("../../frontend/src/services/avatarState", () => ({
+  publishAvatarRuntimeState: publishAvatarRuntimeStateMock,
 }));
 
 vi.mock("../../frontend/src/services/chatExport", () => ({
@@ -202,6 +211,9 @@ describe("ChatWindow", () => {
     publishAudioCallChangedMock.mockReset();
     publishAudioCallChangedMock.mockResolvedValue(undefined);
 
+    publishAvatarRuntimeStateMock.mockReset();
+    publishAvatarRuntimeStateMock.mockResolvedValue(undefined);
+
     exportChatToMarkdownMock.mockReset();
     exportChatToMarkdownMock.mockResolvedValue(undefined);
     getChatMarkdownMock.mockReset();
@@ -213,6 +225,8 @@ describe("ChatWindow", () => {
     loadAgentBearerTokenMock.mockReset();
     loadAgentBearerTokenMock.mockResolvedValue("agent-token");
     setAgentBearerTokenMock.mockReset();
+    warmUpRuntimeMock.mockReset();
+    warmUpRuntimeMock.mockResolvedValue(undefined);
     loadUiConfigMock.mockResolvedValue({
       name: "Frieda",
       avatar: {
@@ -313,6 +327,10 @@ describe("ChatWindow", () => {
   });
 
   it("shows a hard startup error when UI config loading fails", async () => {
+    const consoleErrorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+
     loadUiConfigMock.mockRejectedValue(
       new Error("UI config request failed with HTTP 500"),
     );
@@ -324,6 +342,12 @@ describe("ChatWindow", () => {
     expect(wrapper.get('[data-testid="chat-error"]').text()).toContain(
       "UI-Konfiguration konnte nicht geladen werden: UI config request failed with HTTP 500",
     );
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      "[startup] failed to load UI config",
+      expect.any(Error),
+    );
+
+    consoleErrorSpy.mockRestore();
   });
 
   it("uses the configured avatar name for assistant messages", async () => {
@@ -995,6 +1019,10 @@ describe("ChatWindow", () => {
   });
 
   it("shows a chat error when read aloud fails", async () => {
+    const consoleErrorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+
     streamChatMessageMock.mockImplementation(
       async (_message, handlers) => {
         handlers.onChunk("Antwort");
@@ -1019,6 +1047,12 @@ describe("ChatWindow", () => {
     expect(wrapper.get('[data-testid="chat-error"]').text()).toBe(
       "Vorlesen fehlgeschlagen.",
     );
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      "[tts] read aloud failed",
+      expect.any(Error),
+    );
+
+    consoleErrorSpy.mockRestore();
   });
 
   it("copies Markdown source and rendered HTML together", async () => {
@@ -1243,6 +1277,10 @@ describe("ChatWindow", () => {
   });
 
   it("shows a short error without replacing a new composer draft", async () => {
+    const consoleErrorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+
     let rejectStream: ((error: Error) => void) | undefined;
 
     streamChatMessageMock.mockImplementation(
@@ -1270,6 +1308,12 @@ describe("ChatWindow", () => {
       (wrapper.get('[data-testid="chat-input"]').element as HTMLTextAreaElement)
         .value,
     ).toBe("Nächster Prompt");
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      "[chat] response generation failed",
+      expect.any(Error),
+    );
+
+    consoleErrorSpy.mockRestore();
   });
 
 
@@ -1480,6 +1524,10 @@ describe("ChatWindow", () => {
   });
 
   it("shows the existing chat error area when export fails", async () => {
+    const consoleErrorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+
     getChatsMock.mockResolvedValue([
       {
         id: 42,
@@ -1510,6 +1558,12 @@ describe("ChatWindow", () => {
     expect(wrapper.get('[data-testid="chat-error"]').text()).toBe(
       "Chat konnte nicht exportiert werden.",
     );
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      "[chat-export] failed to export chat",
+      expect.any(Error),
+    );
+
+    consoleErrorSpy.mockRestore();
   });
 
   it("closes the chat menu on outside pointer interaction and Escape", async () => {
@@ -1792,6 +1846,10 @@ describe("ChatWindow", () => {
   });
 
   it("keeps the current chat visible when loading another chat fails", async () => {
+    const consoleErrorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+
     getChatsMock.mockResolvedValue([
       {
         id: 42,
@@ -1820,5 +1878,11 @@ describe("ChatWindow", () => {
     expect(wrapper.get('[data-testid="chat-error"]').text()).toBe(
       "Chat konnte nicht geladen werden.",
     );
-});
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      "[chat] failed to load chat",
+      expect.any(Error),
+    );
+
+    consoleErrorSpy.mockRestore();
+  });
 });

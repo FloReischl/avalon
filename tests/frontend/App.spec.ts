@@ -15,6 +15,7 @@ const {
   getAudioCallStatusMock,
   startAudioCallMock,
   endAudioCallMock,
+  getPendingAuthorizationRequestsMock,
   requestRuntimeWarmUpMock,
   listenToAudioCallChangedMock,
   publishAudioCallChangedMock,
@@ -35,6 +36,7 @@ const {
   getAudioCallStatusMock: vi.fn(),
   startAudioCallMock: vi.fn(),
   endAudioCallMock: vi.fn(),
+  getPendingAuthorizationRequestsMock: vi.fn(),
   requestRuntimeWarmUpMock: vi.fn(),
   listenToAudioCallChangedMock: vi.fn(),
   publishAudioCallChangedMock: vi.fn(),
@@ -63,6 +65,7 @@ vi.mock("../../frontend/src/services/backend", async (importOriginal) => {
     getAudioCallStatus: getAudioCallStatusMock,
     startAudioCall: startAudioCallMock,
     endAudioCall: endAudioCallMock,
+    getPendingAuthorizationRequests: getPendingAuthorizationRequestsMock,
   };
 });
 
@@ -102,7 +105,14 @@ import App from "../../frontend/src/App.vue";
 
 
 describe("App", () => {
+  const fetchMock = vi.fn();
+
   beforeEach(() => {
+    vi.stubGlobal("fetch", fetchMock);
+    fetchMock.mockReset();
+    fetchMock.mockResolvedValue(
+      new Response(null, { status: 200 }),
+    );
     exitAvalonMock.mockReset();
     getBackendSnapshotMock.mockReset();
     exitAvalonMock.mockResolvedValue(undefined);
@@ -116,6 +126,8 @@ describe("App", () => {
     getAudioCallStatusMock.mockReset();
     startAudioCallMock.mockReset();
     endAudioCallMock.mockReset();
+    getPendingAuthorizationRequestsMock.mockReset();
+    getPendingAuthorizationRequestsMock.mockResolvedValue([]);
     requestRuntimeWarmUpMock.mockReset();
     listenToAudioCallChangedMock.mockReset();
     publishAudioCallChangedMock.mockReset();
@@ -167,6 +179,7 @@ describe("App", () => {
 
   afterEach(() => {
     vi.useRealTimers();
+    vi.unstubAllGlobals();
   });
 
   it("shows the startup snapshot while the backend is starting", async () => {
@@ -328,6 +341,10 @@ describe("App", () => {
   });
 
   it("shows a hard startup failure when UI config loading fails", async () => {
+    const consoleErrorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+
     getBackendSnapshotMock.mockResolvedValue({
       status: "ready",
       logs: ["Backend ready"],
@@ -346,6 +363,12 @@ describe("App", () => {
       "Failed to load UI config: UI config request failed with HTTP 500",
     );
     expect(wrapper.find('[data-testid="avatar"]').exists()).toBe(false);
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      "[ui-config] failed to load UI config",
+      expect.any(Error),
+    );
+
+    consoleErrorSpy.mockRestore();
   });
 
   it("opens the chat window when Avatar is double-clicked", async () => {

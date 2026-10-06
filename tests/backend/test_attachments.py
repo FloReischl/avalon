@@ -10,7 +10,7 @@ from app.persistence.attachment_repository import AttachmentRepository
 from app.persistence.chat_repository import ChatRepository
 from app.persistence.database import create_database_engine, create_session_factory
 from app.persistence.migrations import run_migrations
-from app.persistence.models import Attachment
+from app.persistence.models import Agent, Attachment
 from app.services.attachments import (
     FALLBACK_MIME_TYPE,
     AttachmentService,
@@ -27,7 +27,12 @@ def attachment_service(tmp_path: Path):
     engine = create_database_engine(database_path)
     session_factory = create_session_factory(engine)
     chat_repository = ChatRepository(session_factory)
-    chat = chat_repository.create_chat_with_message("Chat", "user", "Hallo")
+    with session_factory() as session:
+        agent_id = session.scalar(select(Agent.id).where(Agent.key == "default"))
+    assert agent_id is not None
+    chat = chat_repository.create_chat_with_message(
+        "Chat", "user", "Hallo", agent_id=agent_id
+    )
     message_id = chat_repository.get_messages(chat.id)[0].id
     try:
         yield (

@@ -128,6 +128,10 @@ describe("useTransientChat", () => {
   });
 
   it("keeps the old title when renaming fails", async () => {
+    const consoleErrorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+
     const management = createChatManagement({
       getChats: vi.fn().mockResolvedValue([
         {
@@ -158,6 +162,12 @@ describe("useTransientChat", () => {
     expect(chat.errorMessage.value).toBe(
       "Chat konnte nicht umbenannt werden.",
     );
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      "[chat] failed to rename chat",
+      expect.any(Error),
+    );
+
+    consoleErrorSpy.mockRestore();
   });
 
   it("updates pinned state only after the backend succeeds", async () => {
@@ -200,6 +210,10 @@ describe("useTransientChat", () => {
   });
 
   it("keeps pinned state unchanged when updating it fails", async () => {
+    const consoleErrorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+
     const management = createChatManagement({
       getChats: vi.fn().mockResolvedValue([
         {
@@ -230,6 +244,12 @@ describe("useTransientChat", () => {
     expect(chat.errorMessage.value).toBe(
       "Pin-Status konnte nicht geändert werden.",
     );
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      "[chat] failed to update pin state",
+      expect.any(Error),
+    );
+
+    consoleErrorSpy.mockRestore();
   });
 
   it("deletes a chat from local state after the backend succeeds", async () => {
@@ -263,10 +283,14 @@ describe("useTransientChat", () => {
       deleteChat: vi.fn().mockResolvedValue(undefined),
     });
 
+    const loadAgentToken = vi.fn().mockResolvedValue("agent-token");
+
     const chat = useTransientChat(
       undefined,
       undefined,
       management,
+      undefined,
+      loadAgentToken,
     );
 
     await chat.refreshChats();
@@ -283,6 +307,10 @@ describe("useTransientChat", () => {
   });
 
   it("keeps a chat unchanged when deleting fails", async () => {
+    const consoleErrorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+
     const management = createChatManagement({
       getChats: vi.fn().mockResolvedValue([
         {
@@ -314,9 +342,18 @@ describe("useTransientChat", () => {
     expect(chat.errorMessage.value).toBe(
       "Chat konnte nicht gelöscht werden.",
     );
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      "[chat] failed to delete chat",
+      expect.any(Error),
+    );
+
+    consoleErrorSpy.mockRestore();
   });
 
   it("adds the first user turn, accepts its chat ID and streams the response", async () => {
+    const consoleErrorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
 
     const streamer: ChatStreamer = async (
       request,
@@ -331,7 +368,11 @@ describe("useTransientChat", () => {
       handlers.onChunk("Flo");
     };
 
-    const chat = useTransientChat(streamer);
+    const management = createChatManagement({
+      getChats: vi.fn().mockResolvedValue([]),
+      getChat: vi.fn().mockRejectedValue(new Error("refresh failed")),
+    });
+    const chat = useTransientChat(streamer, undefined, management);
     chat.input.value = "Hallo";
 
     await chat.send();
@@ -350,9 +391,18 @@ describe("useTransientChat", () => {
     expect(chat.input.value).toBe("");
     expect(chat.isGenerating.value).toBe(false);
     expect(chat.errorMessage.value).toBeUndefined();
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      "[chat] failed to refresh selected chat",
+      expect.any(Error),
+    );
+
+    consoleErrorSpy.mockRestore();
   });
 
   it("rolls back the whole turn without overwriting a new composer draft on stop", async () => {
+    const consoleErrorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
 
     let resolveStream: (() => void) | undefined;
 
@@ -373,7 +423,10 @@ describe("useTransientChat", () => {
       });
     };
 
-    const chat = useTransientChat(streamer);
+    const management = createChatManagement({
+      getChat: vi.fn().mockRejectedValue(new Error("refresh failed")),
+    });
+    const chat = useTransientChat(streamer, undefined, management);
     chat.input.value = "Zeile 1\nZeile 2";
 
     const sending = chat.send();
@@ -393,9 +446,19 @@ describe("useTransientChat", () => {
 
     await sending;
     resolveStream?.();
+
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      "[chat] failed to refresh selected chat",
+      expect.any(Error),
+    );
+    consoleErrorSpy.mockRestore();
   });
 
   it("rolls back and exposes a user-facing error without overwriting a new draft", async () => {
+    const consoleErrorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+
     let rejectStream: ((error: Error) => void) | undefined;
 
     const streamer: ChatStreamer = async (
@@ -410,7 +473,10 @@ describe("useTransientChat", () => {
       });
     };
 
-    const chat = useTransientChat(streamer);
+    const management = createChatManagement({
+      getChat: vi.fn().mockRejectedValue(new Error("refresh failed")),
+    });
+    const chat = useTransientChat(streamer, undefined, management);
     chat.input.value = "Hallo";
 
     const sending = chat.send();
@@ -430,6 +496,16 @@ describe("useTransientChat", () => {
     expect(chat.errorMessage.value).toBe(
       "Antwort konnte nicht erzeugt werden.",
     );
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      "[chat] response generation failed",
+      expect.any(Error),
+    );
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      "[chat] failed to refresh selected chat",
+      expect.any(Error),
+    );
+
+    consoleErrorSpy.mockRestore();
   });
 
 
@@ -497,6 +573,10 @@ describe("useTransientChat", () => {
   });
 
   it("keeps an audio message when response generation fails", async () => {
+    const consoleErrorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+
     const audioStreamer = vi.fn().mockRejectedValue(
       new Error("failed"),
     );
@@ -514,5 +594,11 @@ describe("useTransientChat", () => {
     expect(chat.errorMessage.value).toBe(
       "Sprachantwort konnte nicht erzeugt werden.",
     );
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      "[audio] response generation failed",
+      expect.any(Error),
+    );
+
+    consoleErrorSpy.mockRestore();
   });
 });
