@@ -4,7 +4,7 @@ import { createApp } from "vue";
 
 import App from "./App.vue";
 import ChatWindow from "./ChatWindow.vue";
-import PermissionsWindow from "./PermissionsWindow.vue";
+import ConfirmationWindow from "./ConfirmationWindow.vue";
 import "./styles.css";
 
 async function bootstrap() {
@@ -13,13 +13,13 @@ async function bootstrap() {
     ? getCurrentWindow()
     : undefined;
   const isChatWindow = currentWindow?.label === "chat";
-  const isPermissionsWindow = currentWindow?.label === "permissions";
+  const isConfirmationWindow = currentWindow?.label === "confirmation";
 
   if (currentWindow && isChatWindow) {
     await currentWindow.setTitle("New Chat - Avalon");
   }
 
-  createApp(isPermissionsWindow ? PermissionsWindow : isChatWindow ? ChatWindow : App).mount("#app");
+  createApp(isConfirmationWindow ? ConfirmationWindow : isChatWindow ? ChatWindow : App).mount("#app");
 }
 
 void bootstrap().catch((error) => {

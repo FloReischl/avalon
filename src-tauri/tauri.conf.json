@@ -37,8 +37,8 @@
         "visible": false
       },
       {
-        "label": "permissions",
-        "title": "Permissions",
+        "label": "confirmation",
+        "title": "Confirmation",
         "width": 900,
         "height": 620,
         "minWidth": 650,

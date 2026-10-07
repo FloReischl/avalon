@@ -25,7 +25,7 @@ import {
 } from "./services/inputShape";
 import { exitAvalon } from "./services/appLifecycle";
 import { showChatWindow } from "./services/chatWindow";
-import { showPermissionsWindow } from "./services/permissionsWindow";
+import { showConfirmationWindow } from "./services/confirmationWindow";
 import { startAvatarWindowDrag } from "./services/windowDrag";
 import { setAvatarWindowTitle } from "./services/windowTitle";
 import {
@@ -730,7 +730,7 @@ async function refreshPendingPermissionCount() {
 }
 
 async function openPermissions() {
-  try { await showPermissionsWindow(); } catch (error) { console.error("[permissions] failed to show window", error); }
+  try { await showConfirmationWindow(); } catch (error) { console.error("[confirmations] failed to show window", error); }
 }
 
 async function handleExit() {

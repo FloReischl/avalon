@@ -33,7 +33,7 @@ import {
   exportChatToMarkdown,
   getChatMarkdown,
 } from "./services/chatExport";
-import { showPermissionsWindowForChat } from "./services/permissionsWindow";
+import { showConfirmationWindowForChat } from "./services/confirmationWindow";
 import { formatMessageTime } from "./services/messageTime";
 import { requestRuntimeWarmUp } from "./services/runtimeWarmup";
 import {
@@ -465,7 +465,7 @@ async function openPermissionsDialog(chatId: number) {
     if (chat === undefined) {
       throw new Error("Chat is missing from the chat list");
     }
-    await showPermissionsWindowForChat(chatId, chat.agent_id);
+    await showConfirmationWindowForChat(chatId, chat.agent_id);
   } catch (error) {
     console.error("[permissions] failed to show chat permissions", error);
     errorMessage.value = "Permissions konnten nicht geöffnet werden.";
