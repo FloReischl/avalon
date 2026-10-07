@@ -10,7 +10,10 @@ import httpx2
 from mcp import Client
 from mcp.client.streamable_http import streamable_http_client
 
+from .confirmation import ConfirmationTable
+
 DEFAULT = object()
+
 
 
 class ConfirmationCancelled(Exception):
@@ -135,10 +138,16 @@ class AvalonWorkflowClient:
 
     async def confirm(
         self,
-        schema: dict[str, object],
-        rows: list[dict[str, object]],
+        confirmation: ConfirmationTable | dict[str, object],
     ) -> list[dict[str, object]]:
         """Wait for the user to review workflow rows in Avalon."""
+        if isinstance(confirmation, ConfirmationTable):
+            payload = confirmation.to_dict()
+        elif isinstance(confirmation, dict):
+            payload = confirmation
+        else:
+            raise TypeError("confirmation must be ConfirmationTable or dict.")
+
         async with httpx2.AsyncClient(
             headers=self._headers(),
             timeout=self._timeout,
@@ -146,8 +155,9 @@ class AvalonWorkflowClient:
             response = await http.post(
                 f"{self.backend_url}/api/v1/workflow-executions/"
                 f"{self.workflow_execution_id}/confirmation",
-                json={"schema": schema, "rows": rows},
+                json=payload,
             )
+
 
         if response.status_code == 409:
             body = response.json()

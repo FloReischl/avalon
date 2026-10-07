@@ -9,12 +9,20 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parents[2] / "workflows"))
 
 import avalon_workflows.client as client_module
-from avalon_workflows import AvalonWorkflowClient, ConfirmationCancelled
+from avalon_workflows import (
+    AvalonWorkflowClient,
+    ConfirmationCancelled,
+    ConfirmationTable,
+)
 
 
-SCHEMA = {"title": "Review", "columns": [{"key": "title", "type": "str"}]}
-ROWS = [{"title": "Original"}]
+
+CONFIRMATION = {
+    "schema": {"title": "Review", "columns": [{"key": "title", "type": "str"}]},
+    "rows": [{"title": "Original"}],
+}
 RESULT = [{"title": "Edited", "avalon_confirmation": "approved"}]
+
 
 
 def workflow_client() -> AvalonWorkflowClient:
@@ -68,21 +76,38 @@ def install_fake_http(monkeypatch, response: FakeResponse) -> list[dict[str, obj
 def test_confirm_posts_unmodified_input_with_runtime_auth_and_returns_rows(monkeypatch) -> None:
     calls = install_fake_http(monkeypatch, FakeResponse(200, RESULT))
 
-    assert asyncio.run(workflow_client().confirm(SCHEMA, ROWS)) == RESULT
+    assert asyncio.run(workflow_client().confirm(CONFIRMATION)
+) == RESULT
     assert calls == [
         {"client": {"headers": {"Authorization": "Bearer parent-agent-token"}, "timeout": 3600}},
         {
             "url": "http://127.0.0.1:8095/api/v1/workflow-executions/42/confirmation",
-            "json": {"schema": SCHEMA, "rows": ROWS},
+            "json": CONFIRMATION,
+
         },
     ]
 
 
+def test_confirm_accepts_confirmation_table(monkeypatch) -> None:
+    calls = install_fake_http(monkeypatch, FakeResponse(200, RESULT))
+    table = (
+        ConfirmationTable("Review")
+        .column("title", str, editable=True)
+        .column("publish", bool)
+    )
+    table.rows.add(["Original", True])
+
+    assert asyncio.run(workflow_client().confirm(table)) == RESULT
+    assert calls[1]["json"] == table.to_dict()
+
+
 def test_confirm_maps_only_the_explicit_cancel_response(monkeypatch) -> None:
+
     install_fake_http(monkeypatch, FakeResponse(409, {"detail": "workflow_confirmation_cancelled"}))
 
     with pytest.raises(ConfirmationCancelled):
-        asyncio.run(workflow_client().confirm(SCHEMA, ROWS))
+        asyncio.run(workflow_client().confirm(CONFIRMATION)
+)
 
 
 def test_confirm_keeps_validation_and_other_runtime_errors(monkeypatch) -> None:
@@ -90,7 +115,8 @@ def test_confirm_keeps_validation_and_other_runtime_errors(monkeypatch) -> None:
     install_fake_http(monkeypatch, response)
 
     with pytest.raises(RuntimeError, match="HTTP 400"):
-        asyncio.run(workflow_client().confirm(SCHEMA, ROWS))
+        asyncio.run(workflow_client().confirm(CONFIRMATION)
+)
     assert response.raise_called
 
 
@@ -99,7 +125,8 @@ def test_confirm_does_not_treat_other_conflicts_as_cancel(monkeypatch) -> None:
     install_fake_http(monkeypatch, response)
 
     with pytest.raises(RuntimeError, match="HTTP 409"):
-        asyncio.run(workflow_client().confirm(SCHEMA, ROWS))
+        asyncio.run(workflow_client().confirm(CONFIRMATION)
+)
     assert response.raise_called
 
 
@@ -124,5 +151,6 @@ def test_confirm_propagates_transport_errors_without_retry(monkeypatch) -> None:
     monkeypatch.setattr(client_module.httpx2, "AsyncClient", FakeHttpClient)
 
     with pytest.raises(OSError, match="connection lost"):
-        asyncio.run(workflow_client().confirm(SCHEMA, ROWS))
+        asyncio.run(workflow_client().confirm(CONFIRMATION)
+)
     assert attempts == 1
