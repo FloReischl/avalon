@@ -121,6 +121,7 @@ agents:
         destination: ~/Documents/podcasts
 - name: Kenny
   key: workflow-test
+  icon: 💀
   persona: Du bist Kenny. Ein Test Agent.
   instructions: |
     - Ein Agent zum Testen von Workflows.
@@ -131,7 +132,7 @@ agents:
       context: workflow
       key: execute
     permission_set:
-      scope: ["test-workflow"]
+      scope: ["test-workflow", "confirmation-test" ]
       validity_type: permanent
       default_expiry: 0
 
