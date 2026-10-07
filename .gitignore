@@ -42,6 +42,9 @@ data/agent-findings.md
 data/agent-output.md
 data/diff.patch
 
+# secure!
+spikes/imaplib/env_vars.sh
+
 # docs
 docs/backlog.md
 
