@@ -4,6 +4,10 @@ node_modules/
 dist/
 __pycache__/
 
+# security
+spikes/imaplib/env_vars.sh
+spikes/imaplib/google_client_secret.json
+
 # agent content
 !data/agent-instructions.md
 !data/agent-findings.md

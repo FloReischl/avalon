@@ -44,6 +44,7 @@ data/diff.patch
 
 # secure!
 spikes/imaplib/env_vars.sh
+spikes/imaplib/google_client_secret.json
 
 # docs
 docs/backlog.md
