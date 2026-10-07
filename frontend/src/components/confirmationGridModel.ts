@@ -4,11 +4,16 @@ export interface ConfirmationGridColumn {
   label: string;
   minWidth?: number;
   flex?: number;
+  visible?: boolean;
+  editable?: boolean;
+  cellDataType?: string | boolean;
+  cellEditor?: string;
+  valueParser?: (value: unknown) => unknown;
 }
 
 export interface ConfirmationGridRow {
   id: string;
-  cells: Record<string, string>;
+  cells: Record<string, unknown>;
 }
 
 export interface ConfirmationGridModel {

@@ -16,6 +16,7 @@ const {
   startAudioCallMock,
   endAudioCallMock,
   getPendingAuthorizationRequestsMock,
+  getPendingWorkflowConfirmationMock,
   requestRuntimeWarmUpMock,
   listenToAudioCallChangedMock,
   publishAudioCallChangedMock,
@@ -37,6 +38,7 @@ const {
   startAudioCallMock: vi.fn(),
   endAudioCallMock: vi.fn(),
   getPendingAuthorizationRequestsMock: vi.fn(),
+  getPendingWorkflowConfirmationMock: vi.fn(),
   requestRuntimeWarmUpMock: vi.fn(),
   listenToAudioCallChangedMock: vi.fn(),
   publishAudioCallChangedMock: vi.fn(),
@@ -66,6 +68,7 @@ vi.mock("../../frontend/src/services/backend", async (importOriginal) => {
     startAudioCall: startAudioCallMock,
     endAudioCall: endAudioCallMock,
     getPendingAuthorizationRequests: getPendingAuthorizationRequestsMock,
+    getPendingWorkflowConfirmation: getPendingWorkflowConfirmationMock,
   };
 });
 
@@ -128,6 +131,8 @@ describe("App", () => {
     endAudioCallMock.mockReset();
     getPendingAuthorizationRequestsMock.mockReset();
     getPendingAuthorizationRequestsMock.mockResolvedValue([]);
+    getPendingWorkflowConfirmationMock.mockReset();
+    getPendingWorkflowConfirmationMock.mockResolvedValue(null);
     requestRuntimeWarmUpMock.mockReset();
     listenToAudioCallChangedMock.mockReset();
     publishAudioCallChangedMock.mockReset();

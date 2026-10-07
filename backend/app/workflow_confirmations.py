@@ -54,6 +54,7 @@ class WorkflowConfirmationManager:
 
     def __init__(self) -> None:
         self._pending: _PendingConfirmation | None = None
+        self._listeners: set[asyncio.Queue[None]] = set()
 
     def create(
         self, execution_id: int, schema: object, rows: object
@@ -73,6 +74,7 @@ class WorkflowConfirmationManager:
             confirmation=confirmation,
             future=asyncio.get_running_loop().create_future(),
         )
+        self._notify()
         logger.info("[workflow-confirmation] requested execution_id=%s", execution_id)
         return confirmation
 
@@ -83,21 +85,37 @@ class WorkflowConfirmationManager:
         finally:
             if self._pending is pending:
                 self._pending = None
+                self._notify()
 
     def pending(self) -> WorkflowConfirmation | None:
         return self._pending.confirmation if self._pending is not None else None
+
+    def subscribe(self) -> asyncio.Queue[None]:
+        queue: asyncio.Queue[None] = asyncio.Queue(maxsize=1)
+        self._listeners.add(queue)
+        return queue
+
+    def unsubscribe(self, queue: asyncio.Queue[None]) -> None:
+        self._listeners.discard(queue)
+
+    def _notify(self) -> None:
+        for queue in self._listeners:
+            if queue.empty():
+                queue.put_nowait(None)
 
     def confirm(self, confirmation_id: str, rows: list[dict[str, object]]) -> None:
         pending = self._get(confirmation_id)
         _validate_submission(pending.confirmation, rows)
         if not pending.future.done():
             pending.future.set_result(rows)
+            self._notify()
             logger.info("[workflow-confirmation] confirmed execution_id=%s", pending.confirmation.execution_id)
 
     def cancel(self, confirmation_id: str) -> None:
         pending = self._get(confirmation_id)
         if not pending.future.done():
             pending.future.set_exception(ConfirmationCancelled())
+            self._notify()
             logger.info("[workflow-confirmation] cancelled execution_id=%s", pending.confirmation.execution_id)
 
     def _get(self, confirmation_id: str) -> _PendingConfirmation:

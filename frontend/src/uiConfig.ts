@@ -80,6 +80,7 @@ async function requestUiConfig(): Promise<UiConfig> {
 
 export async function loadUiConfig(): Promise<UiConfig> {
   if (uiConfig) {
+    setAgentBearerToken(uiConfig.agentBearerToken);
     return uiConfig;
   }
 

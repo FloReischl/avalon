@@ -146,8 +146,6 @@ def test_runtime_confirmation_keeps_execution_running_and_returns_rows(monkeypat
         await workflows.confirm_confirmation(
             pending.id,
             WorkflowConfirmationSubmitRequest(rows=[{"id": "4711", "title": "Edited", "avalon_confirmation": "rejected"}]),
-            request_for(chat.agent_id),
-            repository,
         )
         assert await waiting == [{"id": "4711", "title": "Edited", "avalon_confirmation": "rejected"}]
 
@@ -191,7 +189,7 @@ def test_runtime_invalid_request_is_400_and_creates_nothing(monkeypatch, tmp_pat
         engine.dispose()
 
 
-def test_ui_confirmation_routes_require_the_execution_agent(monkeypatch, tmp_path) -> None:
+def test_local_ui_confirmation_routes_are_agent_independent(monkeypatch, tmp_path) -> None:
     database = tmp_path / "avalon.sqlite"
     run_migrations(database)
     engine = create_database_engine(database)
@@ -218,13 +216,8 @@ def test_ui_confirmation_routes_require_the_execution_agent(monkeypatch, tmp_pat
         await asyncio.sleep(0)
         pending = manager.pending()
         assert pending is not None
-        with pytest.raises(HTTPException) as error:
-            await workflows.pending_confirmation(request_for(other_id), repository)
-        assert error.value.status_code == 401
-        with pytest.raises(HTTPException) as error:
-            await workflows.cancel_confirmation(pending.id, request_for(other_id), repository)
-        assert error.value.status_code == 401
-        await workflows.cancel_confirmation(pending.id, request_for(owner_id), repository)
+        assert (await workflows.pending_confirmation()).id == pending.id
+        await workflows.cancel_confirmation(pending.id)
         with pytest.raises(HTTPException) as error:
             await waiting
         assert error.value.detail == "workflow_confirmation_cancelled"

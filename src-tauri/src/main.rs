@@ -182,8 +182,11 @@ fn main() {
                 app_handle.exit(0);
             } else if label == "chat" || label == "confirmation" {
                 api.prevent_close();
-
-                if let Some(window) = app_handle.get_webview_window(label) {
+                if label == "confirmation" {
+                    if let Err(error) = app_handle.emit_to("confirmation", "confirmation-close-requested", ()) {
+                        eprintln!("failed to request confirmation close: {error}");
+                    }
+                } else if let Some(window) = app_handle.get_webview_window(label) {
                     if let Err(error) = window.hide() {
                         eprintln!("failed to hide Avalon window '{label}': {error}");
                     }

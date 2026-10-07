@@ -46,6 +46,7 @@ import {
   startAudioCall,
   synthesizeSpeech,
   getPendingAuthorizationRequests,
+  getPendingWorkflowConfirmation,
 } from "./services/backend";
 import { requestRuntimeWarmUp } from "./services/runtimeWarmup";
 
@@ -65,6 +66,7 @@ const avatarRuntimeState = ref<AvatarRuntimeState>({ state: "standard", backendP
 const animationFrame = ref(0);
 const pendingPermissionCount = ref(0);
 let permissionEvents: EventSource | undefined;
+let workflowConfirmationEvents: EventSource | undefined;
 const avatarStage = useTemplateRef<HTMLDivElement>("avatarStage");
 const avatarRegion = useTemplateRef<HTMLDivElement>("avatarRegion");
 const avatarImage = useTemplateRef<HTMLImageElement>("avatarImage");
@@ -723,7 +725,10 @@ async function handleAvatarDoubleClick() {
 
 async function refreshPendingPermissionCount() {
   try {
-    pendingPermissionCount.value = (await getPendingAuthorizationRequests()).length;
+    const [requests, confirmation] = await Promise.all([
+      getPendingAuthorizationRequests(), getPendingWorkflowConfirmation(),
+    ]);
+    pendingPermissionCount.value = requests.length + (confirmation === null ? 0 : 1);
   } catch (error) {
     console.error("[permissions] failed to refresh pending requests", error);
   }
@@ -752,6 +757,13 @@ onMounted(async () => {
     );
     permissionEvents.addEventListener(
       "authorization_requests_changed",
+      () => { void refreshPendingPermissionCount(); },
+    );
+    workflowConfirmationEvents = new EventSource(
+      "http://127.0.0.1:8095/api/v1/workflow-executions/confirmations/events",
+    );
+    workflowConfirmationEvents.addEventListener(
+      "workflow_confirmations_changed",
       () => { void refreshPendingPermissionCount(); },
     );
   }
@@ -829,6 +841,7 @@ onBeforeUnmount(() => {
   unlistenAvatarState?.();
   unlistenAudioCall?.();
   permissionEvents?.close();
+  workflowConfirmationEvents?.close();
   if (animationTimer !== undefined) window.clearInterval(animationTimer);
 });
 

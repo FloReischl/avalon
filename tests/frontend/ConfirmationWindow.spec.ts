@@ -5,12 +5,14 @@ const {
   abortAuthorizationMock, confirmAuthorizationMock, getChatPermissionsMock,
   getPendingAuthorizationRequestsMock, getProactiveConfirmationChatMock,
   hideConfirmationWindowMock, loadAgentBearerTokenMock, setAgentBearerTokenMock, loadUiConfigMock,
-  saveChatPermissionMock, callbacks, eventCallbackIds,
+  saveChatPermissionMock, getPendingWorkflowConfirmationMock, confirmWorkflowConfirmationMock,
+  cancelWorkflowConfirmationMock, callbacks, eventCallbackIds,
 } = vi.hoisted(() => ({
   abortAuthorizationMock: vi.fn(), confirmAuthorizationMock: vi.fn(),
   getChatPermissionsMock: vi.fn(), getPendingAuthorizationRequestsMock: vi.fn(),
   getProactiveConfirmationChatMock: vi.fn(), loadAgentBearerTokenMock: vi.fn(),
   hideConfirmationWindowMock: vi.fn(), setAgentBearerTokenMock: vi.fn(), loadUiConfigMock: vi.fn(), saveChatPermissionMock: vi.fn(),
+  getPendingWorkflowConfirmationMock: vi.fn(), confirmWorkflowConfirmationMock: vi.fn(), cancelWorkflowConfirmationMock: vi.fn(),
   callbacks: new Map<number, (event: { payload: unknown }) => void>(),
   eventCallbackIds: new Map<string, number>(),
 }));
@@ -19,6 +21,9 @@ vi.mock("../../frontend/src/services/backend", () => ({
   BACKEND_BASE_URL: "http://test", abortAuthorization: abortAuthorizationMock,
   confirmAuthorization: confirmAuthorizationMock, getChatPermissions: getChatPermissionsMock,
   getPendingAuthorizationRequests: getPendingAuthorizationRequestsMock,
+  getPendingWorkflowConfirmation: getPendingWorkflowConfirmationMock,
+  confirmWorkflowConfirmation: confirmWorkflowConfirmationMock,
+  cancelWorkflowConfirmation: cancelWorkflowConfirmationMock,
   loadAgentBearerToken: loadAgentBearerTokenMock, saveChatPermission: saveChatPermissionMock,
   setAgentBearerToken: setAgentBearerTokenMock,
 }));
@@ -55,6 +60,9 @@ beforeEach(() => {
     },
   } });
   Object.defineProperty(window, "__TAURI_EVENT_PLUGIN_INTERNALS__", { configurable: true, value: { unregisterListener: vi.fn() } });
+  getPendingWorkflowConfirmationMock.mockResolvedValue(null);
+  confirmWorkflowConfirmationMock.mockResolvedValue(undefined);
+  cancelWorkflowConfirmationMock.mockResolvedValue(undefined);
 });
 afterEach(() => vi.restoreAllMocks());
 
@@ -164,5 +172,46 @@ describe("ConfirmationWindow", () => {
     expect(hideConfirmationWindowMock).toHaveBeenCalledOnce();
     expect(confirmAuthorizationMock).not.toHaveBeenCalled();
     expect(abortAuthorizationMock).not.toHaveBeenCalled();
+  });
+
+  it("offers the Confirmations tab and renders the schema in its declared order", async () => {
+    getProactiveConfirmationChatMock.mockResolvedValue(null); loadUiConfigMock.mockResolvedValue({});
+    getPendingAuthorizationRequestsMock.mockResolvedValue([]);
+    getPendingWorkflowConfirmationMock.mockResolvedValue({
+      id: "confirmation-1", executionId: 4,
+      schema: { title: "Review topics", columns: [
+        { key: "internal", type: "str", nullable: false, editable: false, visible: false },
+        { key: "title", label: "Title", type: "str", nullable: false, editable: true, visible: true },
+      ] }, rows: [{ internal: "4711", title: "Foo", avalon_confirmation: "unconfirmed" }],
+    });
+    const wrapper = mount(ConfirmationWindow); await flushPromises();
+    expect(wrapper.text()).toContain("Confirmations");
+    expect(wrapper.text()).toContain("Review topics");
+    const grid = wrapper.getComponent({ name: "ConfirmationGrid" });
+    expect(grid.props("model").columns.map((column: { id: string }) => column.id)).toEqual(["internal", "title", "avalon_confirmation"]);
+    expect(grid.props("model").columns[0].visible).toBe(false);
+    expect(grid.props("model").columns[1].label).toBe("Title");
+  });
+
+  it("submits all rows only after every row is decided and valid", async () => {
+    getProactiveConfirmationChatMock.mockResolvedValue(null); loadUiConfigMock.mockResolvedValue({}); getPendingAuthorizationRequestsMock.mockResolvedValue([]);
+    const confirmation = { id: "confirmation-1", executionId: 4, schema: { title: "Review", columns: [{ key: "title", type: "str", nullable: false, editable: true, visible: true }] }, rows: [{ title: "Foo", avalon_confirmation: "unconfirmed" }] };
+    getPendingWorkflowConfirmationMock.mockResolvedValue(confirmation);
+    const wrapper = mount(ConfirmationWindow); await flushPromises();
+    expect(wrapper.get('[data-testid="confirm-workflow"]').attributes("disabled")).toBeDefined();
+    await wrapper.get('[data-testid="confirmation-grid"] [data-testid="select-all"]').trigger("click");
+    await wrapper.get('[data-testid="approve-workflow"]').trigger("click"); await flushPromises();
+    expect(wrapper.get('[data-testid="confirm-workflow"]').attributes("disabled")).toBeUndefined();
+    await wrapper.get('[data-testid="confirm-workflow"]').trigger("click"); await flushPromises();
+    expect(confirmWorkflowConfirmationMock).toHaveBeenCalledWith("confirmation-1", [{ title: "Foo", avalon_confirmation: "approved" }]);
+  });
+
+  it("cancels a workflow confirmation before hiding the window", async () => {
+    getProactiveConfirmationChatMock.mockResolvedValue(null); loadUiConfigMock.mockResolvedValue({}); getPendingAuthorizationRequestsMock.mockResolvedValue([]);
+    getPendingWorkflowConfirmationMock.mockResolvedValue({ id: "confirmation-1", executionId: 4, schema: { title: "Review", columns: [] }, rows: [] });
+    const wrapper = mount(ConfirmationWindow); await flushPromises();
+    await wrapper.get('[data-testid="cancel-workflow"]').trigger("click"); await flushPromises();
+    expect(cancelWorkflowConfirmationMock).toHaveBeenCalledWith("confirmation-1");
+    expect(hideConfirmationWindowMock).toHaveBeenCalled();
   });
 });

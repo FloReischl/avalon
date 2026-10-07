@@ -56,6 +56,22 @@ export interface ProactivePermission {
   readOnly: boolean;
 }
 
+export type WorkflowConfirmationColumn = {
+  key: string;
+  type: "str" | "int" | "float" | "bool" | "date" | "datetime";
+  nullable: boolean;
+  editable: boolean;
+  visible: boolean;
+  label?: string;
+};
+
+export interface PendingWorkflowConfirmation {
+  id: string;
+  executionId: number;
+  schema: { title: string; columns: WorkflowConfirmationColumn[] };
+  rows: Array<Record<string, unknown>>;
+}
+
 export interface ConversationMessage {
   role: "user" | "assistant";
   content: string;
@@ -290,6 +306,41 @@ export async function abortAuthorization(requestId: string): Promise<void> {
     { method: "POST" },
   );
   if (!response.ok) throw new Error(`Authorization abort failed with ${response.status}`);
+}
+
+function workflowConfirmationFromPayload(payload: Record<string, unknown>): PendingWorkflowConfirmation {
+  const schema = payload.schema as Record<string, unknown>;
+  if (!schema || typeof schema.title !== "string" || !Array.isArray(schema.columns) || !Array.isArray(payload.rows)) {
+    throw new Error("Workflow confirmation response is invalid");
+  }
+  return {
+    id: String(payload.id), executionId: Number(payload.execution_id),
+    schema: { title: schema.title, columns: schema.columns as WorkflowConfirmationColumn[] },
+    rows: payload.rows as Array<Record<string, unknown>>,
+  };
+}
+
+export async function getPendingWorkflowConfirmation(): Promise<PendingWorkflowConfirmation | null> {
+  const response = await authenticatedFetch(`${BACKEND_BASE_URL}/api/v1/workflow-executions/confirmations/pending`);
+  if (!response.ok) throw new Error(`Workflow confirmation request failed with ${response.status}`);
+  const payload = await response.json() as Record<string, unknown> | null;
+  return payload === null ? null : workflowConfirmationFromPayload(payload);
+}
+
+export async function confirmWorkflowConfirmation(id: string, rows: Array<Record<string, unknown>>): Promise<void> {
+  const response = await authenticatedFetch(
+    `${BACKEND_BASE_URL}/api/v1/workflow-executions/confirmations/${encodeURIComponent(id)}/confirm`,
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ rows }) },
+  );
+  if (!response.ok) throw new Error(`Workflow confirmation submit failed with ${response.status}`);
+}
+
+export async function cancelWorkflowConfirmation(id: string): Promise<void> {
+  const response = await authenticatedFetch(
+    `${BACKEND_BASE_URL}/api/v1/workflow-executions/confirmations/${encodeURIComponent(id)}/cancel`,
+    { method: "POST" },
+  );
+  if (!response.ok) throw new Error(`Workflow confirmation cancel failed with ${response.status}`);
 }
 
 export async function getPendingAuthorizationRequests(): Promise<PendingAuthorizationRequest[]> {

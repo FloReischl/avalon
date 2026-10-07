@@ -1,249 +1,60 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, useTemplateRef } from "vue";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import ConfirmationGrid from "./components/ConfirmationGrid.vue";
+import ConfirmationGrid, { type ConfirmationGridHandle } from "./components/ConfirmationGrid.vue";
 import type { ConfirmationGridModel } from "./components/confirmationGridModel";
 import { loadUiConfig } from "./uiConfig";
 import { getProactiveConfirmationChat, hideConfirmationWindow, type ProactiveConfirmationChat } from "./services/confirmationWindow";
-import {
-  BACKEND_BASE_URL,
-  abortAuthorization,
-  confirmAuthorization,
-  getChatPermissions,
-  getPendingAuthorizationRequests,
-  loadAgentBearerToken,
-  saveChatPermission,
-  setAgentBearerToken,
-  type PendingAuthorizationRequest,
-  type ProactivePermission,
-} from "./services/backend";
+import { BACKEND_BASE_URL, abortAuthorization, cancelWorkflowConfirmation, confirmAuthorization, confirmWorkflowConfirmation, getChatPermissions, getPendingAuthorizationRequests, getPendingWorkflowConfirmation, loadAgentBearerToken, saveChatPermission, setAgentBearerToken, type PendingAuthorizationRequest, type PendingWorkflowConfirmation, type ProactivePermission, type WorkflowConfirmationColumn } from "./services/backend";
 
 const requests = ref<PendingAuthorizationRequest[]>([]);
-const proactiveChatId = ref<number>();
-const proactiveAgentId = ref<number>();
-const proactivePermissions = ref<ProactivePermission[]>([]);
-const selectedRequestIds = ref<string[]>([]);
-const selectedPermissionIds = ref<string[]>([]);
+const proactiveChatId = ref<number>(); const proactiveAgentId = ref<number>(); const proactivePermissions = ref<ProactivePermission[]>([]);
+const selectedRequestIds = ref<string[]>([]); const selectedPermissionIds = ref<string[]>([]);
+const workflowConfirmation = ref<PendingWorkflowConfirmation | null>(null); const workflowRows = ref<Array<Record<string, unknown>>>([]); const selectedWorkflowRowIds = ref<string[]>([]);
+const activeTab = ref<"permissions" | "confirmations">("permissions");
 const expiry = ref(toLocalInputValue(new Date(Date.now() + 10 * 60 * 60 * 1000)));
-const loadError = ref(false);
-const actionError = ref<string>();
+const loadError = ref(false); const workflowLoadError = ref(false); const actionError = ref<string>(); const workflowActionError = ref<string>();
+const workflowGrid = useTemplateRef<ConfirmationGridHandle>("workflowGrid");
 const mode = computed(() => proactiveChatId.value === undefined ? "reactive" : "proactive");
-let events: EventSource | undefined;
-let refreshPoll: number | undefined;
-let unlistenProactive: UnlistenFn | undefined;
-let unlistenReactive: UnlistenFn | undefined;
+let permissionEvents: EventSource | undefined; let workflowEvents: EventSource | undefined; let refreshPoll: number | undefined;
+let unlistenProactive: UnlistenFn | undefined; let unlistenReactive: UnlistenFn | undefined; let unlistenClose: UnlistenFn | undefined; let closeRunning = false;
 
-function toLocalInputValue(value: Date): string {
-  const offset = value.getTimezoneOffset() * 60_000;
-  return new Date(value.getTime() - offset).toISOString().slice(0, 16);
-}
-function formatExpiry(value: Date): string {
-  return new Intl.DateTimeFormat("de-DE", { dateStyle: "short", timeStyle: "short" }).format(value);
-}
-function expiryFor(validityType: ProactivePermission["validityType"], defaultExpiry: number, grant?: { expiresAt: string } | null): string {
-  if (validityType === "permanent") return "—";
-  return formatExpiry(grant ? new Date(grant.expiresAt) : new Date(Date.now() + defaultExpiry * 1000));
-}
-const reactiveGrid = computed<ConfirmationGridModel>(() => ({
-  columns: [
-    { id: "context", label: "Context", minWidth: 130, flex: 1 },
-    { id: "permission", label: "Permission", minWidth: 160, flex: 1 },
-    { id: "approved", label: "Approved", minWidth: 110 },
-    { id: "expiry", label: "Expiry", minWidth: 150 },
-  ],
-  rows: requests.value.map((request) => ({
-    id: request.id,
-    cells: {
-      context: request.context,
-      permission: request.key,
-      approved: "",
-      expiry: request.validityType === "permanent" ? "—" : expiryFor("duration", request.defaultExpiry),
-    },
-  })),
-}));
-const proactiveGrid = computed<ConfirmationGridModel>(() => ({
-  columns: [
-    { id: "context", label: "Context", minWidth: 130, flex: 1 },
-    { id: "permission", label: "Permission", minWidth: 160, flex: 1 },
-    { id: "approved", label: "Approved", minWidth: 110 },
-    { id: "expiry", label: "Expiry", minWidth: 150 },
-  ],
-  rows: proactivePermissions.value.map((permission) => ({
-    id: String(permission.id),
-    cells: {
-      context: permission.context,
-      permission: permission.key,
-      approved: permission.grant ? "✓" : "",
-      expiry: expiryFor(permission.validityType, permission.defaultExpiry, permission.grant),
-    },
-  })),
-}));
-
-function stopRefreshPolling() {
-  if (refreshPoll !== undefined) { window.clearInterval(refreshPoll); refreshPoll = undefined; }
-}
-function resetExpiry(defaultExpiry: number) {
-  expiry.value = toLocalInputValue(new Date(Date.now() + defaultExpiry * 1000));
-}
-async function openProactiveConfirmations({ chatId, agentId }: ProactiveConfirmationChat, clearActionError = true) {
-  stopRefreshPolling();
-  proactiveChatId.value = chatId;
-  proactiveAgentId.value = agentId;
-  proactivePermissions.value = [];
-  selectedPermissionIds.value = [];
-  if (clearActionError) actionError.value = undefined;
-  await refreshProactiveConfirmations();
-  if (loadError.value) startProactiveRefreshPolling();
-}
-async function refreshProactiveConfirmations(): Promise<boolean> {
-  const chatId = proactiveChatId.value;
-  const agentId = proactiveAgentId.value;
-  if (chatId === undefined || agentId === undefined) return true;
-  try {
-    setAgentBearerToken(await loadAgentBearerToken(agentId));
-    proactivePermissions.value = await getChatPermissions(chatId);
-    resetExpiry(proactivePermissions.value.find((permission) => permission.validityType === "duration")?.defaultExpiry ?? 10 * 60 * 60);
-    loadError.value = false;
-    return true;
-  } catch (error) {
-    console.error("Could not load proactive confirmations", error);
-    loadError.value = true;
-    return false;
-  }
-}
-function startProactiveRefreshPolling() {
-  stopRefreshPolling();
-  let attempts = 0;
-  refreshPoll = window.setInterval(() => {
-    attempts += 1;
-    void refreshProactiveConfirmations().then((loaded) => {
-      if (loaded || attempts >= 10) stopRefreshPolling();
-    });
-  }, 500);
-}
-async function openReactiveConfirmations() {
-  proactiveChatId.value = undefined;
-  proactiveAgentId.value = undefined;
-  proactivePermissions.value = [];
-  selectedRequestIds.value = [];
-  actionError.value = undefined;
-  refreshForEventWindow();
-}
-async function refresh() {
-  try {
-    await loadUiConfig();
-    requests.value = await getPendingAuthorizationRequests();
-    selectedRequestIds.value = selectedRequestIds.value.filter((id) => requests.value.some((request) => request.id === id));
-    resetExpiry(requests.value.find((request) => request.validityType === "duration")?.defaultExpiry ?? 10 * 60 * 60);
-    if (requests.value.length > 0) stopRefreshPolling();
-    loadError.value = false;
-  } catch (error) {
-    console.error("Could not load pending authorization requests", error);
-    loadError.value = true;
-  }
-}
-function refreshForEventWindow() {
-  if (mode.value !== "reactive") return;
-  stopRefreshPolling();
-  void refresh();
-  let attempts = 0;
-  refreshPoll = window.setInterval(() => { attempts += 1; void refresh(); if (attempts >= 10) stopRefreshPolling(); }, 500);
-}
-function durationSeconds(): number {
-  const expiresAt = new Date(expiry.value).getTime();
-  if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) throw new Error("Expiry muss in der Zukunft liegen.");
-  return Math.max(1, Math.round((expiresAt - Date.now()) / 1000));
-}
-function expiryIso(): string {
-  durationSeconds();
-  return new Date(expiry.value).toISOString();
-}
-async function approveReactive() {
-  actionError.value = undefined;
-  try {
-    for (const request of requests.value.filter((entry) => selectedRequestIds.value.includes(entry.id))) {
-      await confirmAuthorization(request.id, request.items.map((_, index) => index), request.validityType === "permanent" ? undefined : durationSeconds());
-    }
-  } catch (error) {
-    console.error("Could not approve authorization requests", error);
-    actionError.value = "Permissions konnten nicht geändert werden.";
-  } finally { await refresh(); }
-}
-async function abortReactive() {
-  actionError.value = undefined;
-  try {
-    for (const request of requests.value.filter((entry) => selectedRequestIds.value.includes(entry.id))) await abortAuthorization(request.id);
-  } catch (error) {
-    console.error("Could not abort authorization requests", error);
-    actionError.value = "Permissions konnten nicht geändert werden.";
-  } finally { await refresh(); }
-}
-async function updateProactive(granted: boolean) {
-  const chatId = proactiveChatId.value;
-  if (chatId === undefined) return;
-  actionError.value = undefined;
-  try {
-    for (const permission of proactivePermissions.value.filter((entry) => selectedPermissionIds.value.includes(String(entry.id)) && !entry.readOnly)) {
-      await saveChatPermission(chatId, permission.id, granted, granted && permission.validityType === "duration" ? expiryIso() : undefined);
-    }
-  } catch (error) {
-    console.error("Could not update proactive permissions", error);
-    actionError.value = "Permissions konnten nicht geändert werden.";
-  } finally {
-    const agentId = proactiveAgentId.value;
-    if (agentId !== undefined) await openProactiveConfirmations({ chatId, agentId }, false);
-  }
-}
-async function close() {
-  await hideConfirmationWindow();
-}
-onMounted(async () => {
-  unlistenProactive = await listen<ProactiveConfirmationChat>("proactive-confirmations-for-chat", (event) => { void openProactiveConfirmations(event.payload); });
-  unlistenReactive = await listen("reactive-confirmations", () => { void openReactiveConfirmations(); });
-  const chat = await getProactiveConfirmationChat();
-  if (chat !== null) await openProactiveConfirmations(chat); else await openReactiveConfirmations();
-  if (typeof EventSource !== "undefined") {
-    events = new EventSource(`${BACKEND_BASE_URL}/api/v1/authorization-requests/events`);
-    events.addEventListener("authorization_requests_changed", refreshForEventWindow);
-  }
-});
-onBeforeUnmount(() => { events?.close(); stopRefreshPolling(); unlistenProactive?.(); unlistenReactive?.(); });
+function toLocalInputValue(value: Date): string { const offset = value.getTimezoneOffset() * 60_000; return new Date(value.getTime() - offset).toISOString().slice(0, 16); }
+function formatExpiry(value: Date): string { return new Intl.DateTimeFormat("de-DE", { dateStyle: "short", timeStyle: "short" }).format(value); }
+function expiryFor(validityType: ProactivePermission["validityType"], defaultExpiry: number, grant?: { expiresAt: string } | null): string { return validityType === "permanent" ? "—" : formatExpiry(grant ? new Date(grant.expiresAt) : new Date(Date.now() + defaultExpiry * 1000)); }
+const reactiveGrid = computed<ConfirmationGridModel>(() => ({ columns: [{ id: "context", label: "Context", minWidth: 130, flex: 1 }, { id: "permission", label: "Permission", minWidth: 160, flex: 1 }, { id: "approved", label: "Approved", minWidth: 110 }, { id: "expiry", label: "Expiry", minWidth: 150 }], rows: requests.value.map((request) => ({ id: request.id, cells: { context: request.context, permission: request.key, approved: "", expiry: request.validityType === "permanent" ? "—" : expiryFor("duration", request.defaultExpiry) } })) }));
+const proactiveGrid = computed<ConfirmationGridModel>(() => ({ columns: [{ id: "context", label: "Context", minWidth: 130, flex: 1 }, { id: "permission", label: "Permission", minWidth: 160, flex: 1 }, { id: "approved", label: "Approved", minWidth: 110 }, { id: "expiry", label: "Expiry", minWidth: 150 }], rows: proactivePermissions.value.map((permission) => ({ id: String(permission.id), cells: { context: permission.context, permission: permission.key, approved: permission.grant ? "✓" : "", expiry: expiryFor(permission.validityType, permission.defaultExpiry, permission.grant) } })) }));
+function workflowColumn(column: WorkflowConfirmationColumn) { const numeric = column.type === "int" || column.type === "float"; return { id: column.key, label: column.label ?? column.key, visible: column.visible, editable: column.editable, cellDataType: column.type === "bool" ? "boolean" : numeric ? "number" : false, cellEditor: column.type === "bool" ? "agCheckboxCellEditor" : numeric ? "agNumberCellEditor" : "agTextCellEditor", valueParser: (value: unknown) => value }; }
+const workflowGridModel = computed<ConfirmationGridModel>(() => { const confirmation = workflowConfirmation.value; if (!confirmation) return { columns: [], rows: [] }; return { columns: [...confirmation.schema.columns.map(workflowColumn), { id: "avalon_confirmation", label: "Confirmation", minWidth: 145 }], rows: workflowRows.value.map((row, index) => ({ id: String(index), cells: row })) }; });
+function isValidValue(value: unknown, column: WorkflowConfirmationColumn): boolean { if (value === null || value === undefined || value === "") return column.nullable || (column.type === "str" && value === ""); if (column.type === "str") return typeof value === "string"; if (column.type === "int") return typeof value === "number" && Number.isInteger(value); if (column.type === "float") return typeof value === "number" && Number.isFinite(value); if (column.type === "bool") return typeof value === "boolean"; if (column.type === "date") return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(`${value}T00:00:00Z`)); return typeof value === "string" && value.includes("T") && !Number.isNaN(Date.parse(value)); }
+const workflowRowsValid = computed(() => { const confirmation = workflowConfirmation.value; return confirmation !== null && workflowRows.value.every((row) => confirmation.schema.columns.every((column) => isValidValue(row[column.key], column))); });
+const workflowComplete = computed(() => workflowRows.value.every((row) => row.avalon_confirmation === "approved" || row.avalon_confirmation === "rejected"));
+const workflowOkEnabled = computed(() => workflowConfirmation.value !== null && workflowRowsValid.value && workflowComplete.value);
+function stopRefreshPolling() { if (refreshPoll !== undefined) { window.clearInterval(refreshPoll); refreshPoll = undefined; } }
+function resetExpiry(defaultExpiry: number) { expiry.value = toLocalInputValue(new Date(Date.now() + defaultExpiry * 1000)); }
+async function openProactiveConfirmations({ chatId, agentId }: ProactiveConfirmationChat, clearActionError = true) { stopRefreshPolling(); proactiveChatId.value = chatId; proactiveAgentId.value = agentId; proactivePermissions.value = []; selectedPermissionIds.value = []; if (clearActionError) actionError.value = undefined; await refreshProactiveConfirmations(); if (loadError.value) startProactiveRefreshPolling(); }
+async function refreshProactiveConfirmations(): Promise<boolean> { const chatId = proactiveChatId.value; const agentId = proactiveAgentId.value; if (chatId === undefined || agentId === undefined) return true; try { setAgentBearerToken(await loadAgentBearerToken(agentId)); proactivePermissions.value = await getChatPermissions(chatId); resetExpiry(proactivePermissions.value.find((permission) => permission.validityType === "duration")?.defaultExpiry ?? 10 * 60 * 60); loadError.value = false; return true; } catch (error) { console.error("Could not load proactive confirmations", error); loadError.value = true; return false; } }
+function startProactiveRefreshPolling() { stopRefreshPolling(); let attempts = 0; refreshPoll = window.setInterval(() => { attempts += 1; void refreshProactiveConfirmations().then((loaded) => { if (loaded || attempts >= 10) stopRefreshPolling(); }); }, 500); }
+async function openReactiveConfirmations() { proactiveChatId.value = undefined; proactiveAgentId.value = undefined; proactivePermissions.value = []; selectedRequestIds.value = []; actionError.value = undefined; refreshForEventWindow(true); }
+async function refresh() { try { await loadUiConfig(); requests.value = await getPendingAuthorizationRequests(); selectedRequestIds.value = selectedRequestIds.value.filter((id) => requests.value.some((request) => request.id === id)); resetExpiry(requests.value.find((request) => request.validityType === "duration")?.defaultExpiry ?? 10 * 60 * 60); if (requests.value.length > 0) stopRefreshPolling(); loadError.value = false; } catch (error) { console.error("Could not load pending authorization requests", error); loadError.value = true; } }
+async function refreshWorkflowConfirmation(activate = false) { try { await loadUiConfig(); const confirmation = await getPendingWorkflowConfirmation(); const changed = confirmation?.id !== workflowConfirmation.value?.id; workflowConfirmation.value = confirmation; if (changed) { workflowRows.value = confirmation ? confirmation.rows.map((row) => ({ ...row })) : []; selectedWorkflowRowIds.value = []; } if (activate && confirmation) activeTab.value = "confirmations"; workflowLoadError.value = false; } catch (error) { console.error("Could not load workflow confirmation", error); workflowLoadError.value = true; } }
+function refreshForEventWindow(activate = false) { if (mode.value !== "reactive") return; stopRefreshPolling(); void refresh(); void refreshWorkflowConfirmation(activate); let attempts = 0; refreshPoll = window.setInterval(() => { attempts += 1; void refresh(); void refreshWorkflowConfirmation(activate); if (attempts >= 10) stopRefreshPolling(); }, 500); }
+function durationSeconds(): number { const expiresAt = new Date(expiry.value).getTime(); if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) throw new Error("Expiry muss in der Zukunft liegen."); return Math.max(1, Math.round((expiresAt - Date.now()) / 1000)); }
+function expiryIso(): string { durationSeconds(); return new Date(expiry.value).toISOString(); }
+async function approveReactive() { actionError.value = undefined; try { for (const request of requests.value.filter((entry) => selectedRequestIds.value.includes(entry.id))) await confirmAuthorization(request.id, request.items.map((_, index) => index), request.validityType === "permanent" ? undefined : durationSeconds()); } catch (error) { console.error("Could not approve authorization requests", error); actionError.value = "Permissions konnten nicht geändert werden."; } finally { await refresh(); } }
+async function abortReactive() { actionError.value = undefined; try { for (const request of requests.value.filter((entry) => selectedRequestIds.value.includes(entry.id))) await abortAuthorization(request.id); } catch (error) { console.error("Could not abort authorization requests", error); actionError.value = "Permissions konnten nicht geändert werden."; } finally { await refresh(); } }
+async function updateProactive(granted: boolean) { const chatId = proactiveChatId.value; if (chatId === undefined) return; actionError.value = undefined; try { for (const permission of proactivePermissions.value.filter((entry) => selectedPermissionIds.value.includes(String(entry.id)) && !entry.readOnly)) await saveChatPermission(chatId, permission.id, granted, granted && permission.validityType === "duration" ? expiryIso() : undefined); } catch (error) { console.error("Could not update proactive permissions", error); actionError.value = "Permissions konnten nicht geändert werden."; } finally { const agentId = proactiveAgentId.value; if (agentId !== undefined) await openProactiveConfirmations({ chatId, agentId }, false); } }
+function updateWorkflowCell(rowId: string, columnId: string, value: unknown) { const index = Number(rowId); if (!Number.isInteger(index) || columnId === "avalon_confirmation") return; workflowRows.value = workflowRows.value.map((row, rowIndex) => rowIndex === index ? { ...row, [columnId]: value } : row); }
+function decideSelectedWorkflow(decision: "approved" | "rejected") { const selected = new Set(selectedWorkflowRowIds.value); workflowRows.value = workflowRows.value.map((row, index) => selected.has(String(index)) ? { ...row, avalon_confirmation: decision } : row); }
+function selectAllWorkflow() { workflowGrid.value?.selectVisible(); } function deselectAllWorkflow() { workflowGrid.value?.deselectAll(); } function selectUnconfirmedWorkflow() { workflowGrid.value?.selectVisible((row) => row.avalon_confirmation === "unconfirmed"); }
+async function submitWorkflow() { const confirmation = workflowConfirmation.value; if (!confirmation || !workflowOkEnabled.value) return; workflowActionError.value = undefined; try { await loadUiConfig(); await confirmWorkflowConfirmation(confirmation.id, workflowRows.value); workflowConfirmation.value = null; workflowRows.value = []; selectedWorkflowRowIds.value = []; } catch (error) { console.error("Could not submit workflow confirmation", error); workflowActionError.value = "Confirmation konnte nicht gespeichert werden."; } }
+async function cancelCurrentWorkflow(): Promise<boolean> { const confirmation = workflowConfirmation.value; if (!confirmation) return true; workflowActionError.value = undefined; try { await loadUiConfig(); await cancelWorkflowConfirmation(confirmation.id); workflowConfirmation.value = null; workflowRows.value = []; selectedWorkflowRowIds.value = []; return true; } catch (error) { console.error("Could not cancel workflow confirmation", error); workflowActionError.value = "Confirmation konnte nicht abgebrochen werden."; return false; } }
+async function selectTab(tab: "permissions" | "confirmations") { activeTab.value = tab; if (tab === "confirmations") await refreshWorkflowConfirmation(); }
+async function close() { if (closeRunning) return; closeRunning = true; try { if (await cancelCurrentWorkflow()) await hideConfirmationWindow(); } finally { closeRunning = false; } }
+onMounted(async () => { unlistenProactive = await listen<ProactiveConfirmationChat>("proactive-confirmations-for-chat", (event) => { void openProactiveConfirmations(event.payload); }); unlistenReactive = await listen("reactive-confirmations", () => { void openReactiveConfirmations(); }); unlistenClose = await listen("confirmation-close-requested", () => { void close(); }); const chat = await getProactiveConfirmationChat(); if (chat !== null) await openProactiveConfirmations(chat); else await openReactiveConfirmations(); if (typeof EventSource !== "undefined") { permissionEvents = new EventSource(`${BACKEND_BASE_URL}/api/v1/authorization-requests/events`); permissionEvents.addEventListener("authorization_requests_changed", () => refreshForEventWindow()); workflowEvents = new EventSource(`${BACKEND_BASE_URL}/api/v1/workflow-executions/confirmations/events`); workflowEvents.addEventListener("workflow_confirmations_changed", () => { if (mode.value === "reactive" || activeTab.value === "confirmations") void refreshWorkflowConfirmation(); }); } });
+onBeforeUnmount(() => { permissionEvents?.close(); workflowEvents?.close(); stopRefreshPolling(); unlistenProactive?.(); unlistenReactive?.(); unlistenClose?.(); });
 </script>
 
-<template>
-  <main class="confirmation-window">
-    <nav class="confirmation-tabs" aria-label="Confirmations"><button class="confirmation-tab confirmation-tab--active" type="button">Permissions</button></nav>
-    <section class="confirmation-content">
-      <p v-if="loadError">Permissions konnten nicht geladen werden.</p>
-      <template v-else-if="mode === 'reactive'">
-        <p v-if="requests.length === 0">Keine offenen Permissions.</p>
-        <ConfirmationGrid v-else v-model:selected-row-ids="selectedRequestIds" :model="reactiveGrid" />
-        <section class="confirmation-actions">
-          <label>Expiry <input v-model="expiry" type="datetime-local"></label>
-          <p v-if="actionError" class="confirmation-error">{{ actionError }}</p>
-          <footer><button type="button" data-testid="approve-reactive" @click="approveReactive">Approve</button><button type="button" data-testid="abort-reactive" @click="abortReactive">Abort</button><button type="button" data-testid="close-confirmation" @click="close">Close</button></footer>
-        </section>
-      </template>
-      <template v-else>
-        <p v-if="proactivePermissions.length === 0">Keine proaktiv verwaltbaren Permissions.</p>
-        <ConfirmationGrid v-else v-model:selected-row-ids="selectedPermissionIds" :model="proactiveGrid" />
-        <section class="confirmation-actions">
-          <label>Expiry <input v-model="expiry" type="datetime-local"></label>
-          <p v-if="actionError" class="confirmation-error">{{ actionError }}</p>
-          <footer><button type="button" data-testid="approve-proactive" @click="updateProactive(true)">Approve</button><button type="button" data-testid="revoke-proactive" @click="updateProactive(false)">Revoke</button><button type="button" data-testid="close-confirmation" @click="close">Close</button></footer>
-        </section>
-      </template>
-    </section>
-  </main>
-</template>
+<template><main class="confirmation-window"><nav class="confirmation-tabs" aria-label="Confirmations"><button class="confirmation-tab" :class="{ 'confirmation-tab--active': activeTab === 'permissions' }" type="button" @click="selectTab('permissions')">Permissions</button><button class="confirmation-tab" :class="{ 'confirmation-tab--active': activeTab === 'confirmations' }" type="button" @click="selectTab('confirmations')">Confirmations</button></nav><section class="confirmation-content"><template v-if="activeTab === 'permissions'"><p v-if="loadError">Permissions konnten nicht geladen werden.</p><template v-else-if="mode === 'reactive'"><p v-if="requests.length === 0">Keine offenen Permissions.</p><ConfirmationGrid v-else v-model:selected-row-ids="selectedRequestIds" :model="reactiveGrid" /><section class="confirmation-actions"><label>Expiry <input v-model="expiry" type="datetime-local"></label><p v-if="actionError" class="confirmation-error">{{ actionError }}</p><footer><button type="button" data-testid="approve-reactive" @click="approveReactive">Approve</button><button type="button" data-testid="abort-reactive" @click="abortReactive">Abort</button><button type="button" data-testid="close-confirmation" @click="close">Close</button></footer></section></template><template v-else><p v-if="proactivePermissions.length === 0">Keine proaktiv verwaltbaren Permissions.</p><ConfirmationGrid v-else v-model:selected-row-ids="selectedPermissionIds" :model="proactiveGrid" /><section class="confirmation-actions"><label>Expiry <input v-model="expiry" type="datetime-local"></label><p v-if="actionError" class="confirmation-error">{{ actionError }}</p><footer><button type="button" data-testid="approve-proactive" @click="updateProactive(true)">Approve</button><button type="button" data-testid="revoke-proactive" @click="updateProactive(false)">Revoke</button><button type="button" data-testid="close-confirmation" @click="close">Close</button></footer></section></template></template><template v-else><p v-if="workflowLoadError">Confirmation konnte nicht geladen werden.</p><p v-else-if="workflowConfirmation === null">Keine offene Confirmation.</p><template v-else><h1>{{ workflowConfirmation.schema.title }}</h1><div class="workflow-selection"><button type="button" @click="selectAllWorkflow">Select all</button><button type="button" @click="deselectAllWorkflow">Deselect all</button><button type="button" @click="selectUnconfirmedWorkflow">Select unconfirmed</button></div><ConfirmationGrid ref="workflowGrid" v-model:selected-row-ids="selectedWorkflowRowIds" :model="workflowGridModel" @cell-value-changed="updateWorkflowCell" /><section class="confirmation-actions"><div><button type="button" data-testid="approve-workflow" @click="decideSelectedWorkflow('approved')">Approve</button><button type="button" data-testid="reject-workflow" @click="decideSelectedWorkflow('rejected')">Reject</button></div><p v-if="workflowActionError" class="confirmation-error">{{ workflowActionError }}</p><footer><button type="button" data-testid="cancel-workflow" @click="close">Cancel</button><button type="button" data-testid="confirm-workflow" :disabled="!workflowOkEnabled" @click="submitWorkflow">OK</button></footer></section></template></template></section></main></template>
 
-<style scoped>
-.confirmation-window { min-height: 100vh; color: #18191d; background: #f8f9fc; font-family: Inter, system-ui, sans-serif; }
-.confirmation-tabs { display: flex; padding: .75rem 1rem 0; border-bottom: 1px solid #ccd1dc; background: #fff; }
-.confirmation-tab { padding: .55rem 1rem; border: 0; border-bottom: 2px solid #2c6bed; color: #173d8f; background: transparent; font-weight: 650; }
-.confirmation-content { padding: 1rem; }
-.confirmation-actions { display: grid; gap: .75rem; margin-top: 1rem; }
-.confirmation-actions label { display: flex; align-items: center; gap: .5rem; }
-.confirmation-actions footer { display: flex; gap: .5rem; }
-.confirmation-error { margin: 0; color: #a11b1b; }
-</style>
+<style scoped>.confirmation-window { min-height: 100vh; color: #18191d; background: #f8f9fc; font-family: Inter, system-ui, sans-serif; }.confirmation-tabs { display: flex; padding: .75rem 1rem 0; border-bottom: 1px solid #ccd1dc; background: #fff; }.confirmation-tab { padding: .55rem 1rem; border: 0; border-bottom: 2px solid transparent; color: #173d8f; background: transparent; font-weight: 650; }.confirmation-tab--active { border-bottom-color: #2c6bed; }.confirmation-content { padding: 1rem; }.confirmation-content h1 { font-size: 1rem; margin: 0 0 .75rem; }.confirmation-actions { display: grid; gap: .75rem; margin-top: 1rem; }.confirmation-actions label, .workflow-selection { display: flex; align-items: center; gap: .5rem; }.confirmation-actions footer { display: flex; gap: .5rem; justify-content: space-between; }.confirmation-error { margin: 0; color: #a11b1b; }</style>

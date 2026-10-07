@@ -70,15 +70,11 @@ def _owned_confirmation(
 
 
 @router.get("/confirmations/pending", response_model=WorkflowConfirmationResponse | None)
-async def pending_confirmation(
-    http_request: Request,
-    repository: WorkflowExecutionRepository = Depends(get_workflow_execution_repository),
-) -> WorkflowConfirmationResponse | None:
-    """Expose the one pending workflow confirmation to the local UI."""
+async def pending_confirmation() -> WorkflowConfirmationResponse | None:
+    """Expose the pending confirmation to Avalon’s local Human-UI boundary."""
     confirmation = get_workflow_confirmation_manager().pending()
     if confirmation is None:
         return None
-    _owned_execution(confirmation.execution_id, http_request, repository)
     return _confirmation_response(confirmation)
 
 
@@ -86,11 +82,8 @@ async def pending_confirmation(
 async def confirm_confirmation(
     confirmation_id: str,
     request: WorkflowConfirmationSubmitRequest,
-    http_request: Request,
-    repository: WorkflowExecutionRepository = Depends(get_workflow_execution_repository),
 ) -> None:
     try:
-        _owned_confirmation(confirmation_id, http_request, repository)
         get_workflow_confirmation_manager().confirm(confirmation_id, request.rows)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -101,14 +94,29 @@ async def confirm_confirmation(
 @router.post("/confirmations/{confirmation_id}/cancel", status_code=204)
 async def cancel_confirmation(
     confirmation_id: str,
-    http_request: Request,
-    repository: WorkflowExecutionRepository = Depends(get_workflow_execution_repository),
 ) -> None:
     try:
-        _owned_confirmation(confirmation_id, http_request, repository)
         get_workflow_confirmation_manager().cancel(confirmation_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get("/confirmations/events")
+async def confirmation_events() -> StreamingResponse:
+    """Invalidate the local UI when the one pending confirmation changes."""
+    manager = get_workflow_confirmation_manager()
+    queue = manager.subscribe()
+
+    async def events() -> AsyncIterator[str]:
+        try:
+            yield "event: workflow_confirmations_changed\ndata: {}\n\n"
+            while True:
+                await queue.get()
+                yield "event: workflow_confirmations_changed\ndata: {}\n\n"
+        finally:
+            manager.unsubscribe(queue)
+
+    return StreamingResponse(events(), media_type="text/event-stream")
 
 
 def _event(event: WorkflowExecutionEvent) -> str:
