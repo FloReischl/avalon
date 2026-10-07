@@ -199,7 +199,9 @@ async def test_default_agent_system_prompt_precedes_persisted_context(service) -
 @pytest.mark.asyncio
 async def test_existing_chat_is_continued_with_persisted_context(service) -> None:
     chat_service, repository, runtime = service
-    chat = repository.create_chat_with_message("Chat", "user", "Erste Frage")
+    chat = repository.create_chat_with_message(
+        "Chat", "user", "Erste Frage", agent_id=1
+    )
     repository.add_message(chat.id, "assistant", "Erste Antwort")
 
     turn = chat_service.start_turn(chat.id, "Zweite Frage")
@@ -219,7 +221,9 @@ async def test_existing_chat_is_continued_with_persisted_context(service) -> Non
 @pytest.mark.asyncio
 async def test_auto_title_is_generated_after_second_roundtrip(service) -> None:
     chat_service, repository, runtime = service
-    chat = repository.create_chat_with_message("New Chat", "user", "Hallo")
+    chat = repository.create_chat_with_message(
+        "New Chat", "user", "Hallo", agent_id=1
+    )
     repository.add_message(chat.id, "assistant", "Hallo Flo")
 
     runtime.chunks = ["Persistenz", " mit SQLite"]
@@ -267,7 +271,9 @@ async def test_finalize_schedules_compression_without_waiting_for_it(service) ->
 @pytest.mark.asyncio
 async def test_manual_title_prevents_auto_title_generation(service) -> None:
     chat_service, repository, runtime = service
-    chat = repository.create_chat_with_message("New Chat", "user", "Hallo")
+    chat = repository.create_chat_with_message(
+        "New Chat", "user", "Hallo", agent_id=1
+    )
     repository.add_message(chat.id, "assistant", "Hallo Flo")
     repository.rename_chat(chat.id, "Mein Titel")
 
@@ -284,7 +290,9 @@ async def test_manual_title_prevents_auto_title_generation(service) -> None:
 @pytest.mark.asyncio
 async def test_failed_auto_title_is_not_retried(service) -> None:
     chat_service, repository, runtime = service
-    chat = repository.create_chat_with_message("New Chat", "user", "Hallo")
+    chat = repository.create_chat_with_message(
+        "New Chat", "user", "Hallo", agent_id=1
+    )
     repository.add_message(chat.id, "assistant", "Hallo Flo")
 
     call_count = 0
@@ -330,7 +338,7 @@ def test_terminal_compression_error_rejects_before_persisting_user_message(
     service,
 ) -> None:
     chat_service, repository, _ = service
-    chat = repository.create_chat("Chat")
+    chat = repository.create_chat("Chat", agent_id=1)
     assert repository.set_compression_error_if_version(
         chat.id,
         expected_version=0,
@@ -368,7 +376,9 @@ async def test_runtime_failure_keeps_user_without_partial_assistant(service) -> 
 @pytest.mark.asyncio
 async def test_model_context_contains_all_uncompressed_messages(service) -> None:
     chat_service, repository, runtime = service
-    chat = repository.create_chat_with_message("Chat", "user", "Message 0")
+    chat = repository.create_chat_with_message(
+        "Chat", "user", "Message 0", agent_id=1
+    )
 
     for index in range(1, 100):
         repository.add_message(chat.id, "assistant", f"Message {index}")

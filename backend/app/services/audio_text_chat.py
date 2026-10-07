@@ -21,7 +21,7 @@ from app.stt.whisper import (
     FasterWhisperSttService,
     merge_transcripts,
 )
-from app.avatars_config import AvatarConfig
+from app.agents_config import AgentConfig
 
 logger = logging.getLogger(__name__)
 
@@ -101,14 +101,14 @@ class AudioTextChatService:
         recorder: PipeWireRecorder,
         runtime: ModelRuntime,
         repository: ChatRepository | None = None,
-        avatar_provider: Callable[[], AvatarConfig] | None = None,
+        agents_provider: Callable[[], tuple[AgentConfig, ...]] | None = None,
         compression_service: ContextCompressionService | None = None,
         stt: FasterWhisperSttService | None = None,
     ) -> None:
         self._recorder = recorder
         self._runtime = runtime
         self._repository = repository
-        self._avatar_provider = avatar_provider
+        self._agents_provider = agents_provider
         self._compression_service = compression_service
         self._stt = stt or FasterWhisperSttService()
         self._compression_tasks: set[asyncio.Task[object]] = set()
@@ -335,10 +335,9 @@ class AudioTextChatService:
                 "user",
                 transcript,
             )
+            identity = self._context_identity(chat.agent_id)
             context = list(messages)
-            if self._avatar_provider is not None:
-                avatar = self._avatar_provider()
-                context.insert(0, {"role": "system", "content": f"{avatar.persona}\n\n{avatar.instructions}"})
+            context.insert(0, {"role": "system", "content": f"{identity.persona}\n\n{identity.instructions}"})
             return [*context, {"role": "user", "content": transcript}], chat.id
 
         chat = self._repository.get_chat(chat_id)
@@ -351,9 +350,29 @@ class AudioTextChatService:
             self._repository.get_messages(chat_id),
             parse_compressed_context(chat.compressed_context),
             chat.compressed_through_seq,
-            self._avatar_provider() if self._avatar_provider else None,
+            self._context_identity(chat.agent_id),
         )
         return context, chat_id
+
+    def _context_identity(self, agent_id: int | None) -> AgentConfig:
+        if agent_id is None:
+            raise RuntimeError("Chat has no assigned agent.")
+        if self._repository is None:
+            raise RuntimeError("Chat repository is not configured.")
+        persisted_agent = self._repository.get_agent_by_id(agent_id)
+        if persisted_agent is None:
+            raise RuntimeError(f"Chat agent id {agent_id} is missing.")
+        normalized = persisted_agent.key.casefold()
+        agents = self._agents_provider() if self._agents_provider else ()
+        configured_agent = next(
+            (agent for agent in agents if agent.key.casefold() == normalized),
+            None,
+        )
+        if configured_agent is None:
+            raise RuntimeError(
+                f"Chat agent '{persisted_agent.key}' is not configured."
+            )
+        return configured_agent
 
     def _schedule_compression(self, chat_id: int) -> None:
         if self._repository is None:
@@ -361,7 +380,7 @@ class AudioTextChatService:
         service = self._compression_service or ContextCompressionService(
             self._runtime,
             self._repository,
-            self._avatar_provider() if self._avatar_provider else None,
+            self._agents_provider() if self._agents_provider else (),
         )
         task = asyncio.create_task(service.compress_if_needed(chat_id))
         self._compression_tasks.add(task)

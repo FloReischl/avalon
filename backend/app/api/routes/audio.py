@@ -35,7 +35,7 @@ _audio_chat_service = AudioChatService(
     PipeWireRecorder(),
     OllamaRuntime(),
     _audio_repository,
-    lambda: get_avalon_state().current_avatar,
+    lambda: get_avalon_state().agents,
 )
 
 

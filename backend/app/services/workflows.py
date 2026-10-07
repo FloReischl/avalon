@@ -60,7 +60,7 @@ class WorkflowService:
         state = get_avalon_state()
 
         if agent_id is None:
-            return state.current_avatar
+            raise WorkflowExecutionError("Workflow chat has no assigned agent.")
 
         persisted_agent = chat_repository.get_agent_by_id(agent_id)
         if persisted_agent is None:

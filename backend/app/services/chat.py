@@ -11,7 +11,6 @@ from app.commands import CommandContext, CommandRegistry, CommandRequest, parse_
 from app.persistence.chat_repository import ChatRepository
 
 from app.user_config import get_user_config
-from app.avatars_config import AvatarConfig
 from app.runtime.base import ModelRuntime
 from app.services.context_compression import (
     ContextCompressionService,
@@ -47,7 +46,6 @@ class ChatService:
         self,
         runtime: ModelRuntime,
         repository: ChatRepository,
-        avatar: AvatarConfig | None = None,
         command_registry: CommandRegistry | None = None,
         compression_service: ContextCompressionService | None = None,
         task_scheduler: Callable[[Any], Any] | None = None,
@@ -57,13 +55,12 @@ class ChatService:
 
         self._runtime = runtime
         self._repository = repository
-        self._avatar = avatar
+
         self._agents = agents
         self._command_registry = command_registry or CommandRegistry()
         self._compression_service = compression_service or ContextCompressionService(
             runtime,
             repository,
-            avatar,
             agents,
         )
 
@@ -189,7 +186,7 @@ class ChatService:
 
     def _context_identity(self, agent_id: int | None):
         if agent_id is None:
-            return self._avatar
+            raise RuntimeError("Chat has no assigned agent.")
 
         persisted_agent = self._repository.get_agent_by_id(agent_id)
         if persisted_agent is None:

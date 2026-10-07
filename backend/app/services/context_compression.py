@@ -16,7 +16,6 @@ from app.persistence.chat_repository import ChatRepository
 
 from app.persistence.models import Message
 from app.runtime.base import ModelRuntime
-from app.avatars_config import AvatarConfig
 
 
 logger = logging.getLogger(__name__)
@@ -130,8 +129,8 @@ def _is_string_list(value: object) -> bool:
     )
 
 
-class AvatarLike(Protocol):
-    """The avatar fields required for model-context construction."""
+class ContextIdentity(Protocol):
+    """The identity fields required for model-context construction."""
 
     persona: str
     instructions: str
@@ -175,18 +174,18 @@ def build_active_context(
     messages: list[Message],
     compressed_context: CompressedContext,
     compressed_through_seq: int,
-    avatar: AvatarLike | None,
+    identity: ContextIdentity | None,
     now: datetime | None = None,
 ) -> list[dict[str, str]]:
     """Build the complete normal-model input from persisted state."""
     result: list[dict[str, str]] = [
         {"role": "system", "content": build_current_datetime_context(now)}
     ]
-    if avatar is not None:
+    if identity is not None:
         result.append(
             {
                 "role": "system",
-                "content": f"{avatar.persona}\n\n{avatar.instructions}",
+                "content": f"{identity.persona}\n\n{identity.instructions}",
             }
         )
     result.extend(
@@ -206,12 +205,11 @@ class ContextCompressionService:
         self,
         runtime: ModelRuntime,
         repository: ChatRepository,
-        avatar: AvatarConfig | None = None,
         agents: tuple[AgentConfig, ...] = (),
     ) -> None:
         self._runtime = runtime
         self._repository = repository
-        self._avatar = avatar
+
         self._agents = agents
 
 
@@ -265,7 +263,7 @@ class ContextCompressionService:
         existing_through_seq: int,
         eligible: list[Message],
         protected: list[Message],
-        identity: AvatarLike | None,
+        identity: ContextIdentity | None,
     ) -> None:
 
         include_protected = False
@@ -329,9 +327,9 @@ class ContextCompressionService:
             ):
                 logger.error("[compression] unfulfillable context budget for chat %s", chat_id)
 
-    def _context_identity(self, agent_id: int | None) -> AvatarLike | None:
+    def _context_identity(self, agent_id: int | None) -> ContextIdentity:
         if agent_id is None:
-            return self._avatar
+            raise RuntimeError("Chat has no assigned agent.")
 
         persisted_agent = self._repository.get_agent_by_id(agent_id)
         if persisted_agent is None:
@@ -390,7 +388,7 @@ class ContextCompressionService:
 def _fit_to_target_budget(
     context: CompressedContext,
     protected: list[Message],
-    avatar: AvatarLike | None,
+    identity: ContextIdentity | None,
     max_compressed_chars: int,
 ) -> CompressedContext:
     """Apply deterministic summary GC until the normal context fits 6k."""
@@ -400,7 +398,7 @@ def _fit_to_target_budget(
     )
     while True:
         candidate_messages = build_active_context(
-            [], compacted, 1, avatar
+            [], compacted, 1, identity
         )
         candidate_messages.extend(
             {"role": message.role, "content": message.content}
@@ -418,10 +416,10 @@ def _fit_to_target_budget(
 
 def _available_compression_chars(
     protected: list[Message],
-    avatar: AvatarLike | None,
+    identity: ContextIdentity | None,
 ) -> int:
     """Return the current JSON-output allowance before invoking the model."""
-    fixed = build_active_context([], EMPTY_COMPRESSED_CONTEXT, 0, avatar)
+    fixed = build_active_context([], EMPTY_COMPRESSED_CONTEXT, 0, identity)
     fixed.append({"role": "system", "content": COMPRESSED_CONTEXT_PREFIX})
     fixed.extend(
         {"role": message.role, "content": message.content}

@@ -18,7 +18,7 @@ def valid_avatars(tmp_path: Path) -> dict:
         {"key": key, "category": "state", "sprite-set": f"{key}.png", "sprites": [[0, 0, 10, 20]]}
         for key in ("listening", "speaking", "thinking")
     ]
-    return {"avatars": [{"key": "standard", "persona": "Friendly.", "instructions": "Answer briefly.", "base_path": str(avatar_dir), "greeting_audio": "greeting.wav", "images": {"standard": "standard.png", "animations": animations}}]}
+    return {"avatars": [{"key": "standard", "base_path": str(avatar_dir), "greeting_audio": "greeting.wav", "images": {"standard": "standard.png", "animations": animations}}]}
 
 
 def write_avatars(path: Path, data: dict) -> None:

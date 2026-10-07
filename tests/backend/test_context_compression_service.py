@@ -70,7 +70,7 @@ def compression_settings(monkeypatch):
 
 
 def add_roundtrips(repository: ChatRepository, count: int) -> int:
-    chat = repository.create_chat("Chat")
+    chat = repository.create_chat("Chat", agent_id=1)
     for index in range(count):
         repository.add_message(chat.id, "user", f"Frage {index}")
         repository.add_message(chat.id, "assistant", f"Antwort {index}")

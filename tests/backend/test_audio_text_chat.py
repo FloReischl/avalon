@@ -95,6 +95,13 @@ class FakeRuntime:
         return generate()
 
 
+DEFAULT_AGENT = SimpleNamespace(
+    key="default",
+    persona="Du bist Frieda.",
+    instructions="Antworte kurz.",
+)
+
+
 class FakeRepository:
     def __init__(self) -> None:
         self.created: list[tuple[str, str, str]] = []
@@ -102,10 +109,14 @@ class FakeRepository:
 
     def create_chat_with_message(self, title, role, content):
         self.created.append((title, role, content))
-        return SimpleNamespace(id=7)
+        return SimpleNamespace(id=7, agent_id=1)
 
     def add_message(self, chat_id, role, content) -> None:
         self.messages.append((chat_id, role, content))
+
+    def get_agent_by_id(self, agent_id):
+        assert agent_id == 1
+        return SimpleNamespace(id=1, key="default")
 
 
 class FakeCompressionService:
@@ -230,6 +241,7 @@ async def test_final_transcript_precedes_llm_and_persistence(tmp_path: Path) -> 
         recorder,
         runtime,
         repository,
+        agents_provider=lambda: (DEFAULT_AGENT,),
         compression_service=FakeCompressionService(),
         stt=FakeStt({"final.wav": "Mein finaler Text"}),
     )
@@ -251,7 +263,13 @@ async def test_final_transcript_precedes_llm_and_persistence(tmp_path: Path) -> 
     assert repository.created[0][1:] == ("user", "Mein finaler Text")
     assert repository.messages == [(7, "assistant", "Antwort")]
     assert runtime.contexts == [
-        [{"role": "user", "content": "Mein finaler Text"}],
+        [
+            {
+                "role": "system",
+                "content": "Du bist Frieda.\n\nAntworte kurz.",
+            },
+            {"role": "user", "content": "Mein finaler Text"},
+        ],
     ]
 
     for _ in range(20):

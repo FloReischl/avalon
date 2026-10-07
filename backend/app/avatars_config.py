@@ -84,8 +84,7 @@ class AvatarImagesConfig(StrictAvatarsConfigModel):
 
 class AvatarConfig(StrictAvatarsConfigModel):
     key: NonEmptyStr
-    persona: NonEmptyStr
-    instructions: NonEmptyStr
+
     base_path: Path
     greeting_audio: NonEmptyStr
     images: AvatarImagesConfig
