@@ -9,6 +9,7 @@ export interface ConfirmationGridColumn {
   cellDataType?: string | boolean;
   cellEditor?: string;
   valueParser?: (value: unknown) => unknown;
+  invalid?: (row: Record<string, unknown>) => boolean;
 }
 
 export interface ConfirmationGridRow {

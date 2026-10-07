@@ -40,9 +40,12 @@ const columnDefs = computed<ColDef[]>(() => props.model.columns.map((column) => 
   cellDataType: column.cellDataType,
   cellEditor: column.cellEditor,
   valueParser: column.valueParser ? (params) => column.valueParser?.(params.newValue) : undefined,
+  cellClassRules: column.invalid
+    ? { "confirmation-grid__cell--invalid": (params) => column.invalid?.(params.data) ?? false }
+    : undefined,
 }))); 
 const rowData = computed(() => props.model.rows.map((row) => ({ id: row.id, ...row.cells })));
-const rowSelection = { mode: "multiRow" as const, checkboxes: true, headerCheckbox: true, enableClickSelection: false };
+const rowSelection = { mode: "multiRow" as const, checkboxes: true, headerCheckbox: true, enableClickSelection: true };
 
 function selectionChanged(event: SelectionChangedEvent) {
   emit("update:selectedRowIds", event.api.getSelectedRows().map((row) => row.id));
@@ -82,4 +85,5 @@ defineExpose<ConfirmationGridHandle>({ selectVisible, deselectAll });
 
 <style scoped>
 .confirmation-grid { width: 100%; height: 17rem; }
+.confirmation-grid :deep(.confirmation-grid__cell--invalid) { background: #ffe4e4; outline: 1px solid #b42318; }
 </style>
