@@ -83,6 +83,14 @@ fn show_confirmation_window(
 }
 
 #[tauri::command]
+fn hide_confirmation_window(app: tauri::AppHandle) -> Result<(), String> {
+    let window = app
+        .get_webview_window("confirmation")
+        .ok_or("Confirmation window is unavailable")?;
+    window.hide().map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 fn show_confirmation_window_for_chat(
     app: tauri::AppHandle,
     state: tauri::State<'_, ConfirmationWindowState>,
@@ -137,6 +145,7 @@ fn main() {
             resize_avatar_window,
             show_chat_window,
             show_confirmation_window,
+            hide_confirmation_window,
             show_confirmation_window_for_chat,
             get_proactive_confirmation_chat,
             exit_app

@@ -4,13 +4,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const {
   abortAuthorizationMock, confirmAuthorizationMock, getChatPermissionsMock,
   getPendingAuthorizationRequestsMock, getProactiveConfirmationChatMock,
-  loadAgentBearerTokenMock, setAgentBearerTokenMock, loadUiConfigMock,
+  hideConfirmationWindowMock, loadAgentBearerTokenMock, setAgentBearerTokenMock, loadUiConfigMock,
   saveChatPermissionMock, callbacks, eventCallbackIds,
 } = vi.hoisted(() => ({
   abortAuthorizationMock: vi.fn(), confirmAuthorizationMock: vi.fn(),
   getChatPermissionsMock: vi.fn(), getPendingAuthorizationRequestsMock: vi.fn(),
   getProactiveConfirmationChatMock: vi.fn(), loadAgentBearerTokenMock: vi.fn(),
-  setAgentBearerTokenMock: vi.fn(), loadUiConfigMock: vi.fn(), saveChatPermissionMock: vi.fn(),
+  hideConfirmationWindowMock: vi.fn(), setAgentBearerTokenMock: vi.fn(), loadUiConfigMock: vi.fn(), saveChatPermissionMock: vi.fn(),
   callbacks: new Map<number, (event: { payload: unknown }) => void>(),
   eventCallbackIds: new Map<string, number>(),
 }));
@@ -24,6 +24,7 @@ vi.mock("../../frontend/src/services/backend", () => ({
 }));
 vi.mock("../../frontend/src/services/confirmationWindow", () => ({
   getProactiveConfirmationChat: getProactiveConfirmationChatMock,
+  hideConfirmationWindow: hideConfirmationWindowMock,
 }));
 vi.mock("../../frontend/src/uiConfig", () => ({ loadUiConfig: loadUiConfigMock }));
 vi.mock("../../frontend/src/components/ConfirmationGrid.vue", () => ({
@@ -136,11 +137,31 @@ describe("ConfirmationWindow", () => {
     wrapper.unmount(); vi.useRealTimers();
   });
 
+  it("retries proactive loading while the backend is still starting", async () => {
+    vi.useFakeTimers();
+    getProactiveConfirmationChatMock.mockResolvedValue({ chatId: 42, agentId: 7 });
+    loadAgentBearerTokenMock.mockRejectedValueOnce(new Error("backend unavailable"));
+    getChatPermissionsMock.mockResolvedValue([proactivePermission()]);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    const wrapper = mount(ConfirmationWindow); await flushPromises();
+    expect(wrapper.text()).toContain("Permissions konnten nicht geladen werden.");
+
+    loadAgentBearerTokenMock.mockResolvedValue("token-7");
+    await vi.advanceTimersByTimeAsync(500); await flushPromises();
+
+    expect(getChatPermissionsMock).toHaveBeenCalledWith(42);
+    expect(wrapper.get('[data-testid="grid-row-1"]').text()).toContain("web|search");
+    expect(wrapper.text()).not.toContain("Permissions konnten nicht geladen werden.");
+    wrapper.unmount(); errorSpy.mockRestore(); vi.useRealTimers();
+  });
+
   it("leaves permissions unchanged when Close is used", async () => {
     getProactiveConfirmationChatMock.mockResolvedValue(null); loadUiConfigMock.mockResolvedValue({});
     getPendingAuthorizationRequestsMock.mockResolvedValue([reactiveRequest()]);
     const wrapper = mount(ConfirmationWindow); await flushPromises();
     await wrapper.get('[data-testid="close-confirmation"]').trigger("click");
+    expect(hideConfirmationWindowMock).toHaveBeenCalledOnce();
     expect(confirmAuthorizationMock).not.toHaveBeenCalled();
     expect(abortAuthorizationMock).not.toHaveBeenCalled();
   });

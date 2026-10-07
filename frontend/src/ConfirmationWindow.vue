@@ -1,12 +1,10 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
-import { isTauri } from "@tauri-apps/api/core";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import ConfirmationGrid from "./components/ConfirmationGrid.vue";
 import type { ConfirmationGridModel } from "./components/confirmationGridModel";
 import { loadUiConfig } from "./uiConfig";
-import { getProactiveConfirmationChat, type ProactiveConfirmationChat } from "./services/confirmationWindow";
+import { getProactiveConfirmationChat, hideConfirmationWindow, type ProactiveConfirmationChat } from "./services/confirmationWindow";
 import {
   BACKEND_BASE_URL,
   abortAuthorization,
@@ -94,15 +92,34 @@ async function openProactiveConfirmations({ chatId, agentId }: ProactiveConfirma
   proactivePermissions.value = [];
   selectedPermissionIds.value = [];
   if (clearActionError) actionError.value = undefined;
+  await refreshProactiveConfirmations();
+  if (loadError.value) startProactiveRefreshPolling();
+}
+async function refreshProactiveConfirmations(): Promise<boolean> {
+  const chatId = proactiveChatId.value;
+  const agentId = proactiveAgentId.value;
+  if (chatId === undefined || agentId === undefined) return true;
   try {
     setAgentBearerToken(await loadAgentBearerToken(agentId));
     proactivePermissions.value = await getChatPermissions(chatId);
     resetExpiry(proactivePermissions.value.find((permission) => permission.validityType === "duration")?.defaultExpiry ?? 10 * 60 * 60);
     loadError.value = false;
+    return true;
   } catch (error) {
     console.error("Could not load proactive confirmations", error);
     loadError.value = true;
+    return false;
   }
+}
+function startProactiveRefreshPolling() {
+  stopRefreshPolling();
+  let attempts = 0;
+  refreshPoll = window.setInterval(() => {
+    attempts += 1;
+    void refreshProactiveConfirmations().then((loaded) => {
+      if (loaded || attempts >= 10) stopRefreshPolling();
+    });
+  }, 500);
 }
 async function openReactiveConfirmations() {
   proactiveChatId.value = undefined;
@@ -178,7 +195,7 @@ async function updateProactive(granted: boolean) {
   }
 }
 async function close() {
-  if (isTauri()) await getCurrentWindow().hide();
+  await hideConfirmationWindow();
 }
 onMounted(async () => {
   unlistenProactive = await listen<ProactiveConfirmationChat>("proactive-confirmations-for-chat", (event) => { void openProactiveConfirmations(event.payload); });

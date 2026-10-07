@@ -4,6 +4,10 @@ export async function showConfirmationWindow(): Promise<void> {
   await invoke("show_confirmation_window");
 }
 
+export async function hideConfirmationWindow(): Promise<void> {
+  await invoke("hide_confirmation_window");
+}
+
 export interface ProactiveConfirmationChat {
   chatId: number;
   agentId: number;

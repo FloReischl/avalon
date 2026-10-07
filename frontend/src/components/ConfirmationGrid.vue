@@ -47,5 +47,5 @@ function selectionChanged(event: SelectionChangedEvent) {
 </template>
 
 <style scoped>
-.confirmation-grid { width: 100%; min-height: 17rem; }
+.confirmation-grid { width: 100%; height: 17rem; }
 </style>
