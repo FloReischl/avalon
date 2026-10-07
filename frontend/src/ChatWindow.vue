@@ -976,7 +976,7 @@ function handleInputKeydown(event: KeyboardEvent) {
               class="chat-history-title"
               :title="chat.agent_name ? `${chat.title}\nAgent: ${chat.agent_name}` : chat.title"
             >
-              {{ chat.agent_name ? `🤖 ${chat.title}` : chat.title }}
+              {{ chat.agent_icon ? `${chat.agent_icon} ${chat.title}` : chat.title }}
             </span>
 
             <span
@@ -1126,7 +1126,7 @@ function handleInputKeydown(event: KeyboardEvent) {
               class="chat-history-title"
               :title="chat.agent_name ? `${chat.title}\nAgent: ${chat.agent_name}` : chat.title"
             >
-              {{ chat.agent_name ? `🤖 ${chat.title}` : chat.title }}
+              {{ chat.agent_icon ? `${chat.agent_icon} ${chat.title}` : chat.title }}
             </span>
 
             <span

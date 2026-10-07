@@ -1671,11 +1671,13 @@ describe("ChatWindow", () => {
     ).toContain("Chat ‚Mein Chat‘ wirklich löschen?");
   });
 
-  it("loads persisted chats into the sidebar", async () => {
+  it("loads persisted chats into the sidebar with their configured agent icons", async () => {
     getChatsMock.mockResolvedValue([
       {
         id: 42,
         agent_id: 1,
+        agent_name: "Hedwig",
+        agent_icon: "🦉",
         title: "Persistenter Chat",
         pinned: false,
         created_at: "2026-09-07T10:00:00",
@@ -1683,6 +1685,8 @@ describe("ChatWindow", () => {
       {
         id: 7,
         agent_id: 1,
+        agent_name: "Default Agent",
+        agent_icon: "",
         title: "Älterer Chat",
         pinned: false,
         created_at: "2026-09-06T10:00:00",
@@ -1693,11 +1697,13 @@ describe("ChatWindow", () => {
     await flushPromises();
 
     expect(wrapper.get('[data-testid="chat-42"]').text()).toContain(
-      "Persistenter Chat",
+      "🦉 Persistenter Chat",
     );
+    expect(wrapper.get('[data-testid="chat-42"]').text()).not.toContain("🤖");
     expect(wrapper.get('[data-testid="chat-7"]').text()).toContain(
       "Älterer Chat",
     );
+    expect(wrapper.get('[data-testid="chat-7"]').text()).not.toContain("🤖");
     expect(
       wrapper.find(".chat-history-placeholder").exists(),
     ).toBe(false);

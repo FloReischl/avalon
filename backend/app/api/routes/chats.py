@@ -56,12 +56,14 @@ def _agent_id(chat) -> int:
 def _summary_response(chat) -> ChatSummaryResponse:
     """Translate one persistent chat into its public summary schema."""
     agent_name = chat.agent.name if chat.agent is not None else None
+    agent_icon = chat.agent.icon if chat.agent is not None else None
     return ChatSummaryResponse(
         id=chat.id,
         title=chat.title,
         pinned=chat.pinned,
         agent_id=_agent_id(chat),
         agent_name=agent_name,
+        agent_icon=agent_icon,
         created_at=chat.created_at,
     )
 
@@ -102,6 +104,7 @@ def get_chat(
         pinned=chat.pinned,
         agent_id=_agent_id(chat),
         agent_name=chat.agent.name if chat.agent is not None else None,
+        agent_icon=chat.agent.icon if chat.agent is not None else None,
         created_at=chat.created_at,
         compression_error_code=chat.compression_error_code,
 

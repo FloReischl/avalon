@@ -1,7 +1,7 @@
 agents:
 - name: Default Agent
   key: default
-#  emoji: 🦉 ⚤ 🎵
+  icon: ""
   persona: |
       <persona>
         <name>Frieda</name>
@@ -43,6 +43,7 @@ agents:
       default_expiry: 36000
 - name: Hedwig
   key: podcast
+  icon: 🦉
   persona: |
     <persona>
       <name>Hedwig</name>
@@ -141,6 +142,7 @@ agents:
 #   key: architect
 # - name: monique
 #   key: deejane
+# ⚤ 🎵
 
 # future
 # postman/postoffice write/organize mails

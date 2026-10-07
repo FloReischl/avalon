@@ -29,6 +29,9 @@ class Agent(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     key: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
     name: Mapped[str] = mapped_column(String(200), nullable=False)
+    icon: Mapped[str] = mapped_column(
+        String(8), nullable=False, default="", server_default=""
+    )
 
 
 class PermissionCatalog(Base):

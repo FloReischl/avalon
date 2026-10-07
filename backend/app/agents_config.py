@@ -44,6 +44,7 @@ class AgentPermissionConfig(StrictAgentsConfigModel):
 class AgentConfig(StrictAgentsConfigModel):
     name: NonEmptyStr
     key: NonEmptyStr
+    icon: str = Field(default="", max_length=1)
     persona: NonEmptyStr
     instructions: NonEmptyStr
     permissions: list[AgentPermissionConfig] = Field(default_factory=list)

@@ -103,11 +103,13 @@ class AuthorizationRepository:
             agent = Agent(
                 key=agent_config.key,
                 name=agent_config.name,
+                icon=agent_config.icon,
             )
             session.add(agent)
             session.flush()
         else:
             agent.name = agent_config.name
+            agent.icon = agent_config.icon
             session.flush()
 
         self._reconcile_permission_sets(session, agent.id, agent_config.permissions)
