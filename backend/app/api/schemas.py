@@ -250,3 +250,19 @@ class TtsPlaybackEndedRequest(BaseModel):
 class WorkflowRuntimeUpdateRequest(BaseModel):
     state: Literal["running", "pending", "completed", "failed", "aborted"] | None = None
     progress_content: list[str] | None = None
+
+
+class WorkflowConfirmationRequest(BaseModel):
+    confirmation_schema: object = Field(alias="schema")
+    rows: object
+
+
+class WorkflowConfirmationSubmitRequest(BaseModel):
+    rows: object
+
+
+class WorkflowConfirmationResponse(BaseModel):
+    id: str
+    execution_id: int
+    confirmation_schema: dict[str, object] = Field(alias="schema")
+    rows: list[dict[str, object]]

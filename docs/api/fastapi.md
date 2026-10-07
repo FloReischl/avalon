@@ -1366,6 +1366,138 @@ Operation ID: `ui_agent_token_api_v1_ui_token_get`
 }
 ```
 
+### `GET /api/v1/workflow-executions/confirmations/pending`
+
+Pending Confirmation
+
+Expose the one pending workflow confirmation to the local UI.
+
+Operation ID: `pending_confirmation_api_v1_workflow_executions_confirmations_pending_get`
+
+**Responses**
+
+```json
+{
+  "200": {
+    "content": {
+      "application/json": {
+        "schema": {
+          "anyOf": [
+            {
+              "$ref": "#/components/schemas/WorkflowConfirmationResponse"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Response Pending Confirmation Api V1 Workflow Executions Confirmations Pending Get"
+        }
+      }
+    },
+    "description": "Successful Response"
+  }
+}
+```
+
+### `POST /api/v1/workflow-executions/confirmations/{confirmation_id}/cancel`
+
+Cancel Confirmation
+
+Operation ID: `cancel_confirmation_api_v1_workflow_executions_confirmations__confirmation_id__cancel_post`
+
+**Parameters**
+
+```json
+[
+  {
+    "in": "path",
+    "name": "confirmation_id",
+    "required": true,
+    "schema": {
+      "title": "Confirmation Id",
+      "type": "string"
+    }
+  }
+]
+```
+
+**Responses**
+
+```json
+{
+  "204": {
+    "description": "Successful Response"
+  },
+  "422": {
+    "content": {
+      "application/json": {
+        "schema": {
+          "$ref": "#/components/schemas/HTTPValidationError"
+        }
+      }
+    },
+    "description": "Validation Error"
+  }
+}
+```
+
+### `POST /api/v1/workflow-executions/confirmations/{confirmation_id}/confirm`
+
+Confirm Confirmation
+
+Operation ID: `confirm_confirmation_api_v1_workflow_executions_confirmations__confirmation_id__confirm_post`
+
+**Parameters**
+
+```json
+[
+  {
+    "in": "path",
+    "name": "confirmation_id",
+    "required": true,
+    "schema": {
+      "title": "Confirmation Id",
+      "type": "string"
+    }
+  }
+]
+```
+
+**Request body**
+
+```json
+{
+  "content": {
+    "application/json": {
+      "schema": {
+        "$ref": "#/components/schemas/WorkflowConfirmationSubmitRequest"
+      }
+    }
+  },
+  "required": true
+}
+```
+
+**Responses**
+
+```json
+{
+  "204": {
+    "description": "Successful Response"
+  },
+  "422": {
+    "content": {
+      "application/json": {
+        "schema": {
+          "$ref": "#/components/schemas/HTTPValidationError"
+        }
+      }
+    },
+    "description": "Validation Error"
+  }
+}
+```
+
 ### `GET /api/v1/workflow-executions/events`
 
 Events
@@ -1383,6 +1515,77 @@ Operation ID: `events_api_v1_workflow_executions_events_get`
       }
     },
     "description": "Successful Response"
+  }
+}
+```
+
+### `POST /api/v1/workflow-executions/{execution_id}/confirmation`
+
+Request Confirmation
+
+Block one owned running workflow until its confirmation is resolved.
+
+Operation ID: `request_confirmation_api_v1_workflow_executions__execution_id__confirmation_post`
+
+**Parameters**
+
+```json
+[
+  {
+    "in": "path",
+    "name": "execution_id",
+    "required": true,
+    "schema": {
+      "title": "Execution Id",
+      "type": "integer"
+    }
+  }
+]
+```
+
+**Request body**
+
+```json
+{
+  "content": {
+    "application/json": {
+      "schema": {
+        "$ref": "#/components/schemas/WorkflowConfirmationRequest"
+      }
+    }
+  },
+  "required": true
+}
+```
+
+**Responses**
+
+```json
+{
+  "200": {
+    "content": {
+      "application/json": {
+        "schema": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Response Request Confirmation Api V1 Workflow Executions  Execution Id  Confirmation Post",
+          "type": "array"
+        }
+      }
+    },
+    "description": "Successful Response"
+  },
+  "422": {
+    "content": {
+      "application/json": {
+        "schema": {
+          "$ref": "#/components/schemas/HTTPValidationError"
+        }
+      }
+    },
+    "description": "Validation Error"
   }
 }
 ```

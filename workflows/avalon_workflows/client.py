@@ -12,6 +12,11 @@ from mcp.client.streamable_http import streamable_http_client
 
 DEFAULT = object()
 
+
+class ConfirmationCancelled(Exception):
+    """The user cancelled a workflow confirmation in Avalon."""
+
+
 class AvalonWorkflowClient:
     """Thin client around the Avalon APIs exposed to workflow scripts."""
 
@@ -127,6 +132,33 @@ class AvalonWorkflowClient:
                 json={"progress_content": self._progress_content},
             )
             response.raise_for_status()
+
+    async def confirm(
+        self,
+        schema: dict[str, object],
+        rows: list[dict[str, object]],
+    ) -> list[dict[str, object]]:
+        """Wait for the user to review workflow rows in Avalon."""
+        async with httpx2.AsyncClient(
+            headers=self._headers(),
+            timeout=self._timeout,
+        ) as http:
+            response = await http.post(
+                f"{self.backend_url}/api/v1/workflow-executions/"
+                f"{self.workflow_execution_id}/confirmation",
+                json={"schema": schema, "rows": rows},
+            )
+
+        if response.status_code == 409:
+            body = response.json()
+            if isinstance(body, dict) and body.get("detail") == "workflow_confirmation_cancelled":
+                raise ConfirmationCancelled
+
+        response.raise_for_status()
+        result = response.json()
+        if not isinstance(result, list):
+            raise RuntimeError("Avalon confirmation returned invalid rows.")
+        return result
 
     def payload_as_list(self) -> list[Any]:
         payload = self.payload

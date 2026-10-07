@@ -181,6 +181,17 @@
       "ChatDetailResponse": {
         "description": "One persistent chat including its complete message history.",
         "properties": {
+          "agent_icon": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Icon"
+          },
           "agent_id": {
             "title": "Agent Id",
             "type": "integer"
@@ -280,6 +291,17 @@
       "ChatSummaryResponse": {
         "description": "One persistent chat for sidebar-style listings.",
         "properties": {
+          "agent_icon": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Icon"
+          },
           "agent_id": {
             "title": "Agent Id",
             "type": "integer"
@@ -938,6 +960,67 @@
           "type"
         ],
         "title": "ValidationError",
+        "type": "object"
+      },
+      "WorkflowConfirmationRequest": {
+        "properties": {
+          "rows": {
+            "title": "Rows"
+          },
+          "schema": {
+            "title": "Schema"
+          }
+        },
+        "required": [
+          "schema",
+          "rows"
+        ],
+        "title": "WorkflowConfirmationRequest",
+        "type": "object"
+      },
+      "WorkflowConfirmationResponse": {
+        "properties": {
+          "execution_id": {
+            "title": "Execution Id",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "rows": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "schema": {
+            "additionalProperties": true,
+            "title": "Schema",
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "execution_id",
+          "schema",
+          "rows"
+        ],
+        "title": "WorkflowConfirmationResponse",
+        "type": "object"
+      },
+      "WorkflowConfirmationSubmitRequest": {
+        "properties": {
+          "rows": {
+            "title": "Rows"
+          }
+        },
+        "required": [
+          "rows"
+        ],
+        "title": "WorkflowConfirmationSubmitRequest",
         "type": "object"
       },
       "WorkflowExecutionResponse": {
@@ -2148,6 +2231,116 @@
         ]
       }
     },
+    "/api/v1/workflow-executions/confirmations/pending": {
+      "get": {
+        "description": "Expose the one pending workflow confirmation to the local UI.",
+        "operationId": "pending_confirmation_api_v1_workflow_executions_confirmations_pending_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/WorkflowConfirmationResponse"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Pending Confirmation Api V1 Workflow Executions Confirmations Pending Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Pending Confirmation",
+        "tags": [
+          "workflows"
+        ]
+      }
+    },
+    "/api/v1/workflow-executions/confirmations/{confirmation_id}/cancel": {
+      "post": {
+        "operationId": "cancel_confirmation_api_v1_workflow_executions_confirmations__confirmation_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "confirmation_id",
+            "required": true,
+            "schema": {
+              "title": "Confirmation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel Confirmation",
+        "tags": [
+          "workflows"
+        ]
+      }
+    },
+    "/api/v1/workflow-executions/confirmations/{confirmation_id}/confirm": {
+      "post": {
+        "operationId": "confirm_confirmation_api_v1_workflow_executions_confirmations__confirmation_id__confirm_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "confirmation_id",
+            "required": true,
+            "schema": {
+              "title": "Confirmation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkflowConfirmationSubmitRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Confirm Confirmation",
+        "tags": [
+          "workflows"
+        ]
+      }
+    },
     "/api/v1/workflow-executions/events": {
       "get": {
         "operationId": "events_api_v1_workflow_executions_events_get",
@@ -2162,6 +2355,64 @@
           }
         },
         "summary": "Events",
+        "tags": [
+          "workflows"
+        ]
+      }
+    },
+    "/api/v1/workflow-executions/{execution_id}/confirmation": {
+      "post": {
+        "description": "Block one owned running workflow until its confirmation is resolved.",
+        "operationId": "request_confirmation_api_v1_workflow_executions__execution_id__confirmation_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "execution_id",
+            "required": true,
+            "schema": {
+              "title": "Execution Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkflowConfirmationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response Request Confirmation Api V1 Workflow Executions  Execution Id  Confirmation Post",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Request Confirmation",
         "tags": [
           "workflows"
         ]

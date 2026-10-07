@@ -1,3 +1,3 @@
-from .client import AvalonWorkflowClient
+from .client import AvalonWorkflowClient, ConfirmationCancelled
 
-__all__ = ["AvalonWorkflowClient"]
+__all__ = ["AvalonWorkflowClient", "ConfirmationCancelled"]
