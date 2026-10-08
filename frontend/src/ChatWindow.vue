@@ -98,6 +98,7 @@ const boundCallActive = ref(false);
 const selectedAttachments = ref<Attachment[] | undefined>();
 let unlistenAudioCall: (() => void) | undefined;
 let unlistenWorkflowExecutions: (() => void) | undefined;
+let isUnmounted = false;
 
 const isBoundCallTurnActive = computed(() => callTurnActive.value);
 
@@ -511,10 +512,15 @@ onMounted(async () => {
   }
 
   try {
-    unlistenWorkflowExecutions = await listenToBrokerEvent(
+    const unlisten = await listenToBrokerEvent(
       "workflow_execution",
       () => { void refreshSelectedChat(); },
     );
+    if (isUnmounted) {
+      unlisten();
+      return;
+    }
+    unlistenWorkflowExecutions = unlisten;
   } catch (error) {
     console.error("[event-broker] failed to subscribe to workflow executions", error);
   }
@@ -523,9 +529,14 @@ onMounted(async () => {
   await refreshCallStatus();
 
   try {
-    unlistenAudioCall = await listenToAudioCallChanged(() => {
+    const unlisten = await listenToAudioCallChanged(() => {
       void refreshCallStatus();
     });
+    if (isUnmounted) {
+      unlisten();
+      return;
+    }
+    unlistenAudioCall = unlisten;
   } catch (error) {
     console.error("[audio-call] failed to subscribe to call changes", error);
   }
@@ -533,6 +544,7 @@ onMounted(async () => {
 
 
 onBeforeUnmount(() => {
+  isUnmounted = true;
   document.removeEventListener("pointerdown", closeChatMenu);
   window.removeEventListener("keydown", handleWindowKeydown);
   window.removeEventListener("focus", handleWindowFocus);

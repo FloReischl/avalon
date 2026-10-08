@@ -19,6 +19,7 @@ const workflowGrid = useTemplateRef<ConfirmationGridHandle>("workflowGrid");
 const mode = computed(() => proactiveChatId.value === undefined ? "reactive" : "proactive");
 let refreshPoll: number | undefined;
 let unlistenProactive: UnlistenFn | undefined; let unlistenReactive: UnlistenFn | undefined; let unlistenClose: UnlistenFn | undefined; let unlistenAuthorizationRequests: UnlistenFn | undefined; let unlistenWorkflowConfirmations: UnlistenFn | undefined; let closeRunning = false;
+let isUnmounted = false;
 
 function toLocalInputValue(value: Date): string { const offset = value.getTimezoneOffset() * 60_000; return new Date(value.getTime() - offset).toISOString().slice(0, 16); }
 function formatExpiry(value: Date): string { return new Intl.DateTimeFormat("de-DE", { dateStyle: "short", timeStyle: "short" }).format(value); }
@@ -54,23 +55,33 @@ async function selectTab(tab: "permissions" | "confirmations") { activeTab.value
 async function close() { if (closeRunning) return; closeRunning = true; try { if (await cancelCurrentWorkflow()) await hideConfirmationWindow(); } finally { closeRunning = false; } }
 onMounted(async () => {
   try {
-    unlistenProactive = await listen<ProactiveConfirmationChat>("proactive-confirmations-for-chat", (event) => { void openProactiveConfirmations(event.payload); });
-    unlistenReactive = await listen("reactive-confirmations", () => { void openReactiveConfirmations(); });
-    unlistenClose = await listen("confirmation-close-requested", () => { void close(); });
+    const unlisten = await listen<ProactiveConfirmationChat>("proactive-confirmations-for-chat", (event) => { void openProactiveConfirmations(event.payload); });
+    if (isUnmounted) { unlisten(); return; }
+    unlistenProactive = unlisten;
+    const unlistenReactiveEvent = await listen("reactive-confirmations", () => { void openReactiveConfirmations(); });
+    if (isUnmounted) { unlistenReactiveEvent(); return; }
+    unlistenReactive = unlistenReactiveEvent;
+    const unlistenCloseEvent = await listen("confirmation-close-requested", () => { void close(); });
+    if (isUnmounted) { unlistenCloseEvent(); return; }
+    unlistenClose = unlistenCloseEvent;
   } catch (error) {
     console.error("[confirmation-window] failed to subscribe to window events", error);
   }
 
   try {
-    unlistenAuthorizationRequests = await listenToBrokerEvent("authorization_requests_changed", () => { refreshForEventWindow(); });
+    const unlisten = await listenToBrokerEvent("authorization_requests_changed", () => { refreshForEventWindow(); });
+    if (isUnmounted) { unlisten(); return; }
+    unlistenAuthorizationRequests = unlisten;
   } catch (error) {
     console.error("[event-broker] failed to subscribe to authorization changes", error);
   }
 
   try {
-    unlistenWorkflowConfirmations = await listenToBrokerEvent("workflow_confirmations_changed", () => {
+    const unlisten = await listenToBrokerEvent("workflow_confirmations_changed", () => {
       if (mode.value === "reactive" || activeTab.value === "confirmations") void refreshWorkflowConfirmation();
     });
+    if (isUnmounted) { unlisten(); return; }
+    unlistenWorkflowConfirmations = unlisten;
   } catch (error) {
     console.error("[event-broker] failed to subscribe to workflow confirmation changes", error);
   }
@@ -78,7 +89,7 @@ onMounted(async () => {
   const chat = await getProactiveConfirmationChat();
   if (chat !== null) await openProactiveConfirmations(chat); else await openReactiveConfirmations();
 });
-onBeforeUnmount(() => { stopRefreshPolling(); unlistenProactive?.(); unlistenReactive?.(); unlistenClose?.(); unlistenAuthorizationRequests?.(); unlistenWorkflowConfirmations?.(); });
+onBeforeUnmount(() => { isUnmounted = true; stopRefreshPolling(); unlistenProactive?.(); unlistenReactive?.(); unlistenClose?.(); unlistenAuthorizationRequests?.(); unlistenWorkflowConfirmations?.(); });
 </script>
 
 <template><main class="confirmation-window"><nav class="confirmation-tabs" aria-label="Confirmations"><button class="confirmation-tab" :class="{ 'confirmation-tab--active': activeTab === 'permissions' }" type="button" @click="selectTab('permissions')">Permissions</button><button class="confirmation-tab" :class="{ 'confirmation-tab--active': activeTab === 'confirmations' }" type="button" @click="selectTab('confirmations')">Confirmations</button></nav><section class="confirmation-content"><template v-if="activeTab === 'permissions'"><p v-if="loadError">Permissions konnten nicht geladen werden.</p><template v-else-if="mode === 'reactive'"><p v-if="requests.length === 0">Keine offenen Permissions.</p><ConfirmationGrid v-else v-model:selected-row-ids="selectedRequestIds" :model="reactiveGrid" /><section class="confirmation-actions"><label>Expiry <input v-model="expiry" type="datetime-local"></label><p v-if="actionError" class="confirmation-error">{{ actionError }}</p><footer><button type="button" data-testid="approve-reactive" @click="approveReactive">Approve</button><button type="button" data-testid="abort-reactive" @click="abortReactive">Abort</button><button type="button" data-testid="close-confirmation" @click="close">Close</button></footer></section></template><template v-else><p v-if="proactivePermissions.length === 0">Keine proaktiv verwaltbaren Permissions.</p><ConfirmationGrid v-else v-model:selected-row-ids="selectedPermissionIds" :model="proactiveGrid" /><section class="confirmation-actions"><label>Expiry <input v-model="expiry" type="datetime-local"></label><p v-if="actionError" class="confirmation-error">{{ actionError }}</p><footer><button type="button" data-testid="approve-proactive" @click="updateProactive(true)">Approve</button><button type="button" data-testid="revoke-proactive" @click="updateProactive(false)">Revoke</button><button type="button" data-testid="close-confirmation" @click="close">Close</button></footer></section></template></template><template v-else><p v-if="workflowLoadError">Confirmation konnte nicht geladen werden.</p><p v-else-if="workflowConfirmation === null">Keine offene Confirmation.</p><template v-else><h1>{{ workflowConfirmation.schema.title }}</h1><div class="workflow-selection"><button type="button" @click="selectAllWorkflow">Select all</button><button type="button" @click="deselectAllWorkflow">Deselect all</button><button type="button" @click="selectUnconfirmedWorkflow">Select unconfirmed</button></div><ConfirmationGrid ref="workflowGrid" v-model:selected-row-ids="selectedWorkflowRowIds" :model="workflowGridModel" @cell-value-changed="updateWorkflowCell" /><section class="confirmation-actions"><div><button type="button" data-testid="approve-workflow" @click="decideSelectedWorkflow('approved')">Approve</button><button type="button" data-testid="reject-workflow" @click="decideSelectedWorkflow('rejected')">Reject</button></div><p v-if="workflowActionError" class="confirmation-error">{{ workflowActionError }}</p><footer><button type="button" data-testid="cancel-workflow" @click="close">Cancel</button><button type="button" data-testid="confirm-workflow" :disabled="!workflowOkEnabled" @click="submitWorkflow">OK</button></footer></section></template></template></section></main></template>

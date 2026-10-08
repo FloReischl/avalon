@@ -825,38 +825,58 @@ onMounted(async () => {
   window.addEventListener("focus", handleAvatarFocus);
 
   try {
-    unlistenAuthorizationRequests = await listenToBrokerEvent(
+    const unlisten = await listenToBrokerEvent(
       "authorization_requests_changed",
       () => { void refreshPendingPermissionCount(); },
     );
+    if (isUnmounted) {
+      unlisten();
+      return;
+    }
+    unlistenAuthorizationRequests = unlisten;
   } catch (error) {
     console.error("[event-broker] failed to subscribe to authorization changes", error);
   }
 
   try {
-    unlistenWorkflowConfirmations = await listenToBrokerEvent(
+    const unlisten = await listenToBrokerEvent(
       "workflow_confirmations_changed",
       () => { void refreshPendingPermissionCount(); },
     );
+    if (isUnmounted) {
+      unlisten();
+      return;
+    }
+    unlistenWorkflowConfirmations = unlisten;
   } catch (error) {
     console.error("[event-broker] failed to subscribe to workflow confirmation changes", error);
   }
 
   try {
-    unlistenAudioCall = await listenToAudioCallChanged(() => {
+    const unlisten = await listenToAudioCallChanged(() => {
       void requestExternalAvatarCallSync();
     });
+    if (isUnmounted) {
+      unlisten();
+      return;
+    }
+    unlistenAudioCall = unlisten;
   } catch (error) {
     console.error("[avatar-call] failed to subscribe to call changes", error);
   }
 
   try {
-    unlisten = await listenToBackendLifecycle({
+    const unlistenLifecycle = await listenToBackendLifecycle({
       onStatus: (status) => {
         backendStatus.value = status;
       },
       onLog: addLog,
     });
+    if (isUnmounted) {
+      unlistenLifecycle();
+      return;
+    }
+    unlisten = unlistenLifecycle;
 
     const snapshot = await getBackendSnapshot();
     backendStatus.value = snapshot.status;
@@ -875,9 +895,14 @@ onMounted(async () => {
   }
 
   try {
-    unlistenAvatarState = await listenToAvatarRuntimeState((state) => {
+    const unlistenState = await listenToAvatarRuntimeState((state) => {
       avatarRuntimeState.value = state;
     });
+    if (isUnmounted) {
+      unlistenState();
+      return;
+    }
+    unlistenAvatarState = unlistenState;
   } catch (error) {
     console.error("[avatar-state] failed to subscribe", error);
   }

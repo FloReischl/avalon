@@ -558,6 +558,22 @@ describe("ChatWindow", () => {
     errorSpy.mockRestore();
   });
 
+  it("immediately removes a workflow listener that resolves after unmount", async () => {
+    const unlistenWorkflow = vi.fn();
+    let resolveListener: ((unlisten: () => void) => void) | undefined;
+    listenToBrokerEventMock.mockImplementation(
+      () => new Promise((resolve) => { resolveListener = resolve; }),
+    );
+
+    const wrapper = mount(ChatWindow);
+    await Promise.resolve();
+    wrapper.unmount();
+    resolveListener?.(unlistenWorkflow);
+    await flushPromises();
+
+    expect(unlistenWorkflow).toHaveBeenCalledTimes(1);
+  });
+
   it("refreshes visible messages on audio call events without idle polling", async () => {
     vi.useFakeTimers();
 
