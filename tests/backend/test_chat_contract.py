@@ -102,16 +102,19 @@ def test_chat_service_creates_tool_runner_only_for_tool_capable_llm(
     monkeypatch.setattr(chat_route, "create_session_factory", lambda engine: object())
     monkeypatch.setattr(chat_route, "ChatRepository", lambda factory: object())
     monkeypatch.setattr(chat_route, "get_avalon_state", lambda: state)
+    command_registry = object()
     monkeypatch.setattr(
         chat_route,
         "build_command_registry",
-        lambda state, repository: object(),
+        lambda state, repository: command_registry,
     )
 
     service_factory = chat_route.get_chat_service()
     service = next(service_factory)
 
     assert (service._tool_runner is not None) is has_tool_runner
+    assert service._command_registry is command_registry
+    assert service._compression_service.__class__.__name__ == "ContextCompressionService"
 
     with pytest.raises(StopIteration):
         next(service_factory)

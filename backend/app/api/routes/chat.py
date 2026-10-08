@@ -47,7 +47,6 @@ def get_chat_service():
         yield ChatService(
             OllamaRuntime(),
             repository,
-            state.current_avatar,
             build_command_registry(state, repository),
             tool_runner=tool_runner,
             agents=state.agents,
