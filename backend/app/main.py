@@ -122,19 +122,63 @@ class AgentBearerMiddleware:
         if scope["type"] != "http" or not scope["path"].startswith("/mcp"):
             await self.app(scope, receive, send)
             return
+
+        import time
+
+        method = scope.get("method", "?")
+        path = scope.get("path", "?")
+        started = time.perf_counter()
+        status_code = None
+
+        async def logging_send(message):
+            nonlocal status_code
+            if message["type"] == "http.response.start":
+                status_code = message["status"]
+            await send(message)
+
         try:
-            authorization = dict(scope["headers"]).get(b"authorization", b"").decode("ascii")
+            authorization = dict(scope["headers"]).get(
+                b"authorization", b""
+            ).decode("ascii")
             agent_id = agent_from_authorization(authorization)
+
         except (HTTPException, UnicodeDecodeError) as exc:
-            detail = exc.detail if isinstance(exc, HTTPException) else "Invalid bearer token."
-            await JSONResponse({"detail": detail}, status_code=401)(scope, receive, send)
+            detail = (
+                exc.detail
+                if isinstance(exc, HTTPException)
+                else "Invalid bearer token."
+            )
+            logger.warning(
+                "[mcp] authorization failed: %s %s: %s",
+                method, path, detail,
+            )
+            await JSONResponse(
+                {"detail": detail}, status_code=401
+            )(scope, receive, logging_send)
             return
+
         token = current_agent_id.set(agent_id)
+
         try:
-            await self.app(scope, receive, send)
+            await self.app(scope, receive, logging_send)
+
+        except Exception:
+            logger.exception(
+                "[mcp] request failed: %s %s agent=%s",
+                method, path, agent_id,
+            )
+            raise
+
         finally:
             current_agent_id.reset(token)
-
+            logger.info(
+                "[mcp] %s %s -> %s (%.1f ms) agent=%s",
+                method,
+                path,
+                status_code if status_code is not None else "no response",
+                (time.perf_counter() - started) * 1000,
+                agent_id,
+            )
 
 async def require_api_agent(request: Request) -> None:
     """Resolve the bearer agent for API routes where identity matters."""
