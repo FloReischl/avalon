@@ -2,6 +2,10 @@
 
 import asyncio
 
+from fastapi import FastAPI
+from httpx import ASGITransport, AsyncClient
+
+from app.api.routes import events as events_route
 from app.api.routes.authorization import authorization_events
 from app.api.routes.workflows import confirmation_events, events as workflow_events
 from app.authorization.requests import AuthorizationRequestManager
@@ -117,6 +121,34 @@ def test_notification_hub_emits_a_keepalive_when_idle() -> None:
     asyncio.run(scenario())
 
 
+def test_notification_hub_forwards_nearly_simultaneous_events() -> None:
+    async def scenario() -> None:
+        authorization = AuthorizationRequestManager()
+        workflows = WorkflowEventManager()
+        stream = NotificationHub(
+            authorization, WorkflowConfirmationManager(), workflows
+        ).events()
+        try:
+            await anext(stream)
+            await anext(stream)
+            await anext(stream)
+            next_event = asyncio.create_task(anext(stream))
+            await asyncio.sleep(0)
+            authorization.create("web", "search", [], [], "permanent", 0)
+            workflows.publish(WorkflowExecutionEvent(8, "running", None))
+            first = await next_event
+            second = await anext(stream)
+            assert {first, second} == {
+                'event: authorization_requests_changed\ndata: {}\n\n',
+                'event: workflow_execution\ndata: '
+                '{"workflow_execution_id": 8, "state": "running", "progress_content": null}\n\n',
+            }
+        finally:
+            await stream.aclose()
+
+    asyncio.run(scenario())
+
+
 def test_notification_hub_cleans_up_a_partial_subscription_failure() -> None:
     class FailingConfirmationManager:
         def subscribe(self):
@@ -144,6 +176,29 @@ def test_notification_hub_cleans_up_a_partial_subscription_failure() -> None:
             await stream.aclose()
 
     asyncio.run(scenario())
+
+
+def test_shared_events_route_has_the_sse_contract(monkeypatch) -> None:
+    class FiniteHub:
+        def __init__(self, *args) -> None:
+            pass
+
+        async def events(self):
+            yield ": test\n\n"
+
+    async def request():
+        application = FastAPI()
+        application.include_router(events_route.router, prefix="/api/v1")
+        async with AsyncClient(
+            transport=ASGITransport(app=application), base_url="http://test"
+        ) as client:
+            return await client.get("/api/v1/events")
+
+    monkeypatch.setattr(events_route, "NotificationHub", FiniteHub)
+    response = asyncio.run(request())
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
 
 
 def test_legacy_sse_endpoints_remain_available() -> None:

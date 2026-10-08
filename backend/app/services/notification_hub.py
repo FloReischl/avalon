@@ -48,7 +48,7 @@ class NotificationHub:
                     for subscription in subscriptions
                 }
                 try:
-                    done, _ = await asyncio.wait(
+                    await asyncio.wait(
                         tasks, timeout=self._keepalive_seconds,
                         return_when=asyncio.FIRST_COMPLETED,
                     )
@@ -58,11 +58,14 @@ class NotificationHub:
                             task.cancel()
                     await asyncio.gather(*tasks, return_exceptions=True)
 
-                if not done:
+                completed = tuple(
+                    task for task in tasks if task.done() and not task.cancelled()
+                )
+                if not completed:
                     yield ": keepalive\n\n"
                     continue
 
-                for task in done:
+                for task in completed:
                     subscription = tasks[task]
                     yield _sse(subscription.event_type, _payload(subscription.event_type, task.result()))
         finally:
