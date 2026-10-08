@@ -49,6 +49,7 @@ import {
   getPendingWorkflowConfirmation,
 } from "./services/backend";
 import { requestRuntimeWarmUp } from "./services/runtimeWarmup";
+import { eventBroker } from "./services/eventBroker";
 
 const uiConfig = ref<UiConfig>();
 
@@ -901,11 +902,13 @@ watch(
   backendStatus,
   async (status) => {
     if (status !== "ready") {
+      eventBroker.stop();
       closePendingEventStreams();
       abortAudioStatusSync();
       return;
     }
 
+    eventBroker.start();
     openPendingEventStreams();
 
     if (!uiConfig.value) {
@@ -937,6 +940,7 @@ onBeforeUnmount(() => {
   unlisten?.();
   unlistenAvatarState?.();
   unlistenAudioCall?.();
+  eventBroker.stop();
   closePendingEventStreams();
   if (animationTimer !== undefined) window.clearInterval(animationTimer);
 });

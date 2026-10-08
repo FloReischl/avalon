@@ -37,6 +37,8 @@ const {
   requestRuntimeWarmUpMock,
   listenToAudioCallChangedMock,
   publishAudioCallChangedMock,
+  startEventBrokerMock,
+  stopEventBrokerMock,
 } = vi.hoisted(() => ({
 
 
@@ -59,6 +61,15 @@ const {
   requestRuntimeWarmUpMock: vi.fn(),
   listenToAudioCallChangedMock: vi.fn(),
   publishAudioCallChangedMock: vi.fn(),
+  startEventBrokerMock: vi.fn(),
+  stopEventBrokerMock: vi.fn(),
+}));
+
+vi.mock("../../frontend/src/services/eventBroker", () => ({
+  eventBroker: {
+    start: startEventBrokerMock,
+    stop: stopEventBrokerMock,
+  },
 }));
 
 vi.mock("../../frontend/src/services/windowTitle", () => ({
@@ -155,6 +166,8 @@ describe("App", () => {
     requestRuntimeWarmUpMock.mockReset();
     listenToAudioCallChangedMock.mockReset();
     publishAudioCallChangedMock.mockReset();
+    startEventBrokerMock.mockReset();
+    stopEventBrokerMock.mockReset();
     exitAvalonMock.mockResolvedValue(undefined);
     setAvatarWindowTitleMock.mockResolvedValue(undefined);
     listenToAvatarRuntimeStateMock.mockResolvedValue(() => {});
@@ -277,6 +290,8 @@ describe("App", () => {
     await flushPromises();
 
     expect(eventSources).toHaveLength(0);
+    expect(stopEventBrokerMock).toHaveBeenCalled();
+    const stopsBeforeReadiness = stopEventBrokerMock.mock.calls.length;
 
     onBackendStatus?.("ready");
     await flushPromises();
@@ -285,23 +300,29 @@ describe("App", () => {
       "http://127.0.0.1:8095/api/v1/authorization-requests/events",
       "http://127.0.0.1:8095/api/v1/workflow-executions/confirmations/events",
     ]);
+    expect(startEventBrokerMock).toHaveBeenCalledTimes(1);
+    const startsAfterFirstReadiness = startEventBrokerMock.mock.calls.length;
 
     onBackendStatus?.("ready");
     await flushPromises();
     expect(eventSources).toHaveLength(2);
+    expect(startEventBrokerMock).toHaveBeenCalledTimes(startsAfterFirstReadiness);
 
     onBackendStatus?.("waiting-for-health");
     await flushPromises();
     expect(eventSources[0].close).toHaveBeenCalledTimes(1);
     expect(eventSources[1].close).toHaveBeenCalledTimes(1);
+    expect(stopEventBrokerMock).toHaveBeenCalledTimes(stopsBeforeReadiness + 1);
 
     onBackendStatus?.("ready");
     await flushPromises();
     expect(eventSources).toHaveLength(4);
+    expect(startEventBrokerMock).toHaveBeenCalledTimes(startsAfterFirstReadiness + 1);
 
     wrapper.unmount();
     expect(eventSources[2].close).toHaveBeenCalledTimes(1);
     expect(eventSources[3].close).toHaveBeenCalledTimes(1);
+    expect(stopEventBrokerMock).toHaveBeenCalledTimes(stopsBeforeReadiness + 2);
   });
 
 
