@@ -76,6 +76,22 @@ describe("ConfirmationWindow", () => {
     expect(wrapper.text()).toContain("Approve"); expect(wrapper.text()).toContain("Abort");
   });
 
+  it("reloads reactive confirmations for both broker notifications", async () => {
+    getProactiveConfirmationChatMock.mockResolvedValue(null); loadUiConfigMock.mockResolvedValue({});
+    getPendingAuthorizationRequestsMock.mockResolvedValue([]);
+    const wrapper = mount(ConfirmationWindow); await flushPromises();
+    const authorizationLoads = getPendingAuthorizationRequestsMock.mock.calls.length;
+    const workflowLoads = getPendingWorkflowConfirmationMock.mock.calls.length;
+
+    callbacks.get(eventCallbackIds.get("authorization_requests_changed")!)?.({ payload: undefined });
+    callbacks.get(eventCallbackIds.get("workflow_confirmations_changed")!)?.({ payload: undefined });
+    await flushPromises();
+
+    expect(getPendingAuthorizationRequestsMock).toHaveBeenCalledTimes(authorizationLoads + 1);
+    expect(getPendingWorkflowConfirmationMock).toHaveBeenCalledTimes(workflowLoads + 2);
+    wrapper.unmount();
+  });
+
   it("uses the selected reactive rows and the shared expiry to approve complete requests", async () => {
     getProactiveConfirmationChatMock.mockResolvedValue(null); loadUiConfigMock.mockResolvedValue({});
     getPendingAuthorizationRequestsMock.mockResolvedValue([reactiveRequest()]);

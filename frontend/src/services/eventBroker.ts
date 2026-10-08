@@ -1,4 +1,4 @@
-import { emit } from "@tauri-apps/api/event";
+import { emit, listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 import { BACKEND_BASE_URL } from "./backend";
 
@@ -11,6 +11,13 @@ export const BROKER_EVENT_TYPES = [
 export type BrokerEventType = typeof BROKER_EVENT_TYPES[number];
 
 type EmitEvent = (event: BrokerEventType, payload?: unknown) => Promise<void>;
+
+export function listenToBrokerEvent(
+  eventType: BrokerEventType,
+  handler: () => void,
+): Promise<UnlistenFn> {
+  return listen(eventType, handler);
+}
 
 export class EventBroker {
   private source: EventSource | undefined;

@@ -27,7 +27,6 @@ import {
   getAudioCallStatus,
   BACKEND_BASE_URL,
   type Attachment,
-  listenToWorkflowExecutions,
 } from "./services/backend";
 import {
   exportChatToMarkdown,
@@ -46,6 +45,7 @@ import {
 } from "./services/audioCallEvents";
 import { boundCallChatToSelect } from "./services/audioCallBinding";
 import { setChatWindowTitle } from "./services/windowTitle";
+import { listenToBrokerEvent } from "./services/eventBroker";
 
 
 const uiConfig = ref<UiConfig>();
@@ -510,6 +510,15 @@ onMounted(async () => {
     return;
   }
 
+  try {
+    unlistenWorkflowExecutions = await listenToBrokerEvent(
+      "workflow_execution",
+      () => { void refreshSelectedChat(); },
+    );
+  } catch (error) {
+    console.error("[event-broker] failed to subscribe to workflow executions", error);
+  }
+
   await refreshChats(true, 20);
   await refreshCallStatus();
 
@@ -520,10 +529,6 @@ onMounted(async () => {
   } catch (error) {
     console.error("[audio-call] failed to subscribe to call changes", error);
   }
-
-  unlistenWorkflowExecutions = listenToWorkflowExecutions(() => {
-    void refreshSelectedChat();
-  });
 });
 
 

@@ -49,7 +49,7 @@ import {
   getPendingWorkflowConfirmation,
 } from "./services/backend";
 import { requestRuntimeWarmUp } from "./services/runtimeWarmup";
-import { eventBroker } from "./services/eventBroker";
+import { eventBroker, listenToBrokerEvent } from "./services/eventBroker";
 
 const uiConfig = ref<UiConfig>();
 
@@ -66,8 +66,8 @@ const avatarScalePercent = ref(100);
 const avatarRuntimeState = ref<AvatarRuntimeState>({ state: "standard", backendPending: false });
 const animationFrame = ref(0);
 const pendingPermissionCount = ref(0);
-let permissionEvents: EventSource | undefined;
-let workflowConfirmationEvents: EventSource | undefined;
+let unlistenAuthorizationRequests: UnlistenFn | undefined;
+let unlistenWorkflowConfirmations: UnlistenFn | undefined;
 const avatarStage = useTemplateRef<HTMLDivElement>("avatarStage");
 const avatarRegion = useTemplateRef<HTMLDivElement>("avatarRegion");
 const avatarImage = useTemplateRef<HTMLImageElement>("avatarImage");
@@ -485,39 +485,6 @@ async function startAvatarDialog(alreadyStarted = false, chatId?: number) {
   }
 }
 
-function closePendingEventStreams() {
-  permissionEvents?.close();
-  permissionEvents = undefined;
-  workflowConfirmationEvents?.close();
-  workflowConfirmationEvents = undefined;
-}
-
-function openPendingEventStreams() {
-  if (backendStatus.value !== "ready" || typeof EventSource === "undefined") {
-    return;
-  }
-
-  if (!permissionEvents) {
-    permissionEvents = new EventSource(
-      "http://127.0.0.1:8095/api/v1/authorization-requests/events",
-    );
-    permissionEvents.addEventListener(
-      "authorization_requests_changed",
-      () => { void refreshPendingPermissionCount(); },
-    );
-  }
-
-  if (!workflowConfirmationEvents) {
-    workflowConfirmationEvents = new EventSource(
-      "http://127.0.0.1:8095/api/v1/workflow-executions/confirmations/events",
-    );
-    workflowConfirmationEvents.addEventListener(
-      "workflow_confirmations_changed",
-      () => { void refreshPendingPermissionCount(); },
-    );
-  }
-}
-
 async function syncExternalAvatarCall(signal: AbortSignal) {
   try {
     const status = await getAudioCallStatus(signal);
@@ -858,6 +825,24 @@ onMounted(async () => {
   window.addEventListener("focus", handleAvatarFocus);
 
   try {
+    unlistenAuthorizationRequests = await listenToBrokerEvent(
+      "authorization_requests_changed",
+      () => { void refreshPendingPermissionCount(); },
+    );
+  } catch (error) {
+    console.error("[event-broker] failed to subscribe to authorization changes", error);
+  }
+
+  try {
+    unlistenWorkflowConfirmations = await listenToBrokerEvent(
+      "workflow_confirmations_changed",
+      () => { void refreshPendingPermissionCount(); },
+    );
+  } catch (error) {
+    console.error("[event-broker] failed to subscribe to workflow confirmation changes", error);
+  }
+
+  try {
     unlistenAudioCall = await listenToAudioCallChanged(() => {
       void requestExternalAvatarCallSync();
     });
@@ -903,13 +888,11 @@ watch(
   async (status) => {
     if (status !== "ready") {
       eventBroker.stop();
-      closePendingEventStreams();
       abortAudioStatusSync();
       return;
     }
 
     eventBroker.start();
-    openPendingEventStreams();
 
     if (!uiConfig.value) {
       await initializeUiConfig();
@@ -940,8 +923,9 @@ onBeforeUnmount(() => {
   unlisten?.();
   unlistenAvatarState?.();
   unlistenAudioCall?.();
+  unlistenAuthorizationRequests?.();
+  unlistenWorkflowConfirmations?.();
   eventBroker.stop();
-  closePendingEventStreams();
   if (animationTimer !== undefined) window.clearInterval(animationTimer);
 });
 

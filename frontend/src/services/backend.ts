@@ -140,13 +140,6 @@ export async function loadAgentBearerToken(agentId: number): Promise<string> {
   return payload.agentBearerToken;
 }
 
-export function listenToWorkflowExecutions(onChange: () => void): () => void {
-  const source = new EventSource(`${BACKEND_BASE_URL}/api/v1/workflow-executions/events`);
-  source.addEventListener("workflow_execution", onChange);
-  source.onerror = () => { /* EventSource reconnects itself. */ };
-  return () => source.close();
-}
-
 export interface TtsResponse {
   playbackId: string;
   response: Response;

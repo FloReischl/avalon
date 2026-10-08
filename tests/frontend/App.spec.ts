@@ -1,23 +1,6 @@
 import { flushPromises, mount } from "@vue/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-type FakeEventSource = {
-  url: string;
-  addEventListener: ReturnType<typeof vi.fn>;
-  close: ReturnType<typeof vi.fn>;
-};
-
-const eventSources: FakeEventSource[] = [];
-
-class EventSourceMock {
-  readonly addEventListener = vi.fn();
-  readonly close = vi.fn();
-
-  constructor(readonly url: string) {
-    eventSources.push(this);
-  }
-}
-
 const {
   exitAvalonMock,
   getBackendSnapshotMock,
@@ -39,6 +22,7 @@ const {
   publishAudioCallChangedMock,
   startEventBrokerMock,
   stopEventBrokerMock,
+  listenToBrokerEventMock,
 } = vi.hoisted(() => ({
 
 
@@ -63,6 +47,7 @@ const {
   publishAudioCallChangedMock: vi.fn(),
   startEventBrokerMock: vi.fn(),
   stopEventBrokerMock: vi.fn(),
+  listenToBrokerEventMock: vi.fn(),
 }));
 
 vi.mock("../../frontend/src/services/eventBroker", () => ({
@@ -70,6 +55,7 @@ vi.mock("../../frontend/src/services/eventBroker", () => ({
     start: startEventBrokerMock,
     stop: stopEventBrokerMock,
   },
+  listenToBrokerEvent: listenToBrokerEventMock,
 }));
 
 vi.mock("../../frontend/src/services/windowTitle", () => ({
@@ -139,8 +125,6 @@ describe("App", () => {
   const fetchMock = vi.fn();
 
   beforeEach(() => {
-    eventSources.splice(0);
-    vi.stubGlobal("EventSource", EventSourceMock);
     vi.stubGlobal("fetch", fetchMock);
     fetchMock.mockReset();
     fetchMock.mockResolvedValue(
@@ -168,6 +152,8 @@ describe("App", () => {
     publishAudioCallChangedMock.mockReset();
     startEventBrokerMock.mockReset();
     stopEventBrokerMock.mockReset();
+    listenToBrokerEventMock.mockReset();
+    listenToBrokerEventMock.mockResolvedValue(() => {});
     exitAvalonMock.mockResolvedValue(undefined);
     setAvatarWindowTitleMock.mockResolvedValue(undefined);
     listenToAvatarRuntimeStateMock.mockResolvedValue(() => {});
@@ -275,7 +261,12 @@ describe("App", () => {
     expect(wrapper.get('[data-testid="startup-panel"]').exists()).toBe(true);
   });
 
-  it("opens pending-event streams only while the backend is ready", async () => {
+  it("uses broker notifications for the pending count without opening consumer streams", async () => {
+    const brokerHandlers = new Map<string, () => void>();
+    listenToBrokerEventMock.mockImplementation(async (event, handler) => {
+      brokerHandlers.set(event, handler);
+      return () => {};
+    });
     let onBackendStatus: ((status: string) => void) | undefined;
     listenToBackendLifecycleMock.mockImplementation(async (handlers) => {
       onBackendStatus = handlers.onStatus;
@@ -289,39 +280,43 @@ describe("App", () => {
     const wrapper = mount(App);
     await flushPromises();
 
-    expect(eventSources).toHaveLength(0);
     expect(stopEventBrokerMock).toHaveBeenCalled();
     const stopsBeforeReadiness = stopEventBrokerMock.mock.calls.length;
 
     onBackendStatus?.("ready");
     await flushPromises();
 
-    expect(eventSources.map((stream) => stream.url)).toEqual([
-      "http://127.0.0.1:8095/api/v1/authorization-requests/events",
-      "http://127.0.0.1:8095/api/v1/workflow-executions/confirmations/events",
-    ]);
+    expect(listenToBrokerEventMock).toHaveBeenCalledWith(
+      "authorization_requests_changed",
+      expect.any(Function),
+    );
+    expect(listenToBrokerEventMock).toHaveBeenCalledWith(
+      "workflow_confirmations_changed",
+      expect.any(Function),
+    );
     expect(startEventBrokerMock).toHaveBeenCalledTimes(1);
     const startsAfterFirstReadiness = startEventBrokerMock.mock.calls.length;
 
+    const pendingLoadsBeforeNotification = getPendingAuthorizationRequestsMock.mock.calls.length;
+    brokerHandlers.get("authorization_requests_changed")?.();
+    await flushPromises();
+    expect(getPendingAuthorizationRequestsMock).toHaveBeenCalledTimes(
+      pendingLoadsBeforeNotification + 1,
+    );
+
     onBackendStatus?.("ready");
     await flushPromises();
-    expect(eventSources).toHaveLength(2);
     expect(startEventBrokerMock).toHaveBeenCalledTimes(startsAfterFirstReadiness);
 
     onBackendStatus?.("waiting-for-health");
     await flushPromises();
-    expect(eventSources[0].close).toHaveBeenCalledTimes(1);
-    expect(eventSources[1].close).toHaveBeenCalledTimes(1);
     expect(stopEventBrokerMock).toHaveBeenCalledTimes(stopsBeforeReadiness + 1);
 
     onBackendStatus?.("ready");
     await flushPromises();
-    expect(eventSources).toHaveLength(4);
     expect(startEventBrokerMock).toHaveBeenCalledTimes(startsAfterFirstReadiness + 1);
 
     wrapper.unmount();
-    expect(eventSources[2].close).toHaveBeenCalledTimes(1);
-    expect(eventSources[3].close).toHaveBeenCalledTimes(1);
     expect(stopEventBrokerMock).toHaveBeenCalledTimes(stopsBeforeReadiness + 2);
   });
 

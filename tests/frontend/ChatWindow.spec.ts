@@ -33,7 +33,7 @@ const {
   startAudioCallMock,
   getAudioCallStatusMock,
   listenToAudioCallChangedMock,
-  listenToWorkflowExecutionsMock,
+  listenToBrokerEventMock,
   publishAudioCallChangedMock,
   publishAvatarRuntimeStateMock,
   exportChatToMarkdownMock,
@@ -57,7 +57,7 @@ const {
   startAudioCallMock: vi.fn(),
   getAudioCallStatusMock: vi.fn(),
   listenToAudioCallChangedMock: vi.fn(),
-  listenToWorkflowExecutionsMock: vi.fn(),
+  listenToBrokerEventMock: vi.fn(),
   publishAudioCallChangedMock: vi.fn(),
   publishAvatarRuntimeStateMock: vi.fn(),
   exportChatToMarkdownMock: vi.fn(),
@@ -89,7 +89,6 @@ vi.mock("../../frontend/src/services/backend", async (importOriginal) => {
     synthesizeSpeech: synthesizeSpeechMock,
     startAudioCall: startAudioCallMock,
     getAudioCallStatus: getAudioCallStatusMock,
-    listenToWorkflowExecutions: listenToWorkflowExecutionsMock,
     loadAgentBearerToken: loadAgentBearerTokenMock,
     setAgentBearerToken: setAgentBearerTokenMock,
     warmUpRuntime: warmUpRuntimeMock,
@@ -100,6 +99,10 @@ vi.mock("../../frontend/src/services/backend", async (importOriginal) => {
 vi.mock("../../frontend/src/services/audioCallEvents", () => ({
   listenToAudioCallChanged: listenToAudioCallChangedMock,
   publishAudioCallChanged: publishAudioCallChangedMock,
+}));
+
+vi.mock("../../frontend/src/services/eventBroker", () => ({
+  listenToBrokerEvent: listenToBrokerEventMock,
 }));
 
 vi.mock("../../frontend/src/services/avatarState", () => ({
@@ -206,8 +209,8 @@ describe("ChatWindow", () => {
 
     listenToAudioCallChangedMock.mockReset();
     listenToAudioCallChangedMock.mockResolvedValue(() => {});
-    listenToWorkflowExecutionsMock.mockReset();
-    listenToWorkflowExecutionsMock.mockReturnValue(() => {});
+    listenToBrokerEventMock.mockReset();
+    listenToBrokerEventMock.mockResolvedValue(() => {});
     publishAudioCallChangedMock.mockReset();
     publishAudioCallChangedMock.mockResolvedValue(undefined);
 
@@ -512,6 +515,47 @@ describe("ChatWindow", () => {
     expect(wrapper.get('[data-testid="chat-42"]').text()).toContain(
       "Avatar Chat",
     );
+  });
+
+  it("refreshes the selected chat for a workflow broker notification", async () => {
+    let onWorkflowExecution: (() => void) | undefined;
+    const unlistenWorkflow = vi.fn();
+    listenToBrokerEventMock.mockImplementation(async (_event, handler) => {
+      onWorkflowExecution = handler;
+      return unlistenWorkflow;
+    });
+    getChatsMock.mockResolvedValue([{ id: 42, agent_id: 1, title: "Chat", pinned: false, created_at: "2026-01-01" }]);
+    getChatMock.mockResolvedValue({ id: 42, agent_id: 1, title: "Chat", pinned: false, created_at: "2026-01-01", messages: [] });
+
+    const wrapper = mount(ChatWindow);
+    await flushPromises();
+    await wrapper.get('[data-testid="chat-42"]').trigger("click");
+    await flushPromises();
+    const loadsBeforeNotification = getChatMock.mock.calls.length;
+
+    onWorkflowExecution?.();
+    await flushPromises();
+
+    expect(getChatMock).toHaveBeenCalledTimes(loadsBeforeNotification + 1);
+    wrapper.unmount();
+    expect(unlistenWorkflow).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps initial loading available when workflow listener registration fails", async () => {
+    const error = new Error("event plugin unavailable");
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    listenToBrokerEventMock.mockRejectedValue(error);
+
+    const wrapper = mount(ChatWindow);
+    await flushPromises();
+
+    expect(getChatsMock).toHaveBeenCalledTimes(1);
+    expect(errorSpy).toHaveBeenCalledWith(
+      "[event-broker] failed to subscribe to workflow executions",
+      error,
+    );
+    wrapper.unmount();
+    errorSpy.mockRestore();
   });
 
   it("refreshes visible messages on audio call events without idle polling", async () => {
