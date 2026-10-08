@@ -5,9 +5,8 @@ import asyncio
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
+from app.api.router import api_router
 from app.api.routes import events as events_route
-from app.api.routes.authorization import authorization_events
-from app.api.routes.workflows import confirmation_events, events as workflow_events
 from app.authorization.requests import AuthorizationRequestManager
 from app.services.notification_hub import NotificationHub
 from app.services.workflow_events import WorkflowEventManager, WorkflowExecutionEvent
@@ -201,13 +200,18 @@ def test_shared_events_route_has_the_sse_contract(monkeypatch) -> None:
     assert response.headers["content-type"].startswith("text/event-stream")
 
 
-def test_legacy_sse_endpoints_remain_available() -> None:
-    async def scenario() -> None:
-        responses = await asyncio.gather(
-            authorization_events(), confirmation_events(), workflow_events(None)
-        )
-        assert all(response.media_type == "text/event-stream" for response in responses)
-        for response in responses:
-            await response.body_iterator.aclose()
+def test_api_router_exposes_only_the_shared_notification_stream() -> None:
+    legacy_paths = {
+        "/api/v1/authorization-requests/events",
+        "/api/v1/workflow-executions/confirmations/events",
+        "/api/v1/workflow-executions/events",
+    }
+    paths = {
+        f"{included.include_context.prefix}{route.path}"
+        for included in api_router.routes
+        for route in included.original_router.routes
+        if hasattr(route, "path")
+    }
 
-    asyncio.run(scenario())
+    assert "/api/v1/events" in paths
+    assert paths.isdisjoint(legacy_paths)

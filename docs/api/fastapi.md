@@ -452,29 +452,6 @@ Operation ID: `list_pending_authorization_requests_api_v1_authorization_requests
 }
 ```
 
-### `GET /api/v1/authorization-requests/events`
-
-Authorization Events
-
-Emit compact invalidations whenever the pending request list changes.
-
-Operation ID: `authorization_events_api_v1_authorization_requests_events_get`
-
-**Responses**
-
-```json
-{
-  "200": {
-    "content": {
-      "application/json": {
-        "schema": {}
-      }
-    },
-    "description": "Successful Response"
-  }
-}
-```
-
 ### `POST /api/v1/authorization-requests/{request_id}/abort`
 
 Abort Authorization
@@ -1012,6 +989,29 @@ Operation ID: `set_chat_pinned_api_v1_chats__chat_id__pinned_patch`
 }
 ```
 
+### `GET /api/v1/events`
+
+Events
+
+Expose all existing local invalidations through one SSE connection.
+
+Operation ID: `events_api_v1_events_get`
+
+**Responses**
+
+```json
+{
+  "200": {
+    "content": {
+      "application/json": {
+        "schema": {}
+      }
+    },
+    "description": "Successful Response"
+  }
+}
+```
+
 ### `POST /api/v1/llm/text`
 
 Generate Text
@@ -1366,29 +1366,6 @@ Operation ID: `ui_agent_token_api_v1_ui_token_get`
 }
 ```
 
-### `GET /api/v1/workflow-executions/confirmations/events`
-
-Confirmation Events
-
-Invalidate the local UI when the one pending confirmation changes.
-
-Operation ID: `confirmation_events_api_v1_workflow_executions_confirmations_events_get`
-
-**Responses**
-
-```json
-{
-  "200": {
-    "content": {
-      "application/json": {
-        "schema": {}
-      }
-    },
-    "description": "Successful Response"
-  }
-}
-```
-
 ### `GET /api/v1/workflow-executions/confirmations/pending`
 
 Pending Confirmation
@@ -1517,27 +1494,6 @@ Operation ID: `confirm_confirmation_api_v1_workflow_executions_confirmations__co
       }
     },
     "description": "Validation Error"
-  }
-}
-```
-
-### `GET /api/v1/workflow-executions/events`
-
-Events
-
-Operation ID: `events_api_v1_workflow_executions_events_get`
-
-**Responses**
-
-```json
-{
-  "200": {
-    "content": {
-      "application/json": {
-        "schema": {}
-      }
-    },
-    "description": "Successful Response"
   }
 }
 ```

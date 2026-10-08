@@ -1478,26 +1478,6 @@
         ]
       }
     },
-    "/api/v1/authorization-requests/events": {
-      "get": {
-        "description": "Emit compact invalidations whenever the pending request list changes.",
-        "operationId": "authorization_events_api_v1_authorization_requests_events_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Authorization Events",
-        "tags": [
-          "authorization"
-        ]
-      }
-    },
     "/api/v1/authorization-requests/{request_id}/abort": {
       "post": {
         "description": "Abort the waiting agent operation.",
@@ -1936,6 +1916,26 @@
         ]
       }
     },
+    "/api/v1/events": {
+      "get": {
+        "description": "Expose all existing local invalidations through one SSE connection.",
+        "operationId": "events_api_v1_events_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Events",
+        "tags": [
+          "events"
+        ]
+      }
+    },
     "/api/v1/llm/text": {
       "post": {
         "description": "Run non-streaming text inference without chat state or persistence.",
@@ -2231,26 +2231,6 @@
         ]
       }
     },
-    "/api/v1/workflow-executions/confirmations/events": {
-      "get": {
-        "description": "Invalidate the local UI when the one pending confirmation changes.",
-        "operationId": "confirmation_events_api_v1_workflow_executions_confirmations_events_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Confirmation Events",
-        "tags": [
-          "workflows"
-        ]
-      }
-    },
     "/api/v1/workflow-executions/confirmations/pending": {
       "get": {
         "description": "Expose the pending confirmation to Avalon’s local Human-UI boundary.",
@@ -2356,25 +2336,6 @@
           }
         },
         "summary": "Confirm Confirmation",
-        "tags": [
-          "workflows"
-        ]
-      }
-    },
-    "/api/v1/workflow-executions/events": {
-      "get": {
-        "operationId": "events_api_v1_workflow_executions_events_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Events",
         "tags": [
           "workflows"
         ]

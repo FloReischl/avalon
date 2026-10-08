@@ -2,12 +2,9 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
-from collections.abc import AsyncIterator
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import StreamingResponse
 
 from app.api.schemas import (
     WorkflowConfirmationRequest,
@@ -101,28 +98,6 @@ async def cancel_confirmation(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
-@router.get("/confirmations/events")
-async def confirmation_events() -> StreamingResponse:
-    """Invalidate the local UI when the one pending confirmation changes."""
-    manager = get_workflow_confirmation_manager()
-    queue = manager.subscribe()
-
-    async def events() -> AsyncIterator[str]:
-        try:
-            yield "event: workflow_confirmations_changed\ndata: {}\n\n"
-            while True:
-                await queue.get()
-                yield "event: workflow_confirmations_changed\ndata: {}\n\n"
-        finally:
-            manager.unsubscribe(queue)
-
-    return StreamingResponse(events(), media_type="text/event-stream")
-
-
-def _event(event: WorkflowExecutionEvent) -> str:
-    return "event: workflow_execution\ndata: " + json.dumps({"workflow_execution_id": event.id, "state": event.state, "progress_content": event.progress_content}) + "\n\n"
-
-
 @router.patch("/{execution_id}/runtime")
 async def update_runtime(
     execution_id: int,
@@ -169,21 +144,3 @@ async def request_confirmation(
         return await manager.wait(confirmation.id)
     except ConfirmationCancelled as exc:
         raise HTTPException(status_code=409, detail="workflow_confirmation_cancelled") from exc
-
-
-@router.get("/events")
-async def events(request: Request) -> StreamingResponse:
-    queue = get_workflow_event_manager().subscribe()
-    async def stream() -> AsyncIterator[str]:
-        try:
-            while True:
-                if await request.is_disconnected():
-                    return
-                try:
-                    event = await asyncio.wait_for(queue.get(), timeout=15)
-                    yield _event(event)
-                except TimeoutError:
-                    yield ": keepalive\n\n"
-        finally:
-            get_workflow_event_manager().unsubscribe(queue)
-    return StreamingResponse(stream(), media_type="text/event-stream")
