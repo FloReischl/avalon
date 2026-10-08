@@ -489,6 +489,53 @@ describe("App", () => {
     expect(getAudioCallStatusMock).toHaveBeenCalledTimes(2);
   });
 
+  it("aborts a status request on readiness loss and syncs freshly after recovery", async () => {
+    let onBackendStatus: ((status: string) => void) | undefined;
+    let firstSignal: AbortSignal | undefined;
+    let resolveFirst: ((status: {
+      active: boolean;
+      chat_id: null;
+      turn_active: boolean;
+      pending_speech: null;
+    }) => void) | undefined;
+    const inactiveStatus = {
+      active: false,
+      chat_id: null,
+      turn_active: false,
+      pending_speech: null,
+    };
+
+    listenToBackendLifecycleMock.mockImplementation(async (handlers) => {
+      onBackendStatus = handlers.onStatus;
+      return () => {};
+    });
+    getAudioCallStatusMock
+      .mockImplementationOnce((signal: AbortSignal) => {
+        firstSignal = signal;
+        return new Promise((resolve) => {
+          resolveFirst = resolve;
+        });
+      })
+      .mockResolvedValueOnce(inactiveStatus);
+    getBackendSnapshotMock.mockResolvedValue({ status: "ready", logs: [] });
+
+    mount(App);
+    await flushPromises();
+    expect(getAudioCallStatusMock).toHaveBeenCalledTimes(1);
+
+    onBackendStatus?.("waiting-for-health");
+    await flushPromises();
+    expect(firstSignal?.aborted).toBe(true);
+
+    onBackendStatus?.("ready");
+    await flushPromises();
+    expect(getAudioCallStatusMock).toHaveBeenCalledTimes(1);
+
+    resolveFirst?.(inactiveStatus);
+    await flushPromises();
+    expect(getAudioCallStatusMock).toHaveBeenCalledTimes(2);
+  });
+
   it("aborts a running audio-status request when unmounted", async () => {
     let statusSignal: AbortSignal | undefined;
     let resolveStatus: ((status: {

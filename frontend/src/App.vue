@@ -521,12 +521,23 @@ async function syncExternalAvatarCall(signal: AbortSignal) {
   try {
     const status = await getAudioCallStatus(signal);
 
-    if (isUnmounted || signal.aborted) {
+    if (
+      isUnmounted
+      || signal.aborted
+      || backendStatus.value !== "ready"
+    ) {
       return;
     }
 
     if (status.active && !isDialogActive.value) {
       await startAvatarDialog(true, status.chat_id ?? undefined);
+      if (
+        isUnmounted
+        || signal.aborted
+        || backendStatus.value !== "ready"
+      ) {
+        return;
+      }
     }
 
     if (
@@ -536,7 +547,11 @@ async function syncExternalAvatarCall(signal: AbortSignal) {
       && !isDialogThinking.value
     ) {
       const text = await consumeAudioCallSpeech(signal);
-      if (isUnmounted || signal.aborted) {
+      if (
+        isUnmounted
+        || signal.aborted
+        || backendStatus.value !== "ready"
+      ) {
         return;
       }
       if (text) {
@@ -547,7 +562,7 @@ async function syncExternalAvatarCall(signal: AbortSignal) {
       }
     }
   } catch (error) {
-    if (isUnmounted && signal.aborted) {
+    if (signal.aborted) {
       return;
     }
     console.error("[avatar-call] failed to sync status", error);
@@ -588,6 +603,11 @@ function requestExternalAvatarCallSync(): Promise<void> {
 
 function handleAvatarFocus() {
   void requestExternalAvatarCallSync();
+}
+
+function abortAudioStatusSync() {
+  audioStatusSyncPending = false;
+  audioStatusAbortController?.abort();
 }
 
 async function endAvatarDialog() {
@@ -882,6 +902,7 @@ watch(
   async (status) => {
     if (status !== "ready") {
       closePendingEventStreams();
+      abortAudioStatusSync();
       return;
     }
 
@@ -911,7 +932,7 @@ onBeforeUnmount(() => {
   window.removeEventListener("resize", handleAvatarWindowResize);
   window.removeEventListener("focus", handleAvatarFocus);
   isUnmounted = true;
-  audioStatusAbortController?.abort();
+  abortAudioStatusSync();
   if (isDialogActive.value) void endAvatarDialog();
   unlisten?.();
   unlistenAvatarState?.();
