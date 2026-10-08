@@ -183,7 +183,7 @@ class AgentBearerMiddleware:
 async def require_api_agent(request: Request) -> None:
     """Resolve the bearer agent for API routes where identity matters."""
     path = request.url.path
-    if not path.startswith("/api/v1/") or path in {"/api/v1/ui/config", "/api/v1/ui/token", "/api/v1/ui/settings"} or path.startswith("/api/v1/assets/avatar/") or (path.endswith("/download") and path.startswith("/api/v1/attachments/")) or path in {"/api/v1/authorization-requests/events", "/api/v1/workflow-executions/events", "/api/v1/workflow-executions/confirmations/events"}:
+    if not path.startswith("/api/v1/") or path in {"/api/v1/ui/config", "/api/v1/ui/token", "/api/v1/ui/settings", "/api/v1/events"} or path.startswith("/api/v1/assets/avatar/") or (path.endswith("/download") and path.startswith("/api/v1/attachments/")) or path in {"/api/v1/authorization-requests/events", "/api/v1/workflow-executions/events", "/api/v1/workflow-executions/confirmations/events"}:
         return
     agent_id = agent_from_authorization(request.headers.get("Authorization"))
     request.scope["avalon.agent_id"] = agent_id
