@@ -2231,9 +2231,29 @@
         ]
       }
     },
+    "/api/v1/workflow-executions/confirmations/events": {
+      "get": {
+        "description": "Invalidate the local UI when the one pending confirmation changes.",
+        "operationId": "confirmation_events_api_v1_workflow_executions_confirmations_events_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Confirmation Events",
+        "tags": [
+          "workflows"
+        ]
+      }
+    },
     "/api/v1/workflow-executions/confirmations/pending": {
       "get": {
-        "description": "Expose the one pending workflow confirmation to the local UI.",
+        "description": "Expose the pending confirmation to Avalon’s local Human-UI boundary.",
         "operationId": "pending_confirmation_api_v1_workflow_executions_confirmations_pending_get",
         "responses": {
           "200": {

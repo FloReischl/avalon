@@ -750,7 +750,6 @@ onMounted(async () => {
   window.addEventListener("keydown", handleAvatarScaleKeydown);
   window.addEventListener("resize", handleAvatarWindowResize);
   window.addEventListener("focus", syncExternalAvatarCall);
-  await refreshPendingPermissionCount();
   if (typeof EventSource !== "undefined") {
     permissionEvents = new EventSource(
       "http://127.0.0.1:8095/api/v1/authorization-requests/events",
@@ -787,9 +786,6 @@ onMounted(async () => {
     const snapshot = await getBackendSnapshot();
     backendStatus.value = snapshot.status;
     backendLogs.value = snapshot.logs;
-    if (snapshot.status === "ready") {
-      await syncExternalAvatarCall();
-    }
   } catch (error) {
     console.error(
       "[backend-lifecycle] failed to initialize desktop lifecycle",
@@ -814,15 +810,21 @@ onMounted(async () => {
 
 watch(
   backendStatus,
-  (status) => {
+  async (status) => {
     if (status !== "ready") {
       return;
     }
 
     if (!uiConfig.value) {
-      void initializeUiConfig();
+      await initializeUiConfig();
+    }
+
+    if (!uiConfig.value || backendStatus.value !== "ready") {
       return;
     }
+
+    await refreshPendingPermissionCount();
+    await syncExternalAvatarCall();
 
     if (avatarLoaded) {
       requestAvatarSync();

@@ -264,6 +264,48 @@ describe("App", () => {
 
   });
 
+  it("waits for UI config before making authenticated startup requests", async () => {
+    getBackendSnapshotMock.mockResolvedValue({
+      status: "ready",
+      logs: ["Backend ready"],
+    });
+
+    let resolveUiConfig: ((config: {
+      name: string;
+      avatar: {
+        greetingAudioUrl: string;
+        standard: { key: "standard"; url: string };
+        animations: never[];
+      };
+    }) => void) | undefined;
+
+    loadUiConfigMock.mockReturnValue(
+      new Promise((resolve) => {
+        resolveUiConfig = resolve;
+      }),
+    );
+
+    mount(App);
+    await flushPromises();
+
+    expect(loadUiConfigMock).toHaveBeenCalledTimes(1);
+    expect(getPendingAuthorizationRequestsMock).not.toHaveBeenCalled();
+    expect(getAudioCallStatusMock).not.toHaveBeenCalled();
+
+    resolveUiConfig?.({
+      name: "Frieda",
+      avatar: {
+        greetingAudioUrl: "greeting.wav",
+        standard: { key: "standard", url: "standard.png" },
+        animations: [],
+      },
+    });
+    await flushPromises();
+
+    expect(getPendingAuthorizationRequestsMock).toHaveBeenCalled();
+    expect(getAudioCallStatusMock).toHaveBeenCalled();
+  });
+
   it("renders the received runtime state and independent pending balloon", async () => {
     vi.useFakeTimers();
     let onRuntimeState:

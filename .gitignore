@@ -13,6 +13,7 @@ frontend/node_modules/
 frontend/dist/
 frontend/coverage/
 src-tauri/target/debug/
+node_modules
 *.tsbuildinfo
 
 # Editors and operating system

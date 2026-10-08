@@ -1366,11 +1366,34 @@ Operation ID: `ui_agent_token_api_v1_ui_token_get`
 }
 ```
 
+### `GET /api/v1/workflow-executions/confirmations/events`
+
+Confirmation Events
+
+Invalidate the local UI when the one pending confirmation changes.
+
+Operation ID: `confirmation_events_api_v1_workflow_executions_confirmations_events_get`
+
+**Responses**
+
+```json
+{
+  "200": {
+    "content": {
+      "application/json": {
+        "schema": {}
+      }
+    },
+    "description": "Successful Response"
+  }
+}
+```
+
 ### `GET /api/v1/workflow-executions/confirmations/pending`
 
 Pending Confirmation
 
-Expose the one pending workflow confirmation to the local UI.
+Expose the pending confirmation to Avalon’s local Human-UI boundary.
 
 Operation ID: `pending_confirmation_api_v1_workflow_executions_confirmations_pending_get`
 
