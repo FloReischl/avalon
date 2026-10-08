@@ -83,6 +83,10 @@ let unlisten: UnlistenFn | undefined;
 let unlistenAvatarState: UnlistenFn | undefined;
 let unlistenAudioCall: UnlistenFn | undefined;
 let animationTimer: number | undefined;
+let isUnmounted = false;
+let audioStatusSyncPromise: Promise<void> | undefined;
+let audioStatusSyncPending = false;
+let audioStatusAbortController: AbortController | undefined;
 let dialogGreetingAudio: HTMLAudioElement | undefined;
 let dialogGreetingCompletion: (() => void) | undefined;
 let dialogTtsAudio: HTMLAudioElement | undefined;
@@ -480,9 +484,46 @@ async function startAvatarDialog(alreadyStarted = false, chatId?: number) {
   }
 }
 
-async function syncExternalAvatarCall() {
+function closePendingEventStreams() {
+  permissionEvents?.close();
+  permissionEvents = undefined;
+  workflowConfirmationEvents?.close();
+  workflowConfirmationEvents = undefined;
+}
+
+function openPendingEventStreams() {
+  if (backendStatus.value !== "ready" || typeof EventSource === "undefined") {
+    return;
+  }
+
+  if (!permissionEvents) {
+    permissionEvents = new EventSource(
+      "http://127.0.0.1:8095/api/v1/authorization-requests/events",
+    );
+    permissionEvents.addEventListener(
+      "authorization_requests_changed",
+      () => { void refreshPendingPermissionCount(); },
+    );
+  }
+
+  if (!workflowConfirmationEvents) {
+    workflowConfirmationEvents = new EventSource(
+      "http://127.0.0.1:8095/api/v1/workflow-executions/confirmations/events",
+    );
+    workflowConfirmationEvents.addEventListener(
+      "workflow_confirmations_changed",
+      () => { void refreshPendingPermissionCount(); },
+    );
+  }
+}
+
+async function syncExternalAvatarCall(signal: AbortSignal) {
   try {
-    const status = await getAudioCallStatus();
+    const status = await getAudioCallStatus(signal);
+
+    if (isUnmounted || signal.aborted) {
+      return;
+    }
 
     if (status.active && !isDialogActive.value) {
       await startAvatarDialog(true, status.chat_id ?? undefined);
@@ -494,7 +535,10 @@ async function syncExternalAvatarCall() {
       && !isDialogSpeaking.value
       && !isDialogThinking.value
     ) {
-      const text = await consumeAudioCallSpeech();
+      const text = await consumeAudioCallSpeech(signal);
+      if (isUnmounted || signal.aborted) {
+        return;
+      }
       if (text) {
         dialogMessages.value.push({ role: "assistant", content: text });
         await speakDialogResponse(dialogMessages.value.length - 1);
@@ -503,8 +547,47 @@ async function syncExternalAvatarCall() {
       }
     }
   } catch (error) {
+    if (isUnmounted && signal.aborted) {
+      return;
+    }
     console.error("[avatar-call] failed to sync status", error);
   }
+}
+
+function requestExternalAvatarCallSync(): Promise<void> {
+  if (
+    isUnmounted
+    || backendStatus.value !== "ready"
+    || !uiConfig.value
+  ) {
+    return Promise.resolve();
+  }
+
+  audioStatusSyncPending = true;
+  if (!audioStatusSyncPromise) {
+    audioStatusSyncPromise = (async () => {
+      while (
+        audioStatusSyncPending
+        && !isUnmounted
+        && backendStatus.value === "ready"
+        && uiConfig.value
+      ) {
+        audioStatusSyncPending = false;
+        const controller = new AbortController();
+        audioStatusAbortController = controller;
+        await syncExternalAvatarCall(controller.signal);
+      }
+    })().finally(() => {
+      audioStatusSyncPromise = undefined;
+      audioStatusAbortController = undefined;
+    });
+  }
+
+  return audioStatusSyncPromise;
+}
+
+function handleAvatarFocus() {
+  void requestExternalAvatarCallSync();
 }
 
 async function endAvatarDialog() {
@@ -724,6 +807,8 @@ async function handleAvatarDoubleClick() {
 }
 
 async function refreshPendingPermissionCount() {
+  if (!uiConfig.value) return;
+
   try {
     const [requests, confirmation] = await Promise.all([
       getPendingAuthorizationRequests(), getPendingWorkflowConfirmation(),
@@ -749,27 +834,11 @@ async function handleExit() {
 onMounted(async () => {
   window.addEventListener("keydown", handleAvatarScaleKeydown);
   window.addEventListener("resize", handleAvatarWindowResize);
-  window.addEventListener("focus", syncExternalAvatarCall);
-  if (typeof EventSource !== "undefined") {
-    permissionEvents = new EventSource(
-      "http://127.0.0.1:8095/api/v1/authorization-requests/events",
-    );
-    permissionEvents.addEventListener(
-      "authorization_requests_changed",
-      () => { void refreshPendingPermissionCount(); },
-    );
-    workflowConfirmationEvents = new EventSource(
-      "http://127.0.0.1:8095/api/v1/workflow-executions/confirmations/events",
-    );
-    workflowConfirmationEvents.addEventListener(
-      "workflow_confirmations_changed",
-      () => { void refreshPendingPermissionCount(); },
-    );
-  }
+  window.addEventListener("focus", handleAvatarFocus);
 
   try {
     unlistenAudioCall = await listenToAudioCallChanged(() => {
-      void syncExternalAvatarCall();
+      void requestExternalAvatarCallSync();
     });
   } catch (error) {
     console.error("[avatar-call] failed to subscribe to call changes", error);
@@ -812,8 +881,11 @@ watch(
   backendStatus,
   async (status) => {
     if (status !== "ready") {
+      closePendingEventStreams();
       return;
     }
+
+    openPendingEventStreams();
 
     if (!uiConfig.value) {
       await initializeUiConfig();
@@ -824,7 +896,7 @@ watch(
     }
 
     await refreshPendingPermissionCount();
-    await syncExternalAvatarCall();
+    await requestExternalAvatarCallSync();
 
     if (avatarLoaded) {
       requestAvatarSync();
@@ -837,13 +909,14 @@ watch(
 onBeforeUnmount(() => {
   window.removeEventListener("keydown", handleAvatarScaleKeydown);
   window.removeEventListener("resize", handleAvatarWindowResize);
-  window.removeEventListener("focus", syncExternalAvatarCall);
+  window.removeEventListener("focus", handleAvatarFocus);
+  isUnmounted = true;
+  audioStatusAbortController?.abort();
   if (isDialogActive.value) void endAvatarDialog();
   unlisten?.();
   unlistenAvatarState?.();
   unlistenAudioCall?.();
-  permissionEvents?.close();
-  workflowConfirmationEvents?.close();
+  closePendingEventStreams();
   if (animationTimer !== undefined) window.clearInterval(animationTimer);
 });
 

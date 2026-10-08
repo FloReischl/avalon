@@ -461,14 +461,44 @@ export async function startAudioCall(chatId?: number): Promise<AudioCallStatus> 
   return response.json() as Promise<AudioCallStatus>;
 }
 
-export async function getAudioCallStatus(): Promise<AudioCallStatus> {
-  const response = await authenticatedFetch(`${BACKEND_BASE_URL}/api/v1/audio/call/status`);
-  if (!response.ok) throw new Error(`Audio call status failed with ${response.status}`);
-  return response.json() as Promise<AudioCallStatus>;
+export async function getAudioCallStatus(signal?: AbortSignal): Promise<AudioCallStatus> {
+  const url = `${BACKEND_BASE_URL}/api/v1/audio/call/status`;
+  const started = performance.now();
+
+  console.debug("[audio-status] GET start", { url });
+
+  try {
+    const response = await authenticatedFetch(url, { signal });
+
+    console.debug("[audio-status] GET response", {
+      url,
+      status: response.status,
+      elapsedMs: Math.round(performance.now() - started),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Audio call status failed with ${response.status}`);
+    }
+
+    return await response.json() as AudioCallStatus;
+  } catch (error) {
+    if (signal?.aborted) {
+      throw error;
+    }
+    console.error("[audio-status] GET failed", {
+      url,
+      elapsedMs: Math.round(performance.now() - started),
+      error,
+    });
+    throw error;
+  }
 }
 
-export async function consumeAudioCallSpeech(): Promise<string | null> {
-  const response = await authenticatedFetch(`${BACKEND_BASE_URL}/api/v1/audio/call/speech/consume`, { method: "POST" });
+export async function consumeAudioCallSpeech(signal?: AbortSignal): Promise<string | null> {
+  const response = await authenticatedFetch(`${BACKEND_BASE_URL}/api/v1/audio/call/speech/consume`, {
+    method: "POST",
+    signal,
+  });
   if (!response.ok) throw new Error(`Audio call speech consume failed with ${response.status}`);
   return (await response.json() as { text: string | null }).text;
 }

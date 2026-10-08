@@ -1,6 +1,23 @@
 import { flushPromises, mount } from "@vue/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+type FakeEventSource = {
+  url: string;
+  addEventListener: ReturnType<typeof vi.fn>;
+  close: ReturnType<typeof vi.fn>;
+};
+
+const eventSources: FakeEventSource[] = [];
+
+class EventSourceMock {
+  readonly addEventListener = vi.fn();
+  readonly close = vi.fn();
+
+  constructor(readonly url: string) {
+    eventSources.push(this);
+  }
+}
+
 const {
   exitAvalonMock,
   getBackendSnapshotMock,
@@ -111,6 +128,8 @@ describe("App", () => {
   const fetchMock = vi.fn();
 
   beforeEach(() => {
+    eventSources.splice(0);
+    vi.stubGlobal("EventSource", EventSourceMock);
     vi.stubGlobal("fetch", fetchMock);
     fetchMock.mockReset();
     fetchMock.mockResolvedValue(
@@ -241,6 +260,48 @@ describe("App", () => {
     expect(loadUiConfigMock).not.toHaveBeenCalled();
     expect(wrapper.find('[data-testid="avatar"]').exists()).toBe(false);
     expect(wrapper.get('[data-testid="startup-panel"]').exists()).toBe(true);
+  });
+
+  it("opens pending-event streams only while the backend is ready", async () => {
+    let onBackendStatus: ((status: string) => void) | undefined;
+    listenToBackendLifecycleMock.mockImplementation(async (handlers) => {
+      onBackendStatus = handlers.onStatus;
+      return () => {};
+    });
+    getBackendSnapshotMock.mockResolvedValue({
+      status: "waiting-for-health",
+      logs: ["Waiting for backend health endpoint"],
+    });
+
+    const wrapper = mount(App);
+    await flushPromises();
+
+    expect(eventSources).toHaveLength(0);
+
+    onBackendStatus?.("ready");
+    await flushPromises();
+
+    expect(eventSources.map((stream) => stream.url)).toEqual([
+      "http://127.0.0.1:8095/api/v1/authorization-requests/events",
+      "http://127.0.0.1:8095/api/v1/workflow-executions/confirmations/events",
+    ]);
+
+    onBackendStatus?.("ready");
+    await flushPromises();
+    expect(eventSources).toHaveLength(2);
+
+    onBackendStatus?.("waiting-for-health");
+    await flushPromises();
+    expect(eventSources[0].close).toHaveBeenCalledTimes(1);
+    expect(eventSources[1].close).toHaveBeenCalledTimes(1);
+
+    onBackendStatus?.("ready");
+    await flushPromises();
+    expect(eventSources).toHaveLength(4);
+
+    wrapper.unmount();
+    expect(eventSources[2].close).toHaveBeenCalledTimes(1);
+    expect(eventSources[3].close).toHaveBeenCalledTimes(1);
   });
 
 
@@ -385,6 +446,97 @@ describe("App", () => {
     await flushPromises();
 
     expect(getAudioCallStatusMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("serializes concurrent audio-status triggers and performs a trailing sync", async () => {
+    let onAudioCallChanged: (() => void) | undefined;
+    let resolveFirst: (() => void) | undefined;
+    let resolveSecond: (() => void) | undefined;
+    const inactiveStatus = {
+      active: false,
+      chat_id: null,
+      turn_active: false,
+      pending_speech: null,
+    };
+
+    listenToAudioCallChangedMock.mockImplementation(async (handler) => {
+      onAudioCallChanged = handler;
+      return () => {};
+    });
+    getAudioCallStatusMock
+      .mockImplementationOnce(() => new Promise((resolve) => {
+        resolveFirst = () => resolve(inactiveStatus);
+      }))
+      .mockImplementationOnce(() => new Promise((resolve) => {
+        resolveSecond = () => resolve(inactiveStatus);
+      }));
+    getBackendSnapshotMock.mockResolvedValue({ status: "ready", logs: [] });
+
+    mount(App);
+    await flushPromises();
+    expect(getAudioCallStatusMock).toHaveBeenCalledTimes(1);
+
+    onAudioCallChanged?.();
+    onAudioCallChanged?.();
+    expect(getAudioCallStatusMock).toHaveBeenCalledTimes(1);
+
+    resolveFirst?.();
+    await flushPromises();
+    expect(getAudioCallStatusMock).toHaveBeenCalledTimes(2);
+
+    resolveSecond?.();
+    await flushPromises();
+    expect(getAudioCallStatusMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("aborts a running audio-status request when unmounted", async () => {
+    let statusSignal: AbortSignal | undefined;
+    let resolveStatus: ((status: {
+      active: boolean;
+      chat_id: null;
+      turn_active: boolean;
+      pending_speech: null;
+    }) => void) | undefined;
+    getAudioCallStatusMock.mockImplementation((signal: AbortSignal) => {
+      statusSignal = signal;
+      return new Promise((resolve) => {
+        resolveStatus = resolve;
+      });
+    });
+    getBackendSnapshotMock.mockResolvedValue({ status: "ready", logs: [] });
+
+    const wrapper = mount(App);
+    await flushPromises();
+    wrapper.unmount();
+
+    expect(statusSignal?.aborted).toBe(true);
+
+    resolveStatus?.({
+      active: true,
+      chat_id: null,
+      turn_active: false,
+      pending_speech: null,
+    });
+    await flushPromises();
+
+    expect(requestRuntimeWarmUpMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps real audio-status failures visible", async () => {
+    const error = new TypeError("Load failed");
+    const consoleErrorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    getAudioCallStatusMock.mockRejectedValue(error);
+    getBackendSnapshotMock.mockResolvedValue({ status: "ready", logs: [] });
+
+    mount(App);
+    await flushPromises();
+
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      "[avatar-call] failed to sync status",
+      error,
+    );
   });
 
   it("shows a hard startup failure when UI config loading fails", async () => {
