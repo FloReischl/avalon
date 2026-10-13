@@ -11,6 +11,7 @@ import time
 from datetime import datetime, timezone
 from email import message_from_bytes
 from email.header import decode_header, make_header
+from email.policy import SMTP
 from email.utils import parseaddr, parsedate_to_datetime
 from typing import Callable
 
@@ -379,38 +380,30 @@ class GmailMailProvider:
     def _content_parts(message) -> tuple[list[tuple[str, str]], list[MailAttachment]]:
         body: list[tuple[str, str]] = []
         attachments: list[MailAttachment] = []
-        next_index = 0
-
-        def visit(part, is_root: bool = False) -> None:
-            nonlocal next_index
-            index = next_index
-            next_index += 1
-            disposition = part.get_content_disposition()
-            filename = part.get_filename()
-            if not is_root and GmailMailProvider._is_attachment_part(part, disposition, filename):
+        for index, part, is_attachment in GmailMailProvider._mail_parts(message):
+            if is_attachment:
                 attachments.append(
-                    MailAttachment(name=filename or "", id=str(index), mime_type=part.get_content_type())
+                    MailAttachment(
+                        name=part.get_filename() or "",
+                        id=str(index),
+                        mime_type=part.get_content_type(),
+                    )
                 )
-                return
             if part.is_multipart():
-                for child in part.get_payload():
-                    visit(child)
-                return
+                continue
             if part.get_content_type() not in {"text/plain", "text/html"}:
-                return
+                continue
             try:
                 payload = part.get_payload(decode=True) or b""
                 charset = part.get_content_charset() or "utf-8"
                 content = payload.decode(charset)
             except (binascii.Error, LookupError, TypeError, UnicodeError, ValueError):
-                return
+                continue
             body.append((part.get_content_type(), content))
-
-        visit(message, is_root=True)
         return body, attachments
 
     @staticmethod
-    def _attachment_parts(message):
+    def _mail_parts(message):
         next_index = 0
 
         def visit(part, is_root: bool = False):
@@ -419,14 +412,25 @@ class GmailMailProvider:
             next_index += 1
             disposition = part.get_content_disposition()
             filename = part.get_filename()
-            if not is_root and GmailMailProvider._is_attachment_part(part, disposition, filename):
-                yield index, part
+            is_attachment = not is_root and GmailMailProvider._is_attachment_part(
+                part, disposition, filename
+            )
+            yield index, part, is_attachment
+            if is_attachment:
                 return
             if part.is_multipart():
                 for child in part.get_payload():
                     yield from visit(child)
 
         yield from visit(message, is_root=True)
+
+    @staticmethod
+    def _attachment_parts(message):
+        yield from (
+            (index, part)
+            for index, part, is_attachment in GmailMailProvider._mail_parts(message)
+            if is_attachment
+        )
 
     @staticmethod
     def _is_attachment_part(part, disposition: str | None, filename: str | None) -> bool:
@@ -442,7 +446,7 @@ class GmailMailProvider:
         if payload is not None:
             return payload
         if part.get_content_type() == "message/rfc822" and isinstance(part.get_payload(), list):
-            return b"".join(item.as_bytes() for item in part.get_payload())
+            return b"".join(item.as_bytes(policy=SMTP) for item in part.get_payload())
         raise MailProtocolError("Gmail attachment content could not be decoded.")
 
     @staticmethod

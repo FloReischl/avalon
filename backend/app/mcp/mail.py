@@ -5,9 +5,11 @@ from datetime import datetime, timezone
 from typing import Literal
 
 from mcp.server import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 
 from app.mail.manager import MailProviderManager
 from app.mail.models import Mail, MailAttachmentResponse, MailMessage, MailProviderStats
+from app.mail.providers import MailError
 
 
 def register_mail_tools(mcp: MCPServer, manager: MailProviderManager) -> None:
@@ -47,7 +49,10 @@ def register_mail_tools(mcp: MCPServer, manager: MailProviderManager) -> None:
     @mcp.tool(name="mail.get_attachment")
     async def get_attachment(message_id: str, attachment_id: str) -> MailAttachmentResponse:
         """Get one mail attachment as Base64-encoded binary content."""
-        attachment = manager.get_attachment(message_id, attachment_id)
+        try:
+            attachment = manager.get_attachment(message_id, attachment_id)
+        except MailError as exc:
+            raise ToolError(str(exc)) from exc
         return MailAttachmentResponse(
             file_name=attachment.file_name,
             mime_type=attachment.mime_type,

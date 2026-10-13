@@ -16,6 +16,7 @@ from app.mcp.mail import register_mail_tools
 import app.mcp.mail as mcp_mail_module
 from app.mcp.server import AuthorizedMcpServer
 from mcp.server import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 from app.authorization.guard import PermissionGuard
 from app.authorization.permissions import build_permission_registry
 from app.authorization.requests import AuthorizationRequestManager
@@ -225,6 +226,61 @@ def test_gmail_get_attachment_uses_get_mail_attachment_ids_and_preserves_bytes(t
         ("bytes.bin", "2", "application/octet-stream"),
     ]
     assert attachment == MailAttachmentContent("bytes.bin", "application/octet-stream", b"\x00\xff\x80AB\x00\xff")
+
+
+def test_gmail_get_attachment_resolves_all_ids_in_nested_mime_parts(tmp_path, monkeypatch):
+    class AttachmentImap(FakeImap):
+        def search(self, _, *criteria): return "OK", [b"1"]
+
+        def fetch(self, identifier, query):
+            metadata = b'1 (X-GM-MSGID 99 FLAGS () INTERNALDATE "01-Jan-2026 12:00:00 +0000")'
+            raw_message = (
+                b"Content-Type: multipart/mixed; boundary=outer\r\n\r\n"
+                b"--outer\r\nContent-Type: multipart/alternative; boundary=inner\r\n\r\n"
+                b"--inner\r\nContent-Type: text/plain\r\n\r\nBody\r\n--inner--\r\n"
+                b"--outer\r\nContent-Type: application/pdf\r\nContent-Disposition: attachment; filename=one.pdf\r\n\r\none\r\n"
+                b"--outer\r\nContent-Type: multipart/mixed; boundary=nested\r\n\r\n"
+                b"--nested\r\nContent-Type: image/png\r\nContent-Disposition: attachment; filename=two.png\r\n\r\ntwo\r\n"
+                b"--nested--\r\n--outer--\r\n"
+            )
+            return "OK", [(metadata, raw_message)]
+
+    config = SimpleNamespace(account="a@example.test", oauth_token=tmp_path / "token.json", client_secret=tmp_path / "client.json")
+    provider = GmailMailProvider(config, imap_factory=AttachmentImap, sleep=lambda _: None)
+    monkeypatch.setattr(provider, "_credentials", lambda: SimpleNamespace(token="token", to_json=lambda: "{}"))
+    provider.connect()
+
+    mail = provider.get_mail("99")
+
+    assert [(item.id, item.name) for item in mail.attachments] == [("3", "one.pdf"), ("5", "two.png")]
+    assert [provider.get_attachment("99", item.id).content for item in mail.attachments] == [b"one", b"two"]
+
+
+def test_gmail_get_attachment_reconstructs_attached_rfc822_bytes(tmp_path, monkeypatch):
+    class AttachmentImap(FakeImap):
+        def search(self, _, *criteria): return "OK", [b"1"]
+
+        def fetch(self, identifier, query):
+            metadata = b'1 (X-GM-MSGID 99 FLAGS () INTERNALDATE "01-Jan-2026 12:00:00 +0000")'
+            raw_message = (
+                b"Content-Type: multipart/mixed; boundary=outer\r\n\r\n"
+                b"--outer\r\nContent-Type: message/rfc822\r\n"
+                b"Content-Disposition: attachment; filename=forwarded.eml\r\n\r\n"
+                b"From: sender@example.test\r\nSubject: Forwarded\r\n\r\nBody\r\n"
+                b"--outer--\r\n"
+            )
+            return "OK", [(metadata, raw_message)]
+
+    config = SimpleNamespace(account="a@example.test", oauth_token=tmp_path / "token.json", client_secret=tmp_path / "client.json")
+    provider = GmailMailProvider(config, imap_factory=AttachmentImap, sleep=lambda _: None)
+    monkeypatch.setattr(provider, "_credentials", lambda: SimpleNamespace(token="token", to_json=lambda: "{}"))
+    provider.connect()
+
+    mail = provider.get_mail("99")
+    attachment = provider.get_attachment("99", mail.attachments[0].id)
+
+    assert (attachment.file_name, attachment.mime_type) == ("forwarded.eml", "message/rfc822")
+    assert attachment.content == b"From: sender@example.test\r\nSubject: Forwarded\r\n\r\nBody"
 
 
 def test_gmail_get_attachment_rejects_unknown_or_wrong_message_attachment_id(tmp_path, monkeypatch):
@@ -508,6 +564,18 @@ def test_mail_mcp_registers_new_tools_and_delegates_to_manager():
     assert attachment_result.structured_content == {
         "file_name": "invoice.pdf", "mime_type": "application/pdf", "content_base64": "AP8=",
     }
+
+
+def test_mail_get_attachment_surfaces_provider_errors_as_mcp_tool_errors():
+    class Manager:
+        def get_attachment(self, message_id, attachment_id):
+            raise MailProtocolError("Gmail IMAP command failed.")
+
+    mcp = MCPServer("Test")
+    register_mail_tools(mcp, Manager())
+
+    with pytest.raises(ToolError, match="Gmail IMAP command failed"):
+        asyncio.run(mcp.call_tool("mail.get_attachment", {"message_id": "99", "attachment_id": "2"}))
 
 
 def test_new_mail_tools_use_the_existing_mail_read_permission():
