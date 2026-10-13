@@ -28,6 +28,24 @@ class MailAttachment:
 
 
 @dataclass(frozen=True)
+class MailAttachmentContent:
+    """The immutable bytes and metadata of one mail attachment."""
+
+    file_name: str
+    mime_type: str
+    content: bytes
+
+
+@dataclass(frozen=True)
+class MailAttachmentResponse:
+    """MCP-safe representation of one mail attachment."""
+
+    file_name: str
+    mime_type: str
+    content_base64: str
+
+
+@dataclass(frozen=True)
 class Mail:
     message_id: str
     is_read: bool

@@ -133,6 +133,61 @@ Create MP3 audio from text content.
 }
 ```
 
+### `mail.get_attachment`
+
+Get one mail attachment as Base64-encoded binary content.
+
+**Input schema**
+
+```json
+{
+  "properties": {
+    "attachment_id": {
+      "title": "Attachment Id",
+      "type": "string"
+    },
+    "message_id": {
+      "title": "Message Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "message_id",
+    "attachment_id"
+  ],
+  "title": "get_attachmentArguments",
+  "type": "object"
+}
+```
+
+**Output schema**
+
+```json
+{
+  "properties": {
+    "content_base64": {
+      "title": "Content Base64",
+      "type": "string"
+    },
+    "file_name": {
+      "title": "File Name",
+      "type": "string"
+    },
+    "mime_type": {
+      "title": "Mime Type",
+      "type": "string"
+    }
+  },
+  "required": [
+    "file_name",
+    "mime_type",
+    "content_base64"
+  ],
+  "title": "MailAttachmentResponse",
+  "type": "object"
+}
+```
+
 ### `mail.get_categories`
 
 **Input schema**
@@ -168,11 +223,18 @@ Create MP3 audio from text content.
 
 ### `mail.get_mail`
 
+Get one mail with its preferred body, as LLM-friendly plaintext by default.
+
 **Input schema**
 
 ```json
 {
   "properties": {
+    "as_text": {
+      "default": true,
+      "title": "As Text",
+      "type": "boolean"
+    },
     "message_id": {
       "title": "Message Id",
       "type": "string"
@@ -214,24 +276,6 @@ Create MP3 audio from text content.
       "title": "MailAttachment",
       "type": "object"
     },
-    "MailBodyPart": {
-      "properties": {
-        "content": {
-          "title": "Content",
-          "type": "string"
-        },
-        "mime_type": {
-          "title": "Mime Type",
-          "type": "string"
-        }
-      },
-      "required": [
-        "mime_type",
-        "content"
-      ],
-      "title": "MailBodyPart",
-      "type": "object"
-    },
     "MailSender": {
       "properties": {
         "email_address": {
@@ -259,12 +303,13 @@ Create MP3 audio from text content.
       "title": "Attachments",
       "type": "array"
     },
-    "body": {
-      "items": {
-        "$ref": "#/$defs/MailBodyPart"
-      },
-      "title": "Body",
-      "type": "array"
+    "body_content": {
+      "title": "Body Content",
+      "type": "string"
+    },
+    "body_mime_type": {
+      "title": "Body Mime Type",
+      "type": "string"
     },
     "internal_date": {
       "format": "date-time",
@@ -305,7 +350,8 @@ Create MP3 audio from text content.
     "subject",
     "sender",
     "thread_id",
-    "body",
+    "body_mime_type",
+    "body_content",
     "attachments"
   ],
   "title": "Mail",

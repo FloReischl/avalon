@@ -10,7 +10,7 @@ from app.mail.gmail import GmailMailProvider
 import app.mail.gmail as gmail_module
 from app.mail.body import looks_like_html, render_body, select_preferred_body
 from app.mail.manager import MailProviderManager
-from app.mail.models import Mail, MailMessage, MailProviderStats, MailSender
+from app.mail.models import Mail, MailAttachmentContent, MailMessage, MailProviderStats, MailSender
 from app.mail.providers import MailAuthenticationError, MailProtocolError, NoActiveMailProviderError, UnsupportedMailProviderError
 from app.mcp.mail import register_mail_tools
 import app.mcp.mail as mcp_mail_module
@@ -42,6 +42,7 @@ class FakeProvider:
     def get_messages(self, *_): return []
     def get_messages_by_thread(self, *_): return []
     def get_mail(self, *_): return None
+    def get_attachment(self, *_): return MailAttachmentContent("", "application/octet-stream", b"")
     def get_categories(self): return []
     def create_categories(self, *_): return None
     def set_categories(self, *_): return None
@@ -92,6 +93,8 @@ def test_provider_manager_requires_active_and_rejects_unknown():
         manager.get_provider_stats()
     with pytest.raises(NoActiveMailProviderError):
         manager.get_mail("99")
+    with pytest.raises(NoActiveMailProviderError):
+        manager.get_attachment("99", "2")
     with pytest.raises(NoActiveMailProviderError):
         manager.get_categories()
     with pytest.raises(UnsupportedMailProviderError):
@@ -191,6 +194,57 @@ def test_gmail_get_mail_prefers_html_and_preserves_attachment_metadata(tmp_path,
         call == ("fetch", b"1", "(X-GM-MSGID X-GM-THRID FLAGS INTERNALDATE BODY.PEEK[])")
         for call in fake.calls
     )
+
+
+def test_gmail_get_attachment_uses_get_mail_attachment_ids_and_preserves_bytes(tmp_path, monkeypatch):
+    class AttachmentImap(FakeImap):
+        def search(self, _, *criteria):
+            return "OK", [b"1"] if criteria == ("X-GM-MSGID", "99") else [b""]
+
+        def fetch(self, identifier, query):
+            metadata = b'1 (X-GM-MSGID 99 FLAGS () INTERNALDATE "01-Jan-2026 12:00:00 +0000")'
+            raw_message = (
+                b"Content-Type: multipart/mixed; boundary=outer\r\n\r\n"
+                b"--outer\r\nContent-Type: text/plain\r\n\r\nBody\r\n"
+                b"--outer\r\nContent-Type: application/octet-stream\r\n"
+                b"Content-Disposition: attachment; filename=bytes.bin\r\n"
+                b"Content-Transfer-Encoding: base64\r\n\r\nAP+AQUIA/w==\r\n"
+                b"--outer--\r\n"
+            )
+            return "OK", [(metadata, raw_message)]
+
+    config = SimpleNamespace(account="a@example.test", oauth_token=tmp_path / "token.json", client_secret=tmp_path / "client.json")
+    provider = GmailMailProvider(config, imap_factory=AttachmentImap, sleep=lambda _: None)
+    monkeypatch.setattr(provider, "_credentials", lambda: SimpleNamespace(token="token", to_json=lambda: "{}"))
+    provider.connect()
+
+    mail = provider.get_mail("99")
+    attachment = provider.get_attachment("99", mail.attachments[0].id)
+
+    assert [(item.name, item.id, item.mime_type) for item in mail.attachments] == [
+        ("bytes.bin", "2", "application/octet-stream"),
+    ]
+    assert attachment == MailAttachmentContent("bytes.bin", "application/octet-stream", b"\x00\xff\x80AB\x00\xff")
+
+
+def test_gmail_get_attachment_rejects_unknown_or_wrong_message_attachment_id(tmp_path, monkeypatch):
+    class AttachmentImap(FakeImap):
+        def search(self, _, *criteria):
+            return "OK", [b"1"] if criteria == ("X-GM-MSGID", "99") else [b""]
+
+        def fetch(self, identifier, query):
+            metadata = b'1 (X-GM-MSGID 99 FLAGS () INTERNALDATE "01-Jan-2026 12:00:00 +0000")'
+            return "OK", [(metadata, b"Content-Type: text/plain\r\n\r\nBody")]
+
+    config = SimpleNamespace(account="a@example.test", oauth_token=tmp_path / "token.json", client_secret=tmp_path / "client.json")
+    provider = GmailMailProvider(config, imap_factory=AttachmentImap, sleep=lambda _: None)
+    monkeypatch.setattr(provider, "_credentials", lambda: SimpleNamespace(token="token", to_json=lambda: "{}"))
+    provider.connect()
+
+    with pytest.raises(MailProtocolError, match="attachment ID"):
+        provider.get_attachment("99", "2")
+    with pytest.raises(MailProtocolError, match="message ID was not found"):
+        provider.get_attachment("100", "2")
 
 
 @pytest.mark.parametrize(
@@ -380,6 +434,8 @@ def test_gmail_get_mail_reports_fetch_failure(tmp_path, monkeypatch):
 
     with pytest.raises(MailProtocolError, match="requested message"):
         provider.get_mail("99")
+    with pytest.raises(MailProtocolError, match="requested message"):
+        provider.get_attachment("99", "2")
 
 
 def test_gmail_get_mail_rejects_invalid_or_unknown_message_ids(tmp_path, monkeypatch):
@@ -420,6 +476,10 @@ def test_mail_mcp_registers_new_tools_and_delegates_to_manager():
             calls.append(("categories",))
             return []
 
+        def get_attachment(self, message_id, attachment_id):
+            calls.append(("attachment", message_id, attachment_id))
+            return MailAttachmentContent("invoice.pdf", "application/pdf", b"\x00\xff")
+
         def create_categories(self, categories):
             calls.append(("create", categories))
 
@@ -433,17 +493,21 @@ def test_mail_mcp_registers_new_tools_and_delegates_to_manager():
     register_mail_tools(mcp, Manager())
 
     result = asyncio.run(mcp.call_tool("mail.get_mail", {"message_id": "99", "as_text": False}))
+    attachment_result = asyncio.run(mcp.call_tool("mail.get_attachment", {"message_id": "99", "attachment_id": "4"}))
     asyncio.run(mcp.call_tool("mail.get_categories", {}))
     asyncio.run(mcp.call_tool("mail.create_categories", {"categories": ["Project"]}))
     asyncio.run(mcp.call_tool("mail.set_categories", {"message_id": "99", "categories": ["Project"], "archive": True}))
     asyncio.run(mcp.call_tool("mail.unset_categories", {"message_id": "99", "categories": ["Project"]}))
 
     assert calls == [
-        ("mail", "99", False), ("categories",), ("create", ["Project"]),
+        ("mail", "99", False), ("attachment", "99", "4"), ("categories",), ("create", ["Project"]),
         ("set", "99", ["Project"], True), ("unset", "99", ["Project"]),
     ]
     assert "body" not in result.structured_content
     assert result.structured_content["body_mime_type"] == "text/plain"
+    assert attachment_result.structured_content == {
+        "file_name": "invoice.pdf", "mime_type": "application/pdf", "content_base64": "AP8=",
+    }
 
 
 def test_new_mail_tools_use_the_existing_mail_read_permission():
@@ -453,6 +517,7 @@ def test_new_mail_tools_use_the_existing_mail_read_permission():
             return 7
 
     assert AuthorizedMcpServer._resolve_permission("mail.get_mail", Repository()) == ("mail", "read", 7)
+    assert AuthorizedMcpServer._resolve_permission("mail.get_attachment", Repository()) == ("mail", "read", 7)
     assert AuthorizedMcpServer._resolve_permission("mail.get_categories", Repository()) == ("mail", "read", 7)
 
 

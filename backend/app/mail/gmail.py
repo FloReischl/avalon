@@ -21,6 +21,7 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from app.mail.models import (
     Mail,
     MailAttachment,
+    MailAttachmentContent,
     MailMessage,
     MailProviderStats,
     MailSender,
@@ -116,6 +117,29 @@ class GmailMailProvider:
         return [self._message(identifier, None, None) for identifier in self._search("X-GM-THRID", thread_id)]  # type: ignore[list-item]
 
     def get_mail(self, message_id: str, as_text: bool = True) -> Mail:
+        metadata, raw_message = self._raw_message(message_id)
+        return self._mail(metadata, raw_message, as_text)
+
+    def get_attachment(self, message_id: str, attachment_id: str) -> MailAttachmentContent:
+        _, raw_message = self._raw_message(message_id)
+        if not attachment_id.isdecimal():
+            raise ValueError("attachment_id must be an attachment ID returned by get_mail.")
+        attachment = next(
+            (
+                part for index, part in self._attachment_parts(message_from_bytes(raw_message))
+                if index == int(attachment_id)
+            ),
+            None,
+        )
+        if attachment is None:
+            raise MailProtocolError("Gmail attachment ID was not found for the requested message.")
+        return MailAttachmentContent(
+            file_name=attachment.get_filename() or "",
+            mime_type=attachment.get_content_type(),
+            content=self._attachment_bytes(attachment),
+        )
+
+    def _raw_message(self, message_id: str) -> tuple[bytes, bytes]:
         if _VALID_MESSAGE_ID.fullmatch(message_id) is None:
             raise ValueError("message_id must be a Gmail message ID returned by get_messages.")
         self._select(self._all_mailbox())
@@ -129,8 +153,7 @@ class GmailMailProvider:
         )
         if status != "OK" or not data or not isinstance(data[0], tuple):
             raise MailProtocolError("Gmail did not return the requested message.")
-        metadata, raw_message = data[0]
-        return self._mail(metadata, raw_message, as_text)
+        return data[0]
 
     def get_categories(self) -> list[str]:
         return [name for name, _ in self._list_categories()]
@@ -364,11 +387,7 @@ class GmailMailProvider:
             next_index += 1
             disposition = part.get_content_disposition()
             filename = part.get_filename()
-            if not is_root and (
-                disposition == "attachment"
-                or filename is not None
-                or part.get_content_type() == "message/rfc822"
-            ):
+            if not is_root and GmailMailProvider._is_attachment_part(part, disposition, filename):
                 attachments.append(
                     MailAttachment(name=filename or "", id=str(index), mime_type=part.get_content_type())
                 )
@@ -389,6 +408,42 @@ class GmailMailProvider:
 
         visit(message, is_root=True)
         return body, attachments
+
+    @staticmethod
+    def _attachment_parts(message):
+        next_index = 0
+
+        def visit(part, is_root: bool = False):
+            nonlocal next_index
+            index = next_index
+            next_index += 1
+            disposition = part.get_content_disposition()
+            filename = part.get_filename()
+            if not is_root and GmailMailProvider._is_attachment_part(part, disposition, filename):
+                yield index, part
+                return
+            if part.is_multipart():
+                for child in part.get_payload():
+                    yield from visit(child)
+
+        yield from visit(message, is_root=True)
+
+    @staticmethod
+    def _is_attachment_part(part, disposition: str | None, filename: str | None) -> bool:
+        return (
+            disposition == "attachment"
+            or filename is not None
+            or part.get_content_type() == "message/rfc822"
+        )
+
+    @staticmethod
+    def _attachment_bytes(part) -> bytes:
+        payload = part.get_payload(decode=True)
+        if payload is not None:
+            return payload
+        if part.get_content_type() == "message/rfc822" and isinstance(part.get_payload(), list):
+            return b"".join(item.as_bytes() for item in part.get_payload())
+        raise MailProtocolError("Gmail attachment content could not be decoded.")
 
     @staticmethod
     def _parse_mailbox_name(mailbox: bytes) -> str:
