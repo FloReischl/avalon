@@ -25,6 +25,7 @@ class FakeProvider:
     def __init__(self, fail=False, fail_disconnect=False):
         self.connect_calls = 0
         self.disconnect_calls = 0
+        self.cache_invalidations = 0
         self.fail = fail
         self.fail_disconnect = fail_disconnect
 
@@ -42,6 +43,10 @@ class FakeProvider:
     def get_messages_by_thread(self, *_): return []
     def get_mail(self, *_): return None
     def get_categories(self): return []
+    def create_categories(self, *_): return None
+    def set_categories(self, *_): return None
+    def unset_categories(self, *_): return None
+    def invalidate_categories_cache(self): self.cache_invalidations += 1
 
 
 def test_provider_selection_is_atomic_and_repeat_is_noop():
@@ -55,6 +60,7 @@ def test_provider_selection_is_atomic_and_repeat_is_noop():
         manager.set_provider("broken")
 
     assert gmail.connect_calls == 1
+    assert gmail.cache_invalidations == 2
     assert state.active_mail_provider == "gmail"
 
 
@@ -414,13 +420,28 @@ def test_mail_mcp_registers_new_tools_and_delegates_to_manager():
             calls.append(("categories",))
             return []
 
+        def create_categories(self, categories):
+            calls.append(("create", categories))
+
+        def set_categories(self, message_id, categories, archive=False):
+            calls.append(("set", message_id, categories, archive))
+
+        def unset_categories(self, message_id, categories):
+            calls.append(("unset", message_id, categories))
+
     mcp = MCPServer("Test")
     register_mail_tools(mcp, Manager())
 
     result = asyncio.run(mcp.call_tool("mail.get_mail", {"message_id": "99", "as_text": False}))
     asyncio.run(mcp.call_tool("mail.get_categories", {}))
+    asyncio.run(mcp.call_tool("mail.create_categories", {"categories": ["Project"]}))
+    asyncio.run(mcp.call_tool("mail.set_categories", {"message_id": "99", "categories": ["Project"], "archive": True}))
+    asyncio.run(mcp.call_tool("mail.unset_categories", {"message_id": "99", "categories": ["Project"]}))
 
-    assert calls == [("mail", "99", False), ("categories",)]
+    assert calls == [
+        ("mail", "99", False), ("categories",), ("create", ["Project"]),
+        ("set", "99", ["Project"], True), ("unset", "99", ["Project"]),
+    ]
     assert "body" not in result.structured_content
     assert result.structured_content["body_mime_type"] == "text/plain"
 
@@ -433,6 +454,113 @@ def test_new_mail_tools_use_the_existing_mail_read_permission():
 
     assert AuthorizedMcpServer._resolve_permission("mail.get_mail", Repository()) == ("mail", "read", 7)
     assert AuthorizedMcpServer._resolve_permission("mail.get_categories", Repository()) == ("mail", "read", 7)
+
+
+def test_mail_category_writes_use_mail_write_permission():
+    class Repository:
+        def get_permission_catalog_id(self, context, key):
+            return {("mail", "read"): 7, ("mail", "write"): 8}.get((context, key))
+
+    assert AuthorizedMcpServer._resolve_permission("mail.create_categories", Repository()) == ("mail", "write", 8)
+    assert AuthorizedMcpServer._resolve_permission("mail.set_categories", Repository()) == ("mail", "write", 8)
+    assert AuthorizedMcpServer._resolve_permission("mail.unset_categories", Repository()) == ("mail", "write", 8)
+
+
+def test_gmail_category_mutations_validate_cache_and_archive_in_order(tmp_path, monkeypatch):
+    class CategoriesImap(FakeImap):
+        def __init__(self, *_):
+            super().__init__()
+            self.labels = [
+                b'(\\HasNoChildren \\Inbox) "/" "INBOX"',
+                b'(\\HasNoChildren \\All) "/" "[Gmail]/All Mail"',
+                b'(\\HasNoChildren) "/" "Project"',
+            ]
+            self.stores = []
+            self.creates = []
+
+        def list(self):
+            self.calls.append("list")
+            return "OK", self.labels
+
+        def create(self, name):
+            self.creates.append(name)
+            return "OK", []
+
+        def store(self, identifier, operation, labels):
+            self.stores.append((identifier, operation, labels))
+            return "OK", []
+
+    config = SimpleNamespace(account="a@example.test", oauth_token=tmp_path / "token.json", client_secret=tmp_path / "client.json")
+    fake = CategoriesImap()
+    provider = GmailMailProvider(config, imap_factory=lambda *_: fake, sleep=lambda _: None)
+    monkeypatch.setattr(provider, "_credentials", lambda: SimpleNamespace(token="token", to_json=lambda: "{}"))
+    provider.connect()
+
+    provider.set_categories("99", ["Project"], archive=True)
+    provider.unset_categories("99", ["INBOX", "Project"])
+    provider.create_categories(["Project", "New", "New"])
+
+    assert fake.stores == [
+        (b"1", "+X-GM-LABELS", '("Project")'),
+        (b"1", "-X-GM-LABELS", '("INBOX")'),
+        (b"1", "-X-GM-LABELS", '("INBOX" "Project")'),
+    ]
+    assert fake.creates == ['"New"']
+    assert fake.calls.count("list") == 4  # lazy validation, two All-Mail lookups, direct create
+    assert provider._category_cache is None
+
+
+def test_gmail_category_mutations_fully_validate_before_writing(tmp_path, monkeypatch):
+    class CategoriesImap(FakeImap):
+        def __init__(self, *_):
+            super().__init__()
+            self.stores = []
+        def list(self): return "OK", [b'(\\HasNoChildren \\Inbox) "/" "INBOX"', b'(\\HasNoChildren \\All) "/" "[Gmail]/All Mail"', b'(\\HasNoChildren) "/" "Project"']
+        def store(self, *args): self.stores.append(args); return "OK", []
+
+    config = SimpleNamespace(account="a@example.test", oauth_token=tmp_path / "token.json", client_secret=tmp_path / "client.json")
+    fake = CategoriesImap()
+    provider = GmailMailProvider(config, imap_factory=lambda *_: fake, sleep=lambda _: None)
+    monkeypatch.setattr(provider, "_credentials", lambda: SimpleNamespace(token="token", to_json=lambda: "{}"))
+    provider.connect()
+
+    with pytest.raises(ValueError, match="does not exist"):
+        provider.set_categories("99", ["Project", "missing"])
+    with pytest.raises(ValueError, match="INBOX"):
+        provider.set_categories("99", ["INBOX"], archive=True)
+    with pytest.raises(ValueError, match="system"):
+        provider.unset_categories("99", ["[Gmail]/All Mail"])
+    assert fake.stores == []
+
+
+def test_gmail_category_write_failures_do_not_compensate_and_create_always_invalidates_cache(tmp_path, monkeypatch):
+    class CategoriesImap(FakeImap):
+        def __init__(self, *_):
+            super().__init__()
+            self.stores = []
+            self.create_count = 0
+        def list(self): return "OK", [b'(\\HasNoChildren \\Inbox) "/" "INBOX"', b'(\\HasNoChildren \\All) "/" "[Gmail]/All Mail"', b'(\\HasNoChildren) "/" "Project"']
+        def create(self, _):
+            self.create_count += 1
+            return ("NO", []) if self.create_count == 2 else ("OK", [])
+        def store(self, *args):
+            self.stores.append(args)
+            return ("NO", []) if len(self.stores) == 2 else ("OK", [])
+
+    config = SimpleNamespace(account="a@example.test", oauth_token=tmp_path / "token.json", client_secret=tmp_path / "client.json")
+    fake = CategoriesImap()
+    provider = GmailMailProvider(config, imap_factory=lambda *_: fake, sleep=lambda _: None)
+    monkeypatch.setattr(provider, "_credentials", lambda: SimpleNamespace(token="token", to_json=lambda: "{}"))
+    provider.connect()
+    provider._category_cache = [("stale", False)]
+
+    with pytest.raises(MailProtocolError, match="create"):
+        provider.create_categories(["One", "Two"])
+    assert provider._category_cache is None
+
+    with pytest.raises(MailProtocolError, match="update"):
+        provider.set_categories("99", ["Project"], archive=True)
+    assert [store[1] for store in fake.stores] == ["+X-GM-LABELS", "-X-GM-LABELS"]
 
 
 def test_gmail_stats_uses_special_use_all_mail_and_empty_mailbox(tmp_path, monkeypatch):

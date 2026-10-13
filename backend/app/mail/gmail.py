@@ -37,6 +37,10 @@ _THREAD_ID = re.compile(rb"X-GM-THRID (\d+)")
 _FLAGS = re.compile(rb"FLAGS \(([^)]*)\)")
 _MAILBOX = re.compile(rb' (?:"((?:[^"\\]|\\.)*)"|([^ ]+))$')
 _VALID_MESSAGE_ID = re.compile(r"[0-9]+$")
+_SYSTEM_LABEL_ATTRIBUTES = frozenset({
+    b"\\All", b"\\Archive", b"\\Drafts", b"\\Flagged", b"\\Important",
+    b"\\Inbox", b"\\Junk", b"\\Sent", b"\\Trash",
+})
 
 
 class GmailMailProvider:
@@ -55,6 +59,7 @@ class GmailMailProvider:
         self._sleep = sleep
         self._client: imaplib.IMAP4_SSL | None = None
         self._last_command_at: float | None = None
+        self._category_cache: list[tuple[str, bool]] | None = None
 
     def connect(self) -> None:
         if self._client is not None:
@@ -128,10 +133,87 @@ class GmailMailProvider:
         return self._mail(metadata, raw_message, as_text)
 
     def get_categories(self) -> list[str]:
+        return [name for name, _ in self._list_categories()]
+
+    def invalidate_categories_cache(self) -> None:
+        self._category_cache = None
+
+    def create_categories(self, categories: list[str]) -> None:
+        try:
+            existing = {name for name, _ in self._list_categories()}
+            for category in dict.fromkeys(categories):
+                if category in existing:
+                    continue
+                status, _ = self._command(
+                    self._client_or_raise().create, self._mailbox_argument(category)
+                )
+                if status != "OK":
+                    raise MailProtocolError(f"Could not create Gmail label '{category}'.")
+                existing.add(category)
+        finally:
+            self.invalidate_categories_cache()
+
+    def set_categories(self, message_id: str, categories: list[str], archive: bool = False) -> None:
+        if archive and "INBOX" in categories:
+            raise ValueError("INBOX cannot be set while archive is true.")
+        self._validate_writable_categories(categories)
+        identifier = self._message_identifier(message_id)
+        if categories:
+            self._store_labels(identifier, "+X-GM-LABELS", categories)
+        if archive:
+            self._store_labels(identifier, "-X-GM-LABELS", ["INBOX"])
+
+    def unset_categories(self, message_id: str, categories: list[str]) -> None:
+        self._validate_writable_categories(categories)
+        identifier = self._message_identifier(message_id)
+        if categories:
+            self._store_labels(identifier, "-X-GM-LABELS", categories)
+
+    def _list_categories(self) -> list[tuple[str, bool]]:
         status, mailboxes = self._command(self._client_or_raise().list)
         if status != "OK" or mailboxes is None:
             raise MailProtocolError("Could not list Gmail labels.")
-        return [self._parse_mailbox_name(mailbox) for mailbox in mailboxes if mailbox]
+        return [
+            (self._parse_mailbox_name(mailbox), self._is_system_mailbox(mailbox))
+            for mailbox in mailboxes if mailbox
+        ]
+
+    def _cached_categories(self) -> list[tuple[str, bool]]:
+        if self._category_cache is None:
+            self._category_cache = self._list_categories()
+        return self._category_cache
+
+    def _validate_writable_categories(self, categories: list[str]) -> None:
+        available = {name: system for name, system in self._cached_categories()}
+        for category in categories:
+            system = available.get(category)
+            if system is None:
+                raise ValueError(f"Gmail label '{category}' does not exist.")
+            if system and category != "INBOX":
+                raise ValueError(f"Gmail system label '{category}' cannot be changed.")
+
+    def _message_identifier(self, message_id: str) -> bytes:
+        self._select(self._all_mailbox())
+        identifiers = self._search("X-GM-MSGID", message_id)
+        if not identifiers:
+            raise MailProtocolError("Gmail message ID was not found.")
+        return identifiers[0]
+
+    def _store_labels(self, identifier: bytes, operation: str, categories: list[str]) -> None:
+        labels = "(" + " ".join(self._mailbox_argument(category) for category in categories) + ")"
+        status, _ = self._command(self._client_or_raise().store, identifier, operation, labels)
+        if status != "OK":
+            raise MailProtocolError("Could not update Gmail labels.")
+
+    @staticmethod
+    def _is_system_mailbox(mailbox: bytes) -> bool:
+        attributes = mailbox.split(b")", 1)[0].lstrip(b"(").split()
+        return bool(_SYSTEM_LABEL_ATTRIBUTES.intersection(attributes))
+
+    @staticmethod
+    def _mailbox_argument(name: str) -> str:
+        encoded = GmailMailProvider._encode_modified_utf7(name)
+        return '"' + encoded.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
     def _credentials(self) -> Credentials:
         credentials: Credentials | None = None
@@ -364,6 +446,31 @@ class GmailMailProvider:
                 position = end + 1
         except (binascii.Error, UnicodeDecodeError, ValueError):
             raise MailProtocolError("Could not decode Gmail mailbox name.") from None
+        return "".join(result)
+
+    @staticmethod
+    def _encode_modified_utf7(value: str) -> str:
+        """Encode a Unicode mailbox name for IMAP's modified UTF-7."""
+        result: list[str] = []
+        unicode_run: list[str] = []
+
+        def flush() -> None:
+            if not unicode_run:
+                return
+            encoded = base64.b64encode("".join(unicode_run).encode("utf-16-be"))
+            result.append("&" + encoded.rstrip(b"=").replace(b"/", b",").decode("ascii") + "-")
+            unicode_run.clear()
+
+        for character in value:
+            if 0x20 <= ord(character) <= 0x7E and character != "&":
+                flush()
+                result.append(character)
+            elif character == "&":
+                flush()
+                result.append("&-")
+            else:
+                unicode_run.append(character)
+        flush()
         return "".join(result)
 
     @staticmethod

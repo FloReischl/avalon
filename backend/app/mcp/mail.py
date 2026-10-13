@@ -10,7 +10,7 @@ from app.mail.models import Mail, MailMessage, MailProviderStats
 
 
 def register_mail_tools(mcp: MCPServer, manager: MailProviderManager) -> None:
-    """Register the AP1 read-only mail surface."""
+    """Register mail capabilities."""
 
     @mcp.tool(name="mail.set_provider")
     async def set_provider(provider: Literal["gmail", "mailbox"]) -> None:
@@ -46,6 +46,18 @@ def register_mail_tools(mcp: MCPServer, manager: MailProviderManager) -> None:
     @mcp.tool(name="mail.get_categories")
     async def get_categories() -> list[str]:
         return manager.get_categories()
+
+    @mcp.tool(name="mail.create_categories")
+    async def create_categories(categories: list[str]) -> None:
+        manager.create_categories(categories)
+
+    @mcp.tool(name="mail.set_categories")
+    async def set_categories(message_id: str, categories: list[str], archive: bool = False) -> None:
+        manager.set_categories(message_id, categories, archive)
+
+    @mcp.tool(name="mail.unset_categories")
+    async def unset_categories(message_id: str, categories: list[str]) -> None:
+        manager.unset_categories(message_id, categories)
 
 
 def _current_local_time() -> datetime:

@@ -133,9 +133,12 @@ class AuthorizedMcpServer(MCPServer):
         name: str, repository: AuthorizationRepository
     ) -> tuple[str, str, int] | None:
         if name.startswith("mail."):
-            permission_catalog_id = repository.get_permission_catalog_id("mail", "read")
+            key = "write" if name in {
+                "mail.create_categories", "mail.set_categories", "mail.unset_categories"
+            } else "read"
+            permission_catalog_id = repository.get_permission_catalog_id("mail", key)
             return (
-                ("mail", "read", permission_catalog_id)
+                ("mail", key, permission_catalog_id)
                 if permission_catalog_id is not None
                 else None
             )

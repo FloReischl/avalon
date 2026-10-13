@@ -23,6 +23,7 @@ class MailProviderManager:
     def set_provider(self, provider: str) -> None:
         state = self._state_provider()
         if state.active_mail_provider == provider:
+            self._active().invalidate_categories_cache()
             return
         factory = self._factories.get(provider)
         if factory is None:
@@ -33,6 +34,7 @@ class MailProviderManager:
         previous = self._providers.get(previous_name) if previous_name else None
         self._providers[provider] = candidate
         state.active_mail_provider = provider
+        candidate.invalidate_categories_cache()
         if previous is not None:
             try:
                 previous.disconnect()
@@ -57,6 +59,15 @@ class MailProviderManager:
 
     def get_categories(self) -> list[str]:
         return self._active().get_categories()
+
+    def create_categories(self, categories: list[str]) -> None:
+        self._active().create_categories(categories)
+
+    def set_categories(self, message_id: str, categories: list[str], archive: bool = False) -> None:
+        self._active().set_categories(message_id, categories, archive)
+
+    def unset_categories(self, message_id: str, categories: list[str]) -> None:
+        self._active().unset_categories(message_id, categories)
 
     def _active(self) -> MailProvider:
         name = self._state_provider().active_mail_provider

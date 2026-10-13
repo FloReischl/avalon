@@ -59,6 +59,9 @@ def test_mcp_server_exposes_music_and_web_tools():
         "mail.get_messages_by_thread",
         "mail.get_mail",
         "mail.get_categories",
+        "mail.create_categories",
+        "mail.set_categories",
+        "mail.unset_categories",
     ]
 
 

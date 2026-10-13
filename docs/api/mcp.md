@@ -92,6 +92,47 @@ Create MP3 audio from text content.
 }
 ```
 
+### `mail.create_categories`
+
+**Input schema**
+
+```json
+{
+  "properties": {
+    "categories": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Categories",
+      "type": "array"
+    }
+  },
+  "required": [
+    "categories"
+  ],
+  "title": "create_categoriesArguments",
+  "type": "object"
+}
+```
+
+**Output schema**
+
+```json
+{
+  "properties": {
+    "result": {
+      "title": "Result",
+      "type": "null"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "title": "create_categoriesOutput",
+  "type": "object"
+}
+```
+
 ### `mail.get_categories`
 
 **Input schema**
@@ -542,6 +583,57 @@ Create MP3 audio from text content.
 }
 ```
 
+### `mail.set_categories`
+
+**Input schema**
+
+```json
+{
+  "properties": {
+    "archive": {
+      "default": false,
+      "title": "Archive",
+      "type": "boolean"
+    },
+    "categories": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Categories",
+      "type": "array"
+    },
+    "message_id": {
+      "title": "Message Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "message_id",
+    "categories"
+  ],
+  "title": "set_categoriesArguments",
+  "type": "object"
+}
+```
+
+**Output schema**
+
+```json
+{
+  "properties": {
+    "result": {
+      "title": "Result",
+      "type": "null"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "title": "set_categoriesOutput",
+  "type": "object"
+}
+```
+
 ### `mail.set_provider`
 
 **Input schema**
@@ -580,6 +672,52 @@ Create MP3 audio from text content.
     "result"
   ],
   "title": "set_providerOutput",
+  "type": "object"
+}
+```
+
+### `mail.unset_categories`
+
+**Input schema**
+
+```json
+{
+  "properties": {
+    "categories": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Categories",
+      "type": "array"
+    },
+    "message_id": {
+      "title": "Message Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "message_id",
+    "categories"
+  ],
+  "title": "unset_categoriesArguments",
+  "type": "object"
+}
+```
+
+**Output schema**
+
+```json
+{
+  "properties": {
+    "result": {
+      "title": "Result",
+      "type": "null"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "title": "unset_categoriesOutput",
   "type": "object"
 }
 ```

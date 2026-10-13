@@ -371,6 +371,24 @@ class MailReadPermission:
         return original_arguments if approved_items else None
 
 
+class MailWritePermission(MailReadPermission):
+    """Authorize mail mutations as one capability-level operation."""
+
+    def allows(self, permission_set: PermissionSet, items: list[object]) -> bool:
+        del items
+        scope = json.loads(permission_set.scope)
+        return isinstance(scope, list) and "write" in scope
+
+    def format(self, item: object) -> str:
+        if not isinstance(item, str):
+            raise ValueError("mail.write items require an operation name.")
+        return f"E-Mail-Kategorien ändern: {item}"
+
+    def items(self, arguments: dict[str, object]) -> list[object]:
+        del arguments
+        return ["write"]
+
+
 def build_permission_registry() -> PermissionRegistry:
     """Build the registry available in the first authorization slice."""
     registry = PermissionRegistry()
@@ -380,4 +398,5 @@ def build_permission_registry() -> PermissionRegistry:
     registry.register("content", "create-audio", ContentCreateAudioPermission())
     registry.register("file", "copy", FileCopyPermission())
     registry.register("mail", "read", MailReadPermission())
+    registry.register("mail", "write", MailWritePermission())
     return registry
