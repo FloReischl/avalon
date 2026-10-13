@@ -92,6 +92,318 @@ Create MP3 audio from text content.
 }
 ```
 
+### `mail.get_messages`
+
+**Input schema**
+
+```json
+{
+  "properties": {
+    "before": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Before"
+    },
+    "category": {
+      "title": "Category",
+      "type": "string"
+    },
+    "since": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Since"
+    }
+  },
+  "required": [
+    "category"
+  ],
+  "title": "get_messagesArguments",
+  "type": "object"
+}
+```
+
+**Output schema**
+
+```json
+{
+  "$defs": {
+    "MailMessage": {
+      "properties": {
+        "internal_date": {
+          "format": "date-time",
+          "title": "Internal Date",
+          "type": "string"
+        },
+        "is_read": {
+          "title": "Is Read",
+          "type": "boolean"
+        },
+        "message_id": {
+          "title": "Message Id",
+          "type": "string"
+        },
+        "sender": {
+          "title": "Sender",
+          "type": "string"
+        },
+        "subject": {
+          "title": "Subject",
+          "type": "string"
+        },
+        "thread_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Thread Id"
+        }
+      },
+      "required": [
+        "message_id",
+        "thread_id",
+        "internal_date",
+        "subject",
+        "sender",
+        "is_read"
+      ],
+      "title": "MailMessage",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "result": {
+      "items": {
+        "$ref": "#/$defs/MailMessage"
+      },
+      "title": "Result",
+      "type": "array"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "title": "get_messagesOutput",
+  "type": "object"
+}
+```
+
+### `mail.get_messages_by_thread`
+
+**Input schema**
+
+```json
+{
+  "properties": {
+    "thread_id": {
+      "title": "Thread Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "thread_id"
+  ],
+  "title": "get_messages_by_threadArguments",
+  "type": "object"
+}
+```
+
+**Output schema**
+
+```json
+{
+  "$defs": {
+    "MailMessage": {
+      "properties": {
+        "internal_date": {
+          "format": "date-time",
+          "title": "Internal Date",
+          "type": "string"
+        },
+        "is_read": {
+          "title": "Is Read",
+          "type": "boolean"
+        },
+        "message_id": {
+          "title": "Message Id",
+          "type": "string"
+        },
+        "sender": {
+          "title": "Sender",
+          "type": "string"
+        },
+        "subject": {
+          "title": "Subject",
+          "type": "string"
+        },
+        "thread_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Thread Id"
+        }
+      },
+      "required": [
+        "message_id",
+        "thread_id",
+        "internal_date",
+        "subject",
+        "sender",
+        "is_read"
+      ],
+      "title": "MailMessage",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "result": {
+      "items": {
+        "$ref": "#/$defs/MailMessage"
+      },
+      "title": "Result",
+      "type": "array"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "title": "get_messages_by_threadOutput",
+  "type": "object"
+}
+```
+
+### `mail.get_provider_stats`
+
+**Input schema**
+
+```json
+{
+  "properties": {},
+  "title": "get_provider_statsArguments",
+  "type": "object"
+}
+```
+
+**Output schema**
+
+```json
+{
+  "properties": {
+    "all_messages_count": {
+      "title": "All Messages Count",
+      "type": "integer"
+    },
+    "inbox_messages_count": {
+      "title": "Inbox Messages Count",
+      "type": "integer"
+    },
+    "inbox_unread_count": {
+      "title": "Inbox Unread Count",
+      "type": "integer"
+    },
+    "newest_message_date": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Newest Message Date"
+    },
+    "oldest_message_date": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Oldest Message Date"
+    }
+  },
+  "required": [
+    "all_messages_count",
+    "inbox_messages_count",
+    "inbox_unread_count",
+    "oldest_message_date",
+    "newest_message_date"
+  ],
+  "title": "MailProviderStats",
+  "type": "object"
+}
+```
+
+### `mail.set_provider`
+
+**Input schema**
+
+```json
+{
+  "properties": {
+    "provider": {
+      "enum": [
+        "gmail",
+        "mailbox"
+      ],
+      "title": "Provider",
+      "type": "string"
+    }
+  },
+  "required": [
+    "provider"
+  ],
+  "title": "set_providerArguments",
+  "type": "object"
+}
+```
+
+**Output schema**
+
+```json
+{
+  "properties": {
+    "result": {
+      "title": "Result",
+      "type": "null"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "title": "set_providerOutput",
+  "type": "object"
+}
+```
+
 ### `music.play_tracks`
 
 Play the supplied track IDs in their given order.

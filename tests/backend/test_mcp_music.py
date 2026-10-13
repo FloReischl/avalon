@@ -32,6 +32,10 @@ def test_mcp_server_exposes_music_and_web_tools():
         "workflow.execute",
         "content.create-audio",
         "file.copy",
+        "mail.set_provider",
+        "mail.get_provider_stats",
+        "mail.get_messages",
+        "mail.get_messages_by_thread",
     ]
 
 

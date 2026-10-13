@@ -36,6 +36,7 @@ class AvalonState:
         )
         self._llm_inference_count = 0
         self._llm_switch_active = False
+        self.active_mail_provider: str | None = None
 
     @property
     def user_config(self) -> UserConfig:

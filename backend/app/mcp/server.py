@@ -15,6 +15,7 @@ from app.mcp.web import register_web_tools
 from app.mcp.workflow import register_workflow_tools
 from app.mcp.content import register_content_tools
 from app.mcp.file import register_file_tools
+from app.mcp.mail import register_mail_tools
 from app.persistence.music_repository import MusicRepository
 from app.services.music import MusicService
 from app.services.web_search import WebSearchService
@@ -26,6 +27,10 @@ from app.mcp.security import current_agent_id
 from app.services.workflows import WorkflowService
 from app.services.file_copy import FileCopyService
 from app.authorization.permissions import FileCopyPermission
+from app.mail.gmail import GmailMailProvider
+from app.mail.manager import MailProviderManager
+from app.mail.providers import MailConnectionError
+from app.state import get_avalon_state
 
 
 class AuthorizedMcpServer(MCPServer):
@@ -121,6 +126,13 @@ class AuthorizedMcpServer(MCPServer):
     def _resolve_permission(
         name: str, repository: AuthorizationRepository
     ) -> tuple[str, str, int] | None:
+        if name.startswith("mail."):
+            permission_catalog_id = repository.get_permission_catalog_id("mail", "read")
+            return (
+                ("mail", "read", permission_catalog_id)
+                if permission_catalog_id is not None
+                else None
+            )
         try:
             context, key = name.split(".", 1)
         except ValueError:
@@ -138,6 +150,7 @@ def create_mcp_server(
     workflow_service: WorkflowService | None = None,
     audio_creation_service: AudioCreationService | None = None,
     file_copy_service: FileCopyService | None = None,
+    mail_manager: MailProviderManager | None = None,
 ) -> MCPServer:
     """Create the MCP server mounted by the FastAPI backend."""
     mcp = AuthorizedMcpServer("Avalon Backend")
@@ -154,4 +167,13 @@ def create_mcp_server(
     register_content_tools(mcp, audio_creation_service or AudioCreationService())
     mcp._file_copy_service = file_copy_service or FileCopyService()  # type: ignore[attr-defined]
     register_file_tools(mcp, mcp._file_copy_service)  # type: ignore[attr-defined]
+    if mail_manager is None:
+        def gmail_provider() -> GmailMailProvider:
+            config = get_avalon_state().user_config.mail
+            if config is None:
+                raise MailConnectionError("Gmail mail configuration is missing.")
+            return GmailMailProvider(config.google)
+
+        mail_manager = MailProviderManager(get_avalon_state, {"gmail": gmail_provider})
+    register_mail_tools(mcp, mail_manager)
     return mcp

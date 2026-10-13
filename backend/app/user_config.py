@@ -77,11 +77,31 @@ class ChatUserConfig(StrictConfigModel):
     agent_key: NonEmptyStr
 
 
+class GoogleMailUserConfig(StrictConfigModel):
+    """Credentials and account identity used by the Gmail IMAP adapter."""
+
+    account: NonEmptyStr
+    oauth_token: Path
+    client_secret: Path
+
+    @field_validator("oauth_token", "client_secret", mode="after")
+    @classmethod
+    def normalize_mail_path(cls, value: Path) -> Path:
+        return value.expanduser().resolve()
+
+
+class MailUserConfig(StrictConfigModel):
+    """Optional mail-provider configuration."""
+
+    google: GoogleMailUserConfig
+
+
 class UserConfig(StrictConfigModel):
     """Validated editable Avalon configuration."""
 
     name: NonEmptyStr
     chat: ChatUserConfig
+    mail: MailUserConfig | None = None
     tts: TtsUserConfig
     @property
     def chat_default_agent_key(self) -> str:

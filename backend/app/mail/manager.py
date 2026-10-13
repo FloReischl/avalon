@@ -1,0 +1,44 @@
+"""Lifecycle and active-provider selection for read-only mail."""
+
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Callable
+
+from app.mail.models import MailMessage, MailProviderStats
+from app.mail.providers import MailProvider, NoActiveMailProviderError, UnsupportedMailProviderError
+from app.state import AvalonState
+
+
+class MailProviderManager:
+    def __init__(self, state_provider: Callable[[], AvalonState], factories: dict[str, Callable[[], MailProvider]]) -> None:
+        self._state_provider = state_provider
+        self._factories = factories
+        self._providers: dict[str, MailProvider] = {}
+
+    def set_provider(self, provider: str) -> None:
+        state = self._state_provider()
+        if state.active_mail_provider == provider:
+            return
+        factory = self._factories.get(provider)
+        if factory is None:
+            raise UnsupportedMailProviderError(f"Mail provider '{provider}' is not implemented.")
+        candidate = self._providers.get(provider) or factory()
+        candidate.connect()
+        self._providers[provider] = candidate
+        state.active_mail_provider = provider
+
+    def get_provider_stats(self) -> MailProviderStats:
+        return self._active().get_provider_stats()
+
+    def get_messages(self, category: str, since: datetime | None, before: datetime | None) -> list[MailMessage]:
+        return self._active().get_messages(category, since, before)
+
+    def get_messages_by_thread(self, thread_id: str) -> list[MailMessage]:
+        return self._active().get_messages_by_thread(thread_id)
+
+    def _active(self) -> MailProvider:
+        name = self._state_provider().active_mail_provider
+        if name is None or name not in self._providers:
+            raise NoActiveMailProviderError("No mail provider is active.")
+        return self._providers[name]

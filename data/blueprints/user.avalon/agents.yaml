@@ -42,6 +42,13 @@ agents:
     permission_set:
       validity_type: duration
       default_expiry: 36000
+  - permission_catalog:   # mail.read
+      context: mail
+      key: read
+    permission_set:
+      scope: ["read"]
+      validity_type: duration
+      default_expiry: 36000
 - name: Hedwig
   key: podcast
   icon: 🦉

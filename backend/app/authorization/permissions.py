@@ -341,6 +341,36 @@ class FileCopyPermission:
         return {"source": item["source"], "destination": item["destination"]}
 
 
+class MailReadPermission:
+    """Authorize read-only mail access as one capability-level operation."""
+
+    def allows(self, permission_set: PermissionSet, items: list[object]) -> bool:
+        del items
+        scope = json.loads(permission_set.scope)
+        return isinstance(scope, list) and (not scope or "read" in scope)
+
+    def check(self, permission_set: PermissionSet, grant: PermissionGrant, items: list[object], now: datetime) -> bool:
+        if not self.allows(permission_set, items):
+            return False
+        if grant.valid_from > now or grant.valid_to <= now:
+            return False
+        if permission_set.validity_type == "range":
+            return grant.range is not None and all(item in json.loads(grant.range) for item in items)
+        return True
+
+    def format(self, item: object) -> str:
+        if not isinstance(item, str):
+            raise ValueError("mail.read items require an operation name.")
+        return f"E-Mails lesen: {item}"
+
+    def items(self, arguments: dict[str, object]) -> list[object]:
+        del arguments
+        return ["read"]
+
+    def approved_arguments(self, approved_items: list[object], original_arguments: dict[str, object]) -> dict[str, object] | None:
+        return original_arguments if approved_items else None
+
+
 def build_permission_registry() -> PermissionRegistry:
     """Build the registry available in the first authorization slice."""
     registry = PermissionRegistry()
@@ -349,4 +379,5 @@ def build_permission_registry() -> PermissionRegistry:
     registry.register("workflow", "execute", WorkflowExecutePermission())
     registry.register("content", "create-audio", ContentCreateAudioPermission())
     registry.register("file", "copy", FileCopyPermission())
+    registry.register("mail", "read", MailReadPermission())
     return registry
