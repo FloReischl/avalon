@@ -1,5 +1,5 @@
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -10,6 +10,7 @@ from app.mail.manager import MailProviderManager
 from app.mail.models import MailMessage, MailProviderStats
 from app.mail.providers import MailAuthenticationError, MailProtocolError, NoActiveMailProviderError, UnsupportedMailProviderError
 from app.mcp.mail import register_mail_tools
+import app.mcp.mail as mcp_mail_module
 from mcp.server import MCPServer
 from app.authorization.guard import PermissionGuard
 from app.authorization.permissions import build_permission_registry
@@ -136,17 +137,39 @@ def test_mail_mcp_validates_dates_before_provider_access():
         asyncio.run(mcp.call_tool("mail.get_messages", {"category": "INBOX", "since": "2026-01-02T00:00:00", "before": "2026-01-01T00:00:00"}))
 
 
-def test_gmail_rejects_naive_time_and_missing_flags(tmp_path, monkeypatch):
+def test_gmail_accepts_naive_time_and_rejects_missing_flags(tmp_path, monkeypatch):
     config = SimpleNamespace(account="a@example.test", oauth_token=tmp_path / "token.json", client_secret=tmp_path / "client.json")
     fake = FakeImap()
     provider = GmailMailProvider(config, imap_factory=lambda *_: fake, sleep=lambda _: None)
     monkeypatch.setattr(provider, "_credentials", lambda: SimpleNamespace(token="token", to_json=lambda: "{}"))
     provider.connect()
-    with pytest.raises(ValueError, match="timezone"):
-        provider.get_messages("INBOX", datetime(2026, 1, 1), None)
+    assert provider._utc_timestamp(datetime(2026, 1, 1)).tzinfo == timezone.utc
     fake.fetch = lambda *_: ("OK", [(b'1 (X-GM-MSGID 1 X-GM-THRID 1 INTERNALDATE "01-Jan-2026 12:00:00 +0000")', b"\r\n")])
     with pytest.raises(MailProtocolError, match="FLAGS"):
         provider._message(b"1", None, None)
+
+
+def test_get_messages_interprets_naive_values_locally_and_defaults_before(monkeypatch):
+    fixed_local_now = datetime(2026, 7, 1, 10, 0, tzinfo=timezone(timedelta(hours=2)))
+    monkeypatch.setattr(mcp_mail_module, "_current_local_time", lambda: fixed_local_now)
+    calls = []
+
+    class Manager:
+        def get_messages(self, category, since, before):
+            calls.append((category, since, before))
+            return []
+
+    mcp = MCPServer("Test")
+    register_mail_tools(mcp, Manager())
+    asyncio.run(mcp.call_tool("mail.get_messages", {"category": "INBOX", "since": "2026-07-01T09:00:00"}))
+    asyncio.run(mcp.call_tool("mail.get_messages", {"category": "INBOX", "since": "2026-07-01T10:00:00+03:00", "before": "2026-07-01T03:00:00-05:00"}))
+    asyncio.run(mcp.call_tool("mail.get_messages", {"category": "INBOX", "before": None}))
+
+    assert calls == [
+        ("INBOX", datetime(2026, 7, 1, 7, tzinfo=timezone.utc), datetime(2026, 7, 1, 8, tzinfo=timezone.utc)),
+        ("INBOX", datetime(2026, 7, 1, 7, tzinfo=timezone.utc), datetime(2026, 7, 1, 8, tzinfo=timezone.utc)),
+        ("INBOX", None, datetime(2026, 7, 1, 8, tzinfo=timezone.utc)),
+    ]
 
 
 def test_gmail_closes_client_when_authentication_is_rejected(tmp_path, monkeypatch):

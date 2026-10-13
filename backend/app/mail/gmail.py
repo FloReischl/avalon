@@ -87,8 +87,8 @@ class GmailMailProvider:
     def get_messages(self, category: str, since: datetime | None, before: datetime | None) -> list[MailMessage]:
         if category != "INBOX":
             raise ValueError("Gmail AP1 supports only category 'INBOX'.")
-        since = self._utc_timestamp(since, "since")
-        before = self._utc_timestamp(before, "before")
+        since = self._utc_timestamp(since)
+        before = self._utc_timestamp(before)
         if since is not None and before is not None and since >= before:
             raise ValueError("since must be earlier than before.")
         self._select("INBOX")
@@ -225,9 +225,9 @@ class GmailMailProvider:
         return parsedate_to_datetime(match.group(1).decode("ascii")).astimezone(timezone.utc)
 
     @staticmethod
-    def _utc_timestamp(value: datetime | None, name: str) -> datetime | None:
+    def _utc_timestamp(value: datetime | None) -> datetime | None:
         if value is None:
             return None
         if value.tzinfo is None or value.utcoffset() is None:
-            raise ValueError(f"{name} must include a timezone.")
+            value = value.replace(tzinfo=datetime.now().astimezone().tzinfo)
         return value.astimezone(timezone.utc)
