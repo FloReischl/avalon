@@ -57,6 +57,8 @@ def test_mcp_server_exposes_music_and_web_tools():
         "mail.get_provider_stats",
         "mail.get_messages",
         "mail.get_messages_by_thread",
+        "mail.get_mail",
+        "mail.get_categories",
     ]
 
 

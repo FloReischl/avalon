@@ -92,6 +92,186 @@ Create MP3 audio from text content.
 }
 ```
 
+### `mail.get_categories`
+
+**Input schema**
+
+```json
+{
+  "properties": {},
+  "title": "get_categoriesArguments",
+  "type": "object"
+}
+```
+
+**Output schema**
+
+```json
+{
+  "properties": {
+    "result": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Result",
+      "type": "array"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "title": "get_categoriesOutput",
+  "type": "object"
+}
+```
+
+### `mail.get_mail`
+
+**Input schema**
+
+```json
+{
+  "properties": {
+    "message_id": {
+      "title": "Message Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "message_id"
+  ],
+  "title": "get_mailArguments",
+  "type": "object"
+}
+```
+
+**Output schema**
+
+```json
+{
+  "$defs": {
+    "MailAttachment": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "mime_type": {
+          "title": "Mime Type",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "id",
+        "mime_type"
+      ],
+      "title": "MailAttachment",
+      "type": "object"
+    },
+    "MailBodyPart": {
+      "properties": {
+        "content": {
+          "title": "Content",
+          "type": "string"
+        },
+        "mime_type": {
+          "title": "Mime Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "mime_type",
+        "content"
+      ],
+      "title": "MailBodyPart",
+      "type": "object"
+    },
+    "MailSender": {
+      "properties": {
+        "email_address": {
+          "title": "Email Address",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "email_address"
+      ],
+      "title": "MailSender",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "attachments": {
+      "items": {
+        "$ref": "#/$defs/MailAttachment"
+      },
+      "title": "Attachments",
+      "type": "array"
+    },
+    "body": {
+      "items": {
+        "$ref": "#/$defs/MailBodyPart"
+      },
+      "title": "Body",
+      "type": "array"
+    },
+    "internal_date": {
+      "format": "date-time",
+      "title": "Internal Date",
+      "type": "string"
+    },
+    "is_read": {
+      "title": "Is Read",
+      "type": "boolean"
+    },
+    "message_id": {
+      "title": "Message Id",
+      "type": "string"
+    },
+    "sender": {
+      "$ref": "#/$defs/MailSender"
+    },
+    "subject": {
+      "title": "Subject",
+      "type": "string"
+    },
+    "thread_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Thread Id"
+    }
+  },
+  "required": [
+    "message_id",
+    "is_read",
+    "internal_date",
+    "subject",
+    "sender",
+    "thread_id",
+    "body",
+    "attachments"
+  ],
+  "title": "Mail",
+  "type": "object"
+}
+```
+
 ### `mail.get_messages`
 
 **Input schema**

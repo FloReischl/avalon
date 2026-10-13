@@ -15,6 +15,37 @@ class MailMessage:
 
 
 @dataclass(frozen=True)
+class MailSender:
+    name: str
+    email_address: str
+
+
+@dataclass(frozen=True)
+class MailBodyPart:
+    mime_type: str
+    content: str
+
+
+@dataclass(frozen=True)
+class MailAttachment:
+    name: str
+    id: str
+    mime_type: str
+
+
+@dataclass(frozen=True)
+class Mail:
+    message_id: str
+    is_read: bool
+    internal_date: datetime
+    subject: str
+    sender: MailSender
+    thread_id: str | None
+    body: list[MailBodyPart]
+    attachments: list[MailAttachment]
+
+
+@dataclass(frozen=True)
 class MailProviderStats:
     all_messages_count: int
     inbox_messages_count: int

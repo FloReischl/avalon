@@ -6,7 +6,7 @@ import logging
 from datetime import datetime
 from typing import Callable
 
-from app.mail.models import MailMessage, MailProviderStats
+from app.mail.models import Mail, MailMessage, MailProviderStats
 from app.mail.providers import MailProvider, NoActiveMailProviderError, UnsupportedMailProviderError
 from app.state import AvalonState
 
@@ -51,6 +51,12 @@ class MailProviderManager:
 
     def get_messages_by_thread(self, thread_id: str) -> list[MailMessage]:
         return self._active().get_messages_by_thread(thread_id)
+
+    def get_mail(self, message_id: str) -> Mail:
+        return self._active().get_mail(message_id)
+
+    def get_categories(self) -> list[str]:
+        return self._active().get_categories()
 
     def _active(self) -> MailProvider:
         name = self._state_provider().active_mail_provider

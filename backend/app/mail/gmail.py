@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import imaplib
 import os
 import re
@@ -9,15 +10,21 @@ import time
 from datetime import datetime, timezone
 from email import message_from_bytes
 from email.header import decode_header, make_header
-from email.utils import parsedate_to_datetime
-from pathlib import Path
+from email.utils import parseaddr, parsedate_to_datetime
 from typing import Callable
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 
-from app.mail.models import MailMessage, MailProviderStats
+from app.mail.models import (
+    Mail,
+    MailAttachment,
+    MailBodyPart,
+    MailMessage,
+    MailProviderStats,
+    MailSender,
+)
 from app.mail.providers import MailAuthenticationError, MailConnectionError, MailProtocolError
 from app.user_config import GoogleMailUserConfig
 
@@ -27,7 +34,8 @@ _INTERNALDATE = re.compile(rb'INTERNALDATE "([^"]+)"')
 _MESSAGE_ID = re.compile(rb"X-GM-MSGID (\d+)")
 _THREAD_ID = re.compile(rb"X-GM-THRID (\d+)")
 _FLAGS = re.compile(rb"FLAGS \(([^)]*)\)")
-_MAILBOX = re.compile(rb' "([^"]+)"$')
+_MAILBOX = re.compile(rb' (?:"((?:[^"\\]|\\.)*)"|([^ ]+))$')
+_VALID_MESSAGE_ID = re.compile(r"[0-9]+$")
 
 
 class GmailMailProvider:
@@ -101,6 +109,29 @@ class GmailMailProvider:
         self._select(self._all_mailbox())
         return [self._message(identifier, None, None) for identifier in self._search("X-GM-THRID", thread_id)]  # type: ignore[list-item]
 
+    def get_mail(self, message_id: str) -> Mail:
+        if _VALID_MESSAGE_ID.fullmatch(message_id) is None:
+            raise ValueError("message_id must be a Gmail message ID returned by get_messages.")
+        self._select(self._all_mailbox())
+        identifiers = self._search("X-GM-MSGID", message_id)
+        if not identifiers:
+            raise MailProtocolError("Gmail message ID was not found.")
+        status, data = self._command(
+            self._client_or_raise().fetch,
+            identifiers[0],
+            "(X-GM-MSGID X-GM-THRID FLAGS INTERNALDATE BODY.PEEK[])",
+        )
+        if status != "OK" or not data or not isinstance(data[0], tuple):
+            raise MailProtocolError("Gmail did not return the requested message.")
+        metadata, raw_message = data[0]
+        return self._mail(metadata, raw_message)
+
+    def get_categories(self) -> list[str]:
+        status, mailboxes = self._command(self._client_or_raise().list)
+        if status != "OK" or mailboxes is None:
+            raise MailProtocolError("Could not list Gmail labels.")
+        return [self._parse_mailbox_name(mailbox) for mailbox in mailboxes if mailbox]
+
     def _credentials(self) -> Credentials:
         credentials: Credentials | None = None
         try:
@@ -173,10 +204,7 @@ class GmailMailProvider:
         matches = [line for line in mailboxes if line and b"\\All" in line.split(b")", 1)[0]]
         if len(matches) != 1:
             raise MailProtocolError("Gmail All Mail mailbox is ambiguous or unavailable.")
-        match = _MAILBOX.search(matches[0])
-        if match is None:
-            raise MailProtocolError("Could not parse Gmail All Mail mailbox.")
-        return match.group(1).decode("utf-8")
+        return self._parse_mailbox_name(matches[0])
 
     def _edge_dates(self, count: int) -> tuple[datetime | None, datetime | None]:
         if count == 0:
@@ -216,6 +244,89 @@ class GmailMailProvider:
             sender=str(make_header(decode_header(message.get("From", "")))),
             is_read=b"\\Seen" in flags.group(1).split(),
         )
+
+    def _mail(self, metadata: bytes, raw_message: bytes) -> Mail:
+        message_id = _MESSAGE_ID.search(metadata)
+        if message_id is None:
+            raise MailProtocolError("Gmail did not return X-GM-MSGID.")
+        flags = _FLAGS.search(metadata)
+        if flags is None:
+            raise MailProtocolError("Gmail did not return FLAGS.")
+        thread_id = _THREAD_ID.search(metadata)
+        message = message_from_bytes(raw_message)
+        sender_name, sender_email = parseaddr(str(make_header(decode_header(message.get("From", "")))))
+        body, attachments = self._content_parts(message)
+        return Mail(
+            message_id=message_id.group(1).decode(),
+            is_read=b"\\Seen" in flags.group(1).split(),
+            internal_date=self._parse_internal_date(metadata),
+            subject=str(make_header(decode_header(message.get("Subject", "")))),
+            sender=MailSender(name=sender_name, email_address=sender_email),
+            thread_id=thread_id.group(1).decode() if thread_id else None,
+            body=body,
+            attachments=attachments,
+        )
+
+    @staticmethod
+    def _content_parts(message) -> tuple[list[MailBodyPart], list[MailAttachment]]:
+        body: list[MailBodyPart] = []
+        attachments: list[MailAttachment] = []
+        for index, part in enumerate(message.walk()):
+            if part.is_multipart():
+                continue
+            disposition = part.get_content_disposition()
+            filename = part.get_filename()
+            if disposition == "attachment" or filename is not None:
+                attachments.append(
+                    MailAttachment(name=filename or "", id=str(index), mime_type=part.get_content_type())
+                )
+                continue
+            if part.get_content_type() not in {"text/plain", "text/html"}:
+                continue
+            payload = part.get_payload(decode=True) or b""
+            charset = part.get_content_charset() or "utf-8"
+            try:
+                content = payload.decode(charset)
+            except (LookupError, UnicodeDecodeError):
+                content = payload.decode("utf-8", errors="replace")
+            body.append(MailBodyPart(mime_type=part.get_content_type(), content=content))
+        return body, attachments
+
+    @staticmethod
+    def _parse_mailbox_name(mailbox: bytes) -> str:
+        match = _MAILBOX.search(mailbox)
+        if match is None:
+            raise MailProtocolError("Could not parse Gmail mailbox name.")
+        encoded = match.group(1) if match.group(1) is not None else match.group(2)
+        assert encoded is not None
+        return GmailMailProvider._decode_modified_utf7(encoded.replace(b'\\"', b'"').replace(b"\\\\", b"\\"))
+
+    @staticmethod
+    def _decode_modified_utf7(value: bytes) -> str:
+        """Decode the modified UTF-7 mailbox representation used by IMAP."""
+        result: list[str] = []
+        position = 0
+        while position < len(value):
+            marker = value.find(b"&", position)
+            if marker < 0:
+                result.append(value[position:].decode("ascii"))
+                break
+            result.append(value[position:marker].decode("ascii"))
+            end = value.find(b"-", marker)
+            if end < 0:
+                raise MailProtocolError("Could not decode Gmail mailbox name.")
+            encoded = value[marker + 1:end]
+            if not encoded:
+                result.append("&")
+            else:
+                try:
+                    padding = b"=" * (-len(encoded) % 4)
+                    decoded = base64.b64decode(encoded.replace(b",", b"/") + padding)
+                    result.append(decoded.decode("utf-16-be"))
+                except (UnicodeDecodeError, ValueError):
+                    raise MailProtocolError("Could not decode Gmail mailbox name.") from None
+            position = end + 1
+        return "".join(result)
 
     @staticmethod
     def _parse_internal_date(metadata: bytes) -> datetime:

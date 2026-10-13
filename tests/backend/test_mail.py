@@ -9,10 +9,11 @@ import pytest
 from app.mail.gmail import GmailMailProvider
 import app.mail.gmail as gmail_module
 from app.mail.manager import MailProviderManager
-from app.mail.models import MailMessage, MailProviderStats
+from app.mail.models import Mail, MailMessage, MailProviderStats, MailSender
 from app.mail.providers import MailAuthenticationError, MailProtocolError, NoActiveMailProviderError, UnsupportedMailProviderError
 from app.mcp.mail import register_mail_tools
 import app.mcp.mail as mcp_mail_module
+from app.mcp.server import AuthorizedMcpServer
 from mcp.server import MCPServer
 from app.authorization.guard import PermissionGuard
 from app.authorization.permissions import build_permission_registry
@@ -38,6 +39,8 @@ class FakeProvider:
     def get_provider_stats(self): return MailProviderStats(0, 0, 0, None, None)
     def get_messages(self, *_): return []
     def get_messages_by_thread(self, *_): return []
+    def get_mail(self, *_): return None
+    def get_categories(self): return []
 
 
 def test_provider_selection_is_atomic_and_repeat_is_noop():
@@ -80,6 +83,10 @@ def test_provider_manager_requires_active_and_rejects_unknown():
     manager = MailProviderManager(lambda: state, {})
     with pytest.raises(NoActiveMailProviderError):
         manager.get_provider_stats()
+    with pytest.raises(NoActiveMailProviderError):
+        manager.get_mail("99")
+    with pytest.raises(NoActiveMailProviderError):
+        manager.get_categories()
     with pytest.raises(UnsupportedMailProviderError):
         manager.set_provider("mailbox")
 
@@ -118,6 +125,173 @@ def test_gmail_reads_metadata_filters_precisely_and_finds_archived_thread(tmp_pa
     assert [(m.message_id, m.thread_id, m.subject, m.sender, m.is_read) for m in messages] == [("99", "77", "Hallo", "Alice <alice@example.test>", True)]
     assert [message.message_id for message in thread] == ["99", "100"]
     assert ("select", '"[Gmail]/Alle Nachrichten"') in fake.calls
+
+
+def test_gmail_get_mail_returns_all_displayable_parts_and_attachment_metadata(tmp_path, monkeypatch):
+    class DetailImap(FakeImap):
+        def fetch(self, identifier, query):
+            self.calls.append(("fetch", identifier, query))
+            metadata = (
+                b'1 (X-GM-MSGID 99 X-GM-THRID 77 FLAGS () '
+                b'INTERNALDATE "01-Jan-2026 12:00:00 +0000")'
+            )
+            raw_message = (
+                b"From: Alice Example <alice@example.test>\r\n"
+                b"Subject: =?utf-8?q?Gr=C3=BC=C3=9Fe?=\r\n"
+                b"Content-Type: multipart/mixed; boundary=outer\r\n\r\n"
+                b"--outer\r\nContent-Type: multipart/alternative; boundary=inner\r\n\r\n"
+                b"--inner\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nHallo\r\n"
+                b"--inner\r\nContent-Type: text/html; charset=utf-8\r\n\r\n<p>Hallo</p>\r\n"
+                b"--inner--\r\n"
+                b"--outer\r\nContent-Type: application/pdf\r\n"
+                b"Content-Disposition: attachment; filename=invoice.pdf\r\n"
+                b"Content-Transfer-Encoding: base64\r\n\r\ncGRm\r\n"
+                b"--outer\r\nContent-Type: image/png\r\n"
+                b"Content-Disposition: attachment; filename=image.png\r\n"
+                b"Content-Transfer-Encoding: base64\r\n\rcG5n\r\n"
+                b"--outer--\r\n"
+            )
+            return "OK", [(metadata, raw_message)]
+
+        def search(self, _, *criteria):
+            self.calls.append(("search", criteria))
+            return "OK", [b"1"] if criteria == ("X-GM-MSGID", "99") else super().search(_, *criteria)
+
+    config = SimpleNamespace(account="a@example.test", oauth_token=tmp_path / "token.json", client_secret=tmp_path / "client.json")
+    fake = DetailImap()
+    provider = GmailMailProvider(config, imap_factory=lambda *_: fake, sleep=lambda _: None)
+    monkeypatch.setattr(provider, "_credentials", lambda: SimpleNamespace(token="token", to_json=lambda: "{}"))
+    provider.connect()
+
+    mail = provider.get_mail("99")
+
+    assert mail.message_id == "99"
+    assert mail.is_read is False
+    assert mail.internal_date == datetime(2026, 1, 1, 12, tzinfo=timezone.utc)
+    assert mail.subject == "Grüße"
+    assert (mail.sender.name, mail.sender.email_address) == ("Alice Example", "alice@example.test")
+    assert mail.thread_id == "77"
+    assert [(part.mime_type, part.content) for part in mail.body] == [
+        ("text/plain", "Hallo"),
+        ("text/html", "<p>Hallo</p>"),
+    ]
+    assert [(attachment.name, attachment.id, attachment.mime_type) for attachment in mail.attachments] == [
+        ("invoice.pdf", "4", "application/pdf"),
+        ("image.png", "5", "image/png"),
+    ]
+    assert len({attachment.id for attachment in mail.attachments}) == len(mail.attachments)
+    assert ("select", '"[Gmail]/Alle Nachrichten"') in fake.calls
+    assert any(
+        call == ("fetch", b"1", "(X-GM-MSGID X-GM-THRID FLAGS INTERNALDATE BODY.PEEK[])")
+        for call in fake.calls
+    )
+
+
+@pytest.mark.parametrize(
+    ("raw_message", "expected_body"),
+    [
+        (b"Subject: Plain\r\n\r\nPlain body", [("text/plain", "Plain body")]),
+        (
+            b"Subject: HTML\r\nContent-Type: text/html; charset=utf-8\r\n\r\n<strong>HTML</strong>",
+            [("text/html", "<strong>HTML</strong>")],
+        ),
+        (b"Subject: Empty\r\nContent-Type: application/octet-stream\r\n\r\n", []),
+    ],
+)
+def test_gmail_get_mail_handles_single_or_missing_displayable_body(tmp_path, monkeypatch, raw_message, expected_body):
+    class BodyImap(FakeImap):
+        def search(self, _, *criteria):
+            return "OK", [b"1"]
+
+        def fetch(self, identifier, query):
+            metadata = b'1 (X-GM-MSGID 99 FLAGS () INTERNALDATE "01-Jan-2026 12:00:00 +0000")'
+            return "OK", [(metadata, raw_message)]
+
+    config = SimpleNamespace(account="a@example.test", oauth_token=tmp_path / "token.json", client_secret=tmp_path / "client.json")
+    provider = GmailMailProvider(config, imap_factory=BodyImap, sleep=lambda _: None)
+    monkeypatch.setattr(provider, "_credentials", lambda: SimpleNamespace(token="token", to_json=lambda: "{}"))
+    provider.connect()
+
+    mail = provider.get_mail("99")
+
+    assert [(part.mime_type, part.content) for part in mail.body] == expected_body
+    assert mail.attachments == []
+    assert (mail.sender.name, mail.sender.email_address, mail.thread_id) == ("", "", None)
+
+
+def test_gmail_get_categories_returns_system_custom_and_nested_labels(tmp_path, monkeypatch):
+    class CategoriesImap(FakeImap):
+        def list(self):
+            return "OK", [
+                b'(\\HasNoChildren \\Inbox) "/" "INBOX"',
+                b'(\\HasNoChildren \\All) "/" "[Gmail]/Alle Nachrichten"',
+                b'(\\HasChildren) "/" "Projects"',
+                b'(\\HasNoChildren) "/" "Projects/2026"',
+                b'(\\HasNoChildren) "/" "&ZeVnLIqe-"',
+            ]
+
+    config = SimpleNamespace(account="a@example.test", oauth_token=tmp_path / "token.json", client_secret=tmp_path / "client.json")
+    provider = GmailMailProvider(config, imap_factory=CategoriesImap, sleep=lambda _: None)
+    monkeypatch.setattr(provider, "_credentials", lambda: SimpleNamespace(token="token", to_json=lambda: "{}"))
+    provider.connect()
+
+    assert provider.get_categories() == ["INBOX", "[Gmail]/Alle Nachrichten", "Projects", "Projects/2026", "日本語"]
+
+
+def test_gmail_get_mail_rejects_invalid_or_unknown_message_ids(tmp_path, monkeypatch):
+    class EmptySearchImap(FakeImap):
+        def search(self, *_):
+            return "OK", [b""]
+
+    config = SimpleNamespace(account="a@example.test", oauth_token=tmp_path / "token.json", client_secret=tmp_path / "client.json")
+    provider = GmailMailProvider(config, imap_factory=EmptySearchImap, sleep=lambda _: None)
+    monkeypatch.setattr(provider, "_credentials", lambda: SimpleNamespace(token="token", to_json=lambda: "{}"))
+    provider.connect()
+
+    with pytest.raises(ValueError, match="message_id"):
+        provider.get_mail("not-an-id")
+    with pytest.raises(MailProtocolError, match="not found"):
+        provider.get_mail("99")
+
+
+def test_mail_mcp_registers_new_tools_and_delegates_to_manager():
+    calls = []
+
+    class Manager:
+        def get_mail(self, message_id):
+            calls.append(("mail", message_id))
+            return Mail(
+                message_id=message_id,
+                is_read=True,
+                internal_date=datetime(2026, 1, 1, tzinfo=timezone.utc),
+                subject="",
+                sender=MailSender(name="", email_address=""),
+                thread_id=None,
+                body=[],
+                attachments=[],
+            )
+
+        def get_categories(self):
+            calls.append(("categories",))
+            return []
+
+    mcp = MCPServer("Test")
+    register_mail_tools(mcp, Manager())
+
+    asyncio.run(mcp.call_tool("mail.get_mail", {"message_id": "99"}))
+    asyncio.run(mcp.call_tool("mail.get_categories", {}))
+
+    assert calls == [("mail", "99"), ("categories",)]
+
+
+def test_new_mail_tools_use_the_existing_mail_read_permission():
+    class Repository:
+        def get_permission_catalog_id(self, context, key):
+            assert (context, key) == ("mail", "read")
+            return 7
+
+    assert AuthorizedMcpServer._resolve_permission("mail.get_mail", Repository()) == ("mail", "read", 7)
+    assert AuthorizedMcpServer._resolve_permission("mail.get_categories", Repository()) == ("mail", "read", 7)
 
 
 def test_gmail_stats_uses_special_use_all_mail_and_empty_mailbox(tmp_path, monkeypatch):

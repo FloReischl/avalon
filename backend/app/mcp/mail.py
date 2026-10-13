@@ -6,7 +6,7 @@ from typing import Literal
 from mcp.server import MCPServer
 
 from app.mail.manager import MailProviderManager
-from app.mail.models import MailMessage, MailProviderStats
+from app.mail.models import Mail, MailMessage, MailProviderStats
 
 
 def register_mail_tools(mcp: MCPServer, manager: MailProviderManager) -> None:
@@ -37,6 +37,14 @@ def register_mail_tools(mcp: MCPServer, manager: MailProviderManager) -> None:
         if not thread_id.strip():
             raise ValueError("thread_id must not be empty.")
         return manager.get_messages_by_thread(thread_id)
+
+    @mcp.tool(name="mail.get_mail")
+    async def get_mail(message_id: str) -> Mail:
+        return manager.get_mail(message_id)
+
+    @mcp.tool(name="mail.get_categories")
+    async def get_categories() -> list[str]:
+        return manager.get_categories()
 
 
 def _current_local_time() -> datetime:
