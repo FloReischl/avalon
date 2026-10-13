@@ -39,8 +39,9 @@ def register_mail_tools(mcp: MCPServer, manager: MailProviderManager) -> None:
         return manager.get_messages_by_thread(thread_id)
 
     @mcp.tool(name="mail.get_mail")
-    async def get_mail(message_id: str) -> Mail:
-        return manager.get_mail(message_id)
+    async def get_mail(message_id: str, as_text: bool = True) -> Mail:
+        """Get one mail with its preferred body, as LLM-friendly plaintext by default."""
+        return manager.get_mail(message_id, as_text)
 
     @mcp.tool(name="mail.get_categories")
     async def get_categories() -> list[str]:

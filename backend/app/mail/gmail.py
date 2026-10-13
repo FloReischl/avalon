@@ -21,11 +21,11 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from app.mail.models import (
     Mail,
     MailAttachment,
-    MailBodyPart,
     MailMessage,
     MailProviderStats,
     MailSender,
 )
+from app.mail.body import render_body, select_preferred_body
 from app.mail.providers import MailAuthenticationError, MailConnectionError, MailProtocolError
 from app.user_config import GoogleMailUserConfig
 
@@ -110,7 +110,7 @@ class GmailMailProvider:
         self._select(self._all_mailbox())
         return [self._message(identifier, None, None) for identifier in self._search("X-GM-THRID", thread_id)]  # type: ignore[list-item]
 
-    def get_mail(self, message_id: str) -> Mail:
+    def get_mail(self, message_id: str, as_text: bool = True) -> Mail:
         if _VALID_MESSAGE_ID.fullmatch(message_id) is None:
             raise ValueError("message_id must be a Gmail message ID returned by get_messages.")
         self._select(self._all_mailbox())
@@ -125,7 +125,7 @@ class GmailMailProvider:
         if status != "OK" or not data or not isinstance(data[0], tuple):
             raise MailProtocolError("Gmail did not return the requested message.")
         metadata, raw_message = data[0]
-        return self._mail(metadata, raw_message)
+        return self._mail(metadata, raw_message, as_text)
 
     def get_categories(self) -> list[str]:
         status, mailboxes = self._command(self._client_or_raise().list)
@@ -246,7 +246,7 @@ class GmailMailProvider:
             is_read=b"\\Seen" in flags.group(1).split(),
         )
 
-    def _mail(self, metadata: bytes, raw_message: bytes) -> Mail:
+    def _mail(self, metadata: bytes, raw_message: bytes, as_text: bool) -> Mail:
         message_id = _MESSAGE_ID.search(metadata)
         if message_id is None:
             raise MailProtocolError("Gmail did not return X-GM-MSGID.")
@@ -256,7 +256,8 @@ class GmailMailProvider:
         thread_id = _THREAD_ID.search(metadata)
         message = message_from_bytes(raw_message)
         sender_name, sender_email = parseaddr(str(make_header(decode_header(message.get("From", "")))))
-        body, attachments = self._content_parts(message)
+        body_parts, attachments = self._content_parts(message)
+        body_mime_type, body_content = render_body(*select_preferred_body(body_parts), as_text)
         return Mail(
             message_id=message_id.group(1).decode(),
             is_read=b"\\Seen" in flags.group(1).split(),
@@ -264,13 +265,14 @@ class GmailMailProvider:
             subject=str(make_header(decode_header(message.get("Subject", "")))),
             sender=MailSender(name=sender_name, email_address=sender_email),
             thread_id=thread_id.group(1).decode() if thread_id else None,
-            body=body,
+            body_mime_type=body_mime_type,
+            body_content=body_content,
             attachments=attachments,
         )
 
     @staticmethod
-    def _content_parts(message) -> tuple[list[MailBodyPart], list[MailAttachment]]:
-        body: list[MailBodyPart] = []
+    def _content_parts(message) -> tuple[list[tuple[str, str]], list[MailAttachment]]:
+        body: list[tuple[str, str]] = []
         attachments: list[MailAttachment] = []
         next_index = 0
 
@@ -301,7 +303,7 @@ class GmailMailProvider:
                 content = payload.decode(charset)
             except (binascii.Error, LookupError, TypeError, UnicodeError, ValueError):
                 return
-            body.append(MailBodyPart(mime_type=part.get_content_type(), content=content))
+            body.append((part.get_content_type(), content))
 
         visit(message, is_root=True)
         return body, attachments

@@ -52,8 +52,8 @@ class MailProviderManager:
     def get_messages_by_thread(self, thread_id: str) -> list[MailMessage]:
         return self._active().get_messages_by_thread(thread_id)
 
-    def get_mail(self, message_id: str) -> Mail:
-        return self._active().get_mail(message_id)
+    def get_mail(self, message_id: str, as_text: bool = True) -> Mail:
+        return self._active().get_mail(message_id, as_text)
 
     def get_categories(self) -> list[str]:
         return self._active().get_categories()

@@ -8,6 +8,7 @@ import pytest
 
 from app.mail.gmail import GmailMailProvider
 import app.mail.gmail as gmail_module
+from app.mail.body import looks_like_html, render_body, select_preferred_body
 from app.mail.manager import MailProviderManager
 from app.mail.models import Mail, MailMessage, MailProviderStats, MailSender
 from app.mail.providers import MailAuthenticationError, MailProtocolError, NoActiveMailProviderError, UnsupportedMailProviderError
@@ -127,7 +128,7 @@ def test_gmail_reads_metadata_filters_precisely_and_finds_archived_thread(tmp_pa
     assert ("select", '"[Gmail]/Alle Nachrichten"') in fake.calls
 
 
-def test_gmail_get_mail_returns_all_displayable_parts_and_attachment_metadata(tmp_path, monkeypatch):
+def test_gmail_get_mail_prefers_html_and_preserves_attachment_metadata(tmp_path, monkeypatch):
     class DetailImap(FakeImap):
         def fetch(self, identifier, query):
             self.calls.append(("fetch", identifier, query))
@@ -171,10 +172,7 @@ def test_gmail_get_mail_returns_all_displayable_parts_and_attachment_metadata(tm
     assert mail.subject == "Grüße"
     assert (mail.sender.name, mail.sender.email_address) == ("Alice Example", "alice@example.test")
     assert mail.thread_id == "77"
-    assert [(part.mime_type, part.content) for part in mail.body] == [
-        ("text/plain", "Hallo"),
-        ("text/html", "<p>Hallo</p>"),
-    ]
+    assert (mail.body_mime_type, mail.body_content) == ("text/plain", "Hallo\n")
     assert [(attachment.name, attachment.id, attachment.mime_type) for attachment in mail.attachments] == [
         ("invoice.pdf", "4", "application/pdf"),
         ("image.png", "5", "image/png"),
@@ -190,12 +188,12 @@ def test_gmail_get_mail_returns_all_displayable_parts_and_attachment_metadata(tm
 @pytest.mark.parametrize(
     ("raw_message", "expected_body"),
     [
-        (b"Subject: Plain\r\n\r\nPlain body", [("text/plain", "Plain body")]),
+        (b"Subject: Plain\r\n\r\nPlain body", ("text/plain", "Plain body")),
         (
             b"Subject: HTML\r\nContent-Type: text/html; charset=utf-8\r\n\r\n<strong>HTML</strong>",
-            [("text/html", "<strong>HTML</strong>")],
+            ("text/plain", "**HTML**\n"),
         ),
-        (b"Subject: Empty\r\nContent-Type: application/octet-stream\r\n\r\n", []),
+        (b"Subject: Empty\r\nContent-Type: application/octet-stream\r\n\r\n", ("text/plain", "")),
     ],
 )
 def test_gmail_get_mail_handles_single_or_missing_displayable_body(tmp_path, monkeypatch, raw_message, expected_body):
@@ -214,7 +212,7 @@ def test_gmail_get_mail_handles_single_or_missing_displayable_body(tmp_path, mon
 
     mail = provider.get_mail("99")
 
-    assert [(part.mime_type, part.content) for part in mail.body] == expected_body
+    assert (mail.body_mime_type, mail.body_content) == expected_body
     assert mail.attachments == []
     assert (mail.sender.name, mail.sender.email_address, mail.thread_id) == ("", "", None)
 
@@ -243,7 +241,7 @@ def test_gmail_get_mail_keeps_an_attached_message_out_of_the_main_body(tmp_path,
 
     mail = provider.get_mail("99")
 
-    assert [(part.mime_type, part.content) for part in mail.body] == [("text/plain", "Outer body")]
+    assert (mail.body_mime_type, mail.body_content) == ("text/plain", "Outer body")
     assert [(attachment.name, attachment.mime_type) for attachment in mail.attachments] == [
         ("forwarded.eml", "message/rfc822"),
     ]
@@ -267,6 +265,56 @@ def test_gmail_skips_a_malformed_displayable_mime_part():
         def get_payload(self): return [BrokenPart()]
 
     assert GmailMailProvider._content_parts(Root()) == ([], [])
+
+
+def test_mail_body_selection_detection_and_rendering_are_conservative():
+    assert select_preferred_body([("text/plain", "Plain"), ("text/html", "<p>HTML</p>")]) == (
+        "text/html",
+        "<p>HTML</p>",
+    )
+    assert select_preferred_body([]) == ("text/plain", "")
+    assert looks_like_html("<!DOCTYPE html><html><body><p>HTML</p></body></html>")
+    assert looks_like_html("<div><p>HTML</p></div>")
+    assert not looks_like_html("Use <tag> only as a placeholder.")
+    assert render_body("text/plain", "Use <tag> only as a placeholder.", True) == (
+        "text/plain",
+        "Use <tag> only as a placeholder.",
+    )
+
+
+def test_mail_body_conversion_error_keeps_the_original_content(monkeypatch):
+    def broken_handle(_, __):
+        raise RuntimeError("converter failed")
+
+    monkeypatch.setattr("app.mail.body.html2text.HTML2Text.handle", broken_handle)
+
+    assert render_body("text/html", "<p>Original</p>", True) == ("text/plain", "<p>Original</p>")
+
+
+def test_gmail_get_mail_converts_misdeclared_html_and_can_return_original_body(tmp_path, monkeypatch):
+    class HtmlImap(FakeImap):
+        def search(self, _, *criteria):
+            return "OK", [b"1"]
+
+        def fetch(self, identifier, query):
+            metadata = b'1 (X-GM-MSGID 99 FLAGS () INTERNALDATE "01-Jan-2026 12:00:00 +0000")'
+            raw_message = (
+                b"Content-Type: text/plain; charset=utf-8\r\n\r\n"
+                b"<!DOCTYPE html><html><body><p>Hello <strong>world</strong></p></body></html>"
+            )
+            return "OK", [(metadata, raw_message)]
+
+    config = SimpleNamespace(account="a@example.test", oauth_token=tmp_path / "token.json", client_secret=tmp_path / "client.json")
+    provider = GmailMailProvider(config, imap_factory=HtmlImap, sleep=lambda _: None)
+    monkeypatch.setattr(provider, "_credentials", lambda: SimpleNamespace(token="token", to_json=lambda: "{}"))
+    provider.connect()
+
+    converted = provider.get_mail("99")
+    original = provider.get_mail("99", as_text=False)
+
+    assert (converted.body_mime_type, converted.body_content) == ("text/plain", "Hello **world**\n")
+    assert original.body_mime_type == "text/html"
+    assert original.body_content.startswith("<!DOCTYPE html>")
 
 
 def test_gmail_get_categories_returns_system_custom_and_nested_labels(tmp_path, monkeypatch):
@@ -345,8 +393,8 @@ def test_mail_mcp_registers_new_tools_and_delegates_to_manager():
     calls = []
 
     class Manager:
-        def get_mail(self, message_id):
-            calls.append(("mail", message_id))
+        def get_mail(self, message_id, as_text=True):
+            calls.append(("mail", message_id, as_text))
             return Mail(
                 message_id=message_id,
                 is_read=True,
@@ -354,7 +402,8 @@ def test_mail_mcp_registers_new_tools_and_delegates_to_manager():
                 subject="",
                 sender=MailSender(name="", email_address=""),
                 thread_id=None,
-                body=[],
+                body_mime_type="text/plain",
+                body_content="",
                 attachments=[],
             )
 
@@ -365,10 +414,12 @@ def test_mail_mcp_registers_new_tools_and_delegates_to_manager():
     mcp = MCPServer("Test")
     register_mail_tools(mcp, Manager())
 
-    asyncio.run(mcp.call_tool("mail.get_mail", {"message_id": "99"}))
+    result = asyncio.run(mcp.call_tool("mail.get_mail", {"message_id": "99", "as_text": False}))
     asyncio.run(mcp.call_tool("mail.get_categories", {}))
 
-    assert calls == [("mail", "99"), ("categories",)]
+    assert calls == [("mail", "99", False), ("categories",)]
+    assert "body" not in result.structured_content
+    assert result.structured_content["body_mime_type"] == "text/plain"
 
 
 def test_new_mail_tools_use_the_existing_mail_read_permission():

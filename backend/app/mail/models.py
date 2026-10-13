@@ -21,12 +21,6 @@ class MailSender:
 
 
 @dataclass(frozen=True)
-class MailBodyPart:
-    mime_type: str
-    content: str
-
-
-@dataclass(frozen=True)
 class MailAttachment:
     name: str
     id: str
@@ -41,7 +35,8 @@ class Mail:
     subject: str
     sender: MailSender
     thread_id: str | None
-    body: list[MailBodyPart]
+    body_mime_type: str
+    body_content: str
     attachments: list[MailAttachment]
 
 
