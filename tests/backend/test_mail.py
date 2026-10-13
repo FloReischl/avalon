@@ -17,17 +17,21 @@ from app.authorization.requests import AuthorizationRequestManager
 
 
 class FakeProvider:
-    def __init__(self, fail=False):
+    def __init__(self, fail=False, fail_disconnect=False):
         self.connect_calls = 0
         self.disconnect_calls = 0
         self.fail = fail
+        self.fail_disconnect = fail_disconnect
 
     def connect(self):
         self.connect_calls += 1
         if self.fail:
             raise RuntimeError("offline")
 
-    def disconnect(self): self.disconnect_calls += 1
+    def disconnect(self):
+        self.disconnect_calls += 1
+        if self.fail_disconnect:
+            raise RuntimeError("disconnect failed")
     def get_provider_stats(self): return MailProviderStats(0, 0, 0, None, None)
     def get_messages(self, *_): return []
     def get_messages_by_thread(self, *_): return []
@@ -55,6 +59,17 @@ def test_provider_switch_disconnects_previous_only_after_new_connection():
     manager.set_provider("other")
     assert gmail.disconnect_calls == 1
     assert state.active_mail_provider == "other"
+
+
+def test_provider_switch_remains_successful_when_old_disconnect_fails(caplog):
+    state = SimpleNamespace(active_mail_provider=None)
+    gmail, other = FakeProvider(fail_disconnect=True), FakeProvider()
+    manager = MailProviderManager(lambda: state, {"gmail": lambda: gmail, "other": lambda: other})
+    manager.set_provider("gmail")
+    manager.set_provider("other")
+    assert state.active_mail_provider == "other"
+    assert other.connect_calls == 1
+    assert "Could not disconnect inactive mail provider 'gmail'" in caplog.text
 
 
 def test_provider_manager_requires_active_and_rejects_unknown():

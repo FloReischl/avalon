@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from typing import Callable
 
 from app.mail.models import MailMessage, MailProviderStats
 from app.mail.providers import MailProvider, NoActiveMailProviderError, UnsupportedMailProviderError
 from app.state import AvalonState
+
+
+logger = logging.getLogger(__name__)
 
 
 class MailProviderManager:
@@ -27,14 +31,17 @@ class MailProviderManager:
         candidate.connect()
         previous_name = state.active_mail_provider
         previous = self._providers.get(previous_name) if previous_name else None
+        self._providers[provider] = candidate
+        state.active_mail_provider = provider
         if previous is not None:
             try:
                 previous.disconnect()
             except Exception:
-                candidate.disconnect()
-                raise
-        self._providers[provider] = candidate
-        state.active_mail_provider = provider
+                logger.warning(
+                    "Could not disconnect inactive mail provider '%s'.",
+                    previous_name,
+                    exc_info=True,
+                )
 
     def get_provider_stats(self) -> MailProviderStats:
         return self._active().get_provider_stats()
