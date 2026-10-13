@@ -25,6 +25,14 @@ class MailProviderManager:
             raise UnsupportedMailProviderError(f"Mail provider '{provider}' is not implemented.")
         candidate = self._providers.get(provider) or factory()
         candidate.connect()
+        previous_name = state.active_mail_provider
+        previous = self._providers.get(previous_name) if previous_name else None
+        if previous is not None:
+            try:
+                previous.disconnect()
+            except Exception:
+                candidate.disconnect()
+                raise
         self._providers[provider] = candidate
         state.active_mail_provider = provider
 

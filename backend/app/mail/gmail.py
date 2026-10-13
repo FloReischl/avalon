@@ -6,7 +6,7 @@ import imaplib
 import os
 import re
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from email import message_from_bytes
 from email.header import decode_header, make_header
 from email.utils import parsedate_to_datetime
@@ -53,13 +53,17 @@ class GmailMailProvider:
         credentials = self._credentials()
         if not credentials.token:
             raise MailAuthenticationError("Gmail OAuth did not provide an access token.")
+        client: imaplib.IMAP4_SSL | None = None
         try:
             client = self._imap_factory("imap.gmail.com", 993)
             auth = f"user={self._config.account}\x01auth=Bearer {credentials.token}\x01\x01"
             status, _ = self._command(client.authenticate, "XOAUTH2", lambda _: auth.encode())
         except (imaplib.IMAP4.error, OSError) as exc:
+            if client is not None:
+                self._close_client(client)
             raise MailConnectionError("Could not connect to Gmail IMAP.") from exc
         if status != "OK":
+            self._close_client(client)
             raise MailAuthenticationError("Gmail XOAUTH2 authentication was rejected.")
         self._client = client
 
@@ -83,6 +87,10 @@ class GmailMailProvider:
     def get_messages(self, category: str, since: datetime | None, before: datetime | None) -> list[MailMessage]:
         if category != "INBOX":
             raise ValueError("Gmail AP1 supports only category 'INBOX'.")
+        since = self._utc_timestamp(since, "since")
+        before = self._utc_timestamp(before, "before")
+        if since is not None and before is not None and since >= before:
+            raise ValueError("since must be earlier than before.")
         self._select("INBOX")
         identifiers = self._search("ALL")
         return [message for identifier in identifiers if (message := self._message(identifier, since, before)) is not None]
@@ -121,6 +129,13 @@ class GmailMailProvider:
         if self._client is None:
             raise MailConnectionError("Gmail provider is not connected.")
         return self._client
+
+    @staticmethod
+    def _close_client(client: imaplib.IMAP4_SSL) -> None:
+        try:
+            client.logout()
+        except (imaplib.IMAP4.error, OSError):
+            pass
 
     def _command(self, method, *args):
         if self._last_command_at is not None:
@@ -175,7 +190,7 @@ class GmailMailProvider:
         match = _INTERNALDATE.search(data[0][0])
         if match is None:
             raise MailProtocolError("Gmail did not return an INTERNALDATE.")
-        return parsedate_to_datetime(match.group(1).decode("ascii"))
+        return parsedate_to_datetime(match.group(1).decode("ascii")).astimezone(timezone.utc)
 
     def _message(self, identifier: bytes, since: datetime | None, before: datetime | None) -> MailMessage | None:
         status, data = self._command(self._client_or_raise().fetch, identifier, "(X-GM-MSGID X-GM-THRID FLAGS INTERNALDATE BODY.PEEK[HEADER.FIELDS (FROM SUBJECT)])")
@@ -190,6 +205,8 @@ class GmailMailProvider:
             raise MailProtocolError("Gmail did not return X-GM-MSGID.")
         thread_id = _THREAD_ID.search(metadata)
         flags = _FLAGS.search(metadata)
+        if flags is None:
+            raise MailProtocolError("Gmail did not return FLAGS.")
         message = message_from_bytes(headers)
         return MailMessage(
             message_id=message_id.group(1).decode(),
@@ -197,7 +214,7 @@ class GmailMailProvider:
             internal_date=internal,
             subject=str(make_header(decode_header(message.get("Subject", "")))),
             sender=str(make_header(decode_header(message.get("From", "")))),
-            is_read=not flags or b"\\Seen" in flags.group(1).split(),
+            is_read=b"\\Seen" in flags.group(1).split(),
         )
 
     @staticmethod
@@ -205,4 +222,12 @@ class GmailMailProvider:
         match = _INTERNALDATE.search(metadata)
         if match is None:
             raise MailProtocolError("Gmail did not return an INTERNALDATE.")
-        return parsedate_to_datetime(match.group(1).decode("ascii"))
+        return parsedate_to_datetime(match.group(1).decode("ascii")).astimezone(timezone.utc)
+
+    @staticmethod
+    def _utc_timestamp(value: datetime | None, name: str) -> datetime | None:
+        if value is None:
+            return None
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError(f"{name} must include a timezone.")
+        return value.astimezone(timezone.utc)

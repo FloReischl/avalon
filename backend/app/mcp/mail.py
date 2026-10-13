@@ -1,6 +1,6 @@
 """MCP registration for read-only mail capabilities."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Literal
 
 from mcp.server import MCPServer
@@ -26,6 +26,8 @@ def register_mail_tools(mcp: MCPServer, manager: MailProviderManager) -> None:
         since: datetime | None = None,
         before: datetime | None = None,
     ) -> list[MailMessage]:
+        since = _utc_timestamp(since, "since")
+        before = _utc_timestamp(before, "before")
         if since is not None and before is not None and since >= before:
             raise ValueError("since must be earlier than before.")
         return manager.get_messages(category, since, before)
@@ -35,3 +37,11 @@ def register_mail_tools(mcp: MCPServer, manager: MailProviderManager) -> None:
         if not thread_id.strip():
             raise ValueError("thread_id must not be empty.")
         return manager.get_messages_by_thread(thread_id)
+
+
+def _utc_timestamp(value: datetime | None, name: str) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None or value.utcoffset() is None:
+        raise ValueError(f"{name} must include a timezone.")
+    return value.astimezone(timezone.utc)
