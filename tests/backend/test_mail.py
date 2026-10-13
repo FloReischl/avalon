@@ -165,6 +165,7 @@ def test_gmail_get_mail_prefers_html_and_preserves_attachment_metadata(tmp_path,
     provider.connect()
 
     mail = provider.get_mail("99")
+    original_mail = provider.get_mail("99", as_text=False)
 
     assert mail.message_id == "99"
     assert mail.is_read is False
@@ -173,6 +174,7 @@ def test_gmail_get_mail_prefers_html_and_preserves_attachment_metadata(tmp_path,
     assert (mail.sender.name, mail.sender.email_address) == ("Alice Example", "alice@example.test")
     assert mail.thread_id == "77"
     assert (mail.body_mime_type, mail.body_content) == ("text/plain", "Hallo\n")
+    assert (original_mail.body_mime_type, original_mail.body_content) == ("text/html", "<p>Hallo</p>")
     assert [(attachment.name, attachment.id, attachment.mime_type) for attachment in mail.attachments] == [
         ("invoice.pdf", "4", "application/pdf"),
         ("image.png", "5", "image/png"),
@@ -275,6 +277,7 @@ def test_mail_body_selection_detection_and_rendering_are_conservative():
     assert select_preferred_body([]) == ("text/plain", "")
     assert looks_like_html("<!DOCTYPE html><html><body><p>HTML</p></body></html>")
     assert looks_like_html("<div><p>HTML</p></div>")
+    assert looks_like_html("<div>Hello <strong>world</strong></div>")
     assert not looks_like_html("Use <tag> only as a placeholder.")
     assert render_body("text/plain", "Use <tag> only as a placeholder.", True) == (
         "text/plain",
@@ -288,7 +291,7 @@ def test_mail_body_conversion_error_keeps_the_original_content(monkeypatch):
 
     monkeypatch.setattr("app.mail.body.html2text.HTML2Text.handle", broken_handle)
 
-    assert render_body("text/html", "<p>Original</p>", True) == ("text/plain", "<p>Original</p>")
+    assert render_body("text/html", "<p>Original</p>", True) == ("text/html", "<p>Original</p>")
 
 
 def test_gmail_get_mail_converts_misdeclared_html_and_can_return_original_body(tmp_path, monkeypatch):

@@ -10,6 +10,10 @@ import html2text
 
 _HTML_DOCUMENT_MARKER = re.compile(r"<!doctype\s+html|<(?:html|head|body)\b", re.IGNORECASE)
 _HTML_STRUCTURE_TAG = re.compile(r"<(?:article|div|footer|h[1-6]|header|li|main|ol|p|section|table|td|tr|ul)\b[^>]*>", re.IGNORECASE)
+_HTML_STRUCTURE_ELEMENT = re.compile(
+    r"<(?P<tag>article|div|footer|h[1-6]|header|li|main|ol|p|section|table|td|tr|ul)\b[^>]*>.*?</(?P=tag)\s*>",
+    re.IGNORECASE | re.DOTALL,
+)
 
 
 def select_preferred_body(parts: Iterable[tuple[str, str]]) -> tuple[str, str]:
@@ -24,6 +28,8 @@ def select_preferred_body(parts: Iterable[tuple[str, str]]) -> tuple[str, str]:
 def looks_like_html(content: str) -> bool:
     """Recognize document-like HTML without treating isolated tags as HTML."""
     if _HTML_DOCUMENT_MARKER.search(content):
+        return True
+    if _HTML_STRUCTURE_ELEMENT.search(content):
         return True
     return len(_HTML_STRUCTURE_TAG.findall(content)) >= 2
 
@@ -40,4 +46,4 @@ def render_body(mime_type: str, content: str, as_text: bool) -> tuple[str, str]:
         converter.body_width = 0
         return "text/plain", converter.handle(content)
     except Exception:
-        return "text/plain", content
+        return "text/html", content
