@@ -47,6 +47,4 @@ def _current_local_time() -> datetime:
 def _utc_timestamp(value: datetime | None) -> datetime | None:
     if value is None:
         return None
-    if value.tzinfo is None or value.utcoffset() is None:
-        value = value.replace(tzinfo=_current_local_time().tzinfo)
     return value.astimezone(timezone.utc)

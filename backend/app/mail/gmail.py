@@ -228,6 +228,4 @@ class GmailMailProvider:
     def _utc_timestamp(value: datetime | None) -> datetime | None:
         if value is None:
             return None
-        if value.tzinfo is None or value.utcoffset() is None:
-            value = value.replace(tzinfo=datetime.now().astimezone().tzinfo)
         return value.astimezone(timezone.utc)

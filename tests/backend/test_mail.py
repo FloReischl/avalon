@@ -1,4 +1,6 @@
 import asyncio
+import os
+import time
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
@@ -161,7 +163,7 @@ def test_get_messages_interprets_naive_values_locally_and_defaults_before(monkey
 
     mcp = MCPServer("Test")
     register_mail_tools(mcp, Manager())
-    asyncio.run(mcp.call_tool("mail.get_messages", {"category": "INBOX", "since": "2026-07-01T09:00:00"}))
+    asyncio.run(mcp.call_tool("mail.get_messages", {"category": "INBOX", "since": "2026-07-01T09:00:00+02:00"}))
     asyncio.run(mcp.call_tool("mail.get_messages", {"category": "INBOX", "since": "2026-07-01T10:00:00+03:00", "before": "2026-07-01T03:00:00-05:00"}))
     asyncio.run(mcp.call_tool("mail.get_messages", {"category": "INBOX", "before": None}))
 
@@ -170,6 +172,25 @@ def test_get_messages_interprets_naive_values_locally_and_defaults_before(monkey
         ("INBOX", datetime(2026, 7, 1, 7, tzinfo=timezone.utc), datetime(2026, 7, 1, 8, tzinfo=timezone.utc)),
         ("INBOX", None, datetime(2026, 7, 1, 8, tzinfo=timezone.utc)),
     ]
+
+
+def test_naive_dates_use_system_timezone_with_dst_for_mcp_and_gmail():
+    previous_tz = os.environ.get("TZ")
+    os.environ["TZ"] = "Europe/Berlin"
+    time.tzset()
+    try:
+        january = datetime(2026, 1, 15, 10, 0)
+        july = datetime(2026, 7, 15, 10, 0)
+        assert mcp_mail_module._utc_timestamp(january) == datetime(2026, 1, 15, 9, 0, tzinfo=timezone.utc)
+        assert mcp_mail_module._utc_timestamp(july) == datetime(2026, 7, 15, 8, 0, tzinfo=timezone.utc)
+        assert GmailMailProvider._utc_timestamp(january) == datetime(2026, 1, 15, 9, 0, tzinfo=timezone.utc)
+        assert GmailMailProvider._utc_timestamp(july) == datetime(2026, 7, 15, 8, 0, tzinfo=timezone.utc)
+    finally:
+        if previous_tz is None:
+            os.environ.pop("TZ", None)
+        else:
+            os.environ["TZ"] = previous_tz
+        time.tzset()
 
 
 def test_gmail_closes_client_when_authentication_is_rejected(tmp_path, monkeypatch):
