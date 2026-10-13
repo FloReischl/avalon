@@ -39,7 +39,7 @@ _MAILBOX = re.compile(rb' (?:"((?:[^"\\]|\\.)*)"|([^ ]+))$')
 _VALID_MESSAGE_ID = re.compile(r"[0-9]+$")
 _SYSTEM_LABEL_ATTRIBUTES = frozenset({
     b"\\All", b"\\Archive", b"\\Drafts", b"\\Flagged", b"\\Important",
-    b"\\Inbox", b"\\Junk", b"\\Sent", b"\\Trash",
+    b"\\Inbox", b"\\Junk", b"\\Sent", b"\\Spam", b"\\Starred", b"\\Trash",
 })
 
 

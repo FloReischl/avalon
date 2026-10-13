@@ -533,6 +533,55 @@ def test_gmail_category_mutations_fully_validate_before_writing(tmp_path, monkey
     assert fake.stores == []
 
 
+@pytest.mark.parametrize("attribute", [b"\\Starred", b"\\Spam"])
+def test_gmail_recognizes_gmail_starred_and_spam_labels_as_system_labels(attribute):
+    mailbox = b"(\\HasNoChildren " + attribute + b') "/" "System"'
+    assert GmailMailProvider._is_system_mailbox(mailbox) is True
+
+
+def test_gmail_empty_category_mutations_still_reject_unknown_message_id(tmp_path, monkeypatch):
+    class CategoriesImap(FakeImap):
+        def list(self):
+            return "OK", [
+                b'(\\HasNoChildren \\All) "/" "[Gmail]/All Mail"',
+                b'(\\HasNoChildren) "/" "Project"',
+            ]
+
+        def search(self, _, *criteria):
+            if criteria == ("X-GM-MSGID", "missing"):
+                return "OK", [b""]
+            return super().search(_, *criteria)
+
+        def store(self, *_):
+            pytest.fail("empty category mutations must not write")
+
+    config = SimpleNamespace(account="a@example.test", oauth_token=tmp_path / "token.json", client_secret=tmp_path / "client.json")
+    provider = GmailMailProvider(config, imap_factory=CategoriesImap, sleep=lambda _: None)
+    monkeypatch.setattr(provider, "_credentials", lambda: SimpleNamespace(token="token", to_json=lambda: "{}"))
+    provider.connect()
+
+    with pytest.raises(MailProtocolError, match="not found"):
+        provider.set_categories("missing", [])
+    with pytest.raises(MailProtocolError, match="not found"):
+        provider.unset_categories("missing", [])
+
+
+def test_gmail_create_empty_categories_invalidates_cache(tmp_path, monkeypatch):
+    class CategoriesImap(FakeImap):
+        def list(self): return "OK", []
+        def create(self, *_): pytest.fail("empty category creation must not create labels")
+
+    config = SimpleNamespace(account="a@example.test", oauth_token=tmp_path / "token.json", client_secret=tmp_path / "client.json")
+    provider = GmailMailProvider(config, imap_factory=CategoriesImap, sleep=lambda _: None)
+    monkeypatch.setattr(provider, "_credentials", lambda: SimpleNamespace(token="token", to_json=lambda: "{}"))
+    provider.connect()
+    provider._category_cache = [("stale", False)]
+
+    provider.create_categories([])
+
+    assert provider._category_cache is None
+
+
 def test_gmail_category_write_failures_do_not_compensate_and_create_always_invalidates_cache(tmp_path, monkeypatch):
     class CategoriesImap(FakeImap):
         def __init__(self, *_):
