@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import binascii
 import imaplib
 import os
 import re
@@ -271,25 +272,38 @@ class GmailMailProvider:
     def _content_parts(message) -> tuple[list[MailBodyPart], list[MailAttachment]]:
         body: list[MailBodyPart] = []
         attachments: list[MailAttachment] = []
-        for index, part in enumerate(message.walk()):
-            if part.is_multipart():
-                continue
+        next_index = 0
+
+        def visit(part, is_root: bool = False) -> None:
+            nonlocal next_index
+            index = next_index
+            next_index += 1
             disposition = part.get_content_disposition()
             filename = part.get_filename()
-            if disposition == "attachment" or filename is not None:
+            if not is_root and (
+                disposition == "attachment"
+                or filename is not None
+                or part.get_content_type() == "message/rfc822"
+            ):
                 attachments.append(
                     MailAttachment(name=filename or "", id=str(index), mime_type=part.get_content_type())
                 )
-                continue
+                return
+            if part.is_multipart():
+                for child in part.get_payload():
+                    visit(child)
+                return
             if part.get_content_type() not in {"text/plain", "text/html"}:
-                continue
-            payload = part.get_payload(decode=True) or b""
-            charset = part.get_content_charset() or "utf-8"
+                return
             try:
+                payload = part.get_payload(decode=True) or b""
+                charset = part.get_content_charset() or "utf-8"
                 content = payload.decode(charset)
-            except (LookupError, UnicodeDecodeError):
-                content = payload.decode("utf-8", errors="replace")
+            except (binascii.Error, LookupError, TypeError, UnicodeError, ValueError):
+                return
             body.append(MailBodyPart(mime_type=part.get_content_type(), content=content))
+
+        visit(message, is_root=True)
         return body, attachments
 
     @staticmethod
@@ -299,33 +313,55 @@ class GmailMailProvider:
             raise MailProtocolError("Could not parse Gmail mailbox name.")
         encoded = match.group(1) if match.group(1) is not None else match.group(2)
         assert encoded is not None
-        return GmailMailProvider._decode_modified_utf7(encoded.replace(b'\\"', b'"').replace(b"\\\\", b"\\"))
+        return GmailMailProvider._decode_modified_utf7(
+            GmailMailProvider._unescape_mailbox_name(encoded)
+        )
+
+    @staticmethod
+    def _unescape_mailbox_name(value: bytes) -> bytes:
+        result = bytearray()
+        position = 0
+        while position < len(value):
+            character = value[position]
+            if character != ord("\\"):
+                result.append(character)
+                position += 1
+                continue
+            position += 1
+            if position == len(value) or value[position] not in (ord('"'), ord("\\")):
+                raise MailProtocolError("Could not parse Gmail mailbox name.")
+            result.append(value[position])
+            position += 1
+        return bytes(result)
 
     @staticmethod
     def _decode_modified_utf7(value: bytes) -> str:
         """Decode the modified UTF-7 mailbox representation used by IMAP."""
         result: list[str] = []
         position = 0
-        while position < len(value):
-            marker = value.find(b"&", position)
-            if marker < 0:
-                result.append(value[position:].decode("ascii"))
-                break
-            result.append(value[position:marker].decode("ascii"))
-            end = value.find(b"-", marker)
-            if end < 0:
-                raise MailProtocolError("Could not decode Gmail mailbox name.")
-            encoded = value[marker + 1:end]
-            if not encoded:
-                result.append("&")
-            else:
-                try:
+        try:
+            while position < len(value):
+                marker = value.find(b"&", position)
+                if marker < 0:
+                    result.append(value[position:].decode("ascii"))
+                    break
+                result.append(value[position:marker].decode("ascii"))
+                end = value.find(b"-", marker)
+                if end < 0:
+                    raise MailProtocolError("Could not decode Gmail mailbox name.")
+                encoded = value[marker + 1:end]
+                if not encoded:
+                    result.append("&")
+                else:
                     padding = b"=" * (-len(encoded) % 4)
-                    decoded = base64.b64decode(encoded.replace(b",", b"/") + padding)
+                    decoded = base64.b64decode(
+                        encoded.replace(b",", b"/") + padding,
+                        validate=True,
+                    )
                     result.append(decoded.decode("utf-16-be"))
-                except (UnicodeDecodeError, ValueError):
-                    raise MailProtocolError("Could not decode Gmail mailbox name.") from None
-            position = end + 1
+                position = end + 1
+        except (binascii.Error, UnicodeDecodeError, ValueError):
+            raise MailProtocolError("Could not decode Gmail mailbox name.") from None
         return "".join(result)
 
     @staticmethod

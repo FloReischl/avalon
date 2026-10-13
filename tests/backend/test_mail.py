@@ -219,6 +219,56 @@ def test_gmail_get_mail_handles_single_or_missing_displayable_body(tmp_path, mon
     assert (mail.sender.name, mail.sender.email_address, mail.thread_id) == ("", "", None)
 
 
+def test_gmail_get_mail_keeps_an_attached_message_out_of_the_main_body(tmp_path, monkeypatch):
+    class AttachedMessageImap(FakeImap):
+        def search(self, _, *criteria):
+            return "OK", [b"1"]
+
+        def fetch(self, identifier, query):
+            metadata = b'1 (X-GM-MSGID 99 FLAGS () INTERNALDATE "01-Jan-2026 12:00:00 +0000")'
+            raw_message = (
+                b"Content-Type: multipart/mixed; boundary=outer\r\n\r\n"
+                b"--outer\r\nContent-Type: text/plain\r\n\r\nOuter body\r\n"
+                b"--outer\r\nContent-Type: message/rfc822\r\n"
+                b"Content-Disposition: attachment; filename=forwarded.eml\r\n\r\n"
+                b"Content-Type: text/html\r\n\r\n<p>Attached body</p>\r\n"
+                b"--outer--\r\n"
+            )
+            return "OK", [(metadata, raw_message)]
+
+    config = SimpleNamespace(account="a@example.test", oauth_token=tmp_path / "token.json", client_secret=tmp_path / "client.json")
+    provider = GmailMailProvider(config, imap_factory=AttachedMessageImap, sleep=lambda _: None)
+    monkeypatch.setattr(provider, "_credentials", lambda: SimpleNamespace(token="token", to_json=lambda: "{}"))
+    provider.connect()
+
+    mail = provider.get_mail("99")
+
+    assert [(part.mime_type, part.content) for part in mail.body] == [("text/plain", "Outer body")]
+    assert [(attachment.name, attachment.mime_type) for attachment in mail.attachments] == [
+        ("forwarded.eml", "message/rfc822"),
+    ]
+
+
+def test_gmail_skips_a_malformed_displayable_mime_part():
+    class BrokenPart:
+        def is_multipart(self): return False
+        def get_content_disposition(self): return None
+        def get_filename(self): return None
+        def get_content_type(self): return "text/plain"
+        def get_payload(self, decode):
+            assert decode is True
+            raise ValueError("broken transfer encoding")
+
+    class Root:
+        def is_multipart(self): return True
+        def get_content_disposition(self): return None
+        def get_filename(self): return None
+        def get_content_type(self): return "multipart/mixed"
+        def get_payload(self): return [BrokenPart()]
+
+    assert GmailMailProvider._content_parts(Root()) == ([], [])
+
+
 def test_gmail_get_categories_returns_system_custom_and_nested_labels(tmp_path, monkeypatch):
     class CategoriesImap(FakeImap):
         def list(self):
@@ -236,6 +286,43 @@ def test_gmail_get_categories_returns_system_custom_and_nested_labels(tmp_path, 
     provider.connect()
 
     assert provider.get_categories() == ["INBOX", "[Gmail]/Alle Nachrichten", "Projects", "Projects/2026", "日本語"]
+
+
+def test_gmail_rejects_malformed_mailbox_escaping_and_modified_utf7():
+    with pytest.raises(MailProtocolError, match="parse Gmail mailbox"):
+        GmailMailProvider._parse_mailbox_name(b'(\\HasNoChildren) "/" "broken\\q"')
+    with pytest.raises(MailProtocolError, match="decode Gmail mailbox"):
+        GmailMailProvider._parse_mailbox_name(b'(\\HasNoChildren) "/" "&!!!!-"')
+
+
+def test_gmail_get_mail_and_categories_report_imap_failures(tmp_path, monkeypatch):
+    class FailingImap(FakeImap):
+        def search(self, *_): return "NO", []
+        def list(self): return "NO", []
+
+    config = SimpleNamespace(account="a@example.test", oauth_token=tmp_path / "token.json", client_secret=tmp_path / "client.json")
+    provider = GmailMailProvider(config, imap_factory=FailingImap, sleep=lambda _: None)
+    monkeypatch.setattr(provider, "_credentials", lambda: SimpleNamespace(token="token", to_json=lambda: "{}"))
+    provider.connect()
+
+    with pytest.raises(MailProtocolError, match="labels"):
+        provider.get_categories()
+    with pytest.raises(MailProtocolError, match="All Mail"):
+        provider.get_mail("99")
+
+
+def test_gmail_get_mail_reports_fetch_failure(tmp_path, monkeypatch):
+    class FetchFailingImap(FakeImap):
+        def search(self, _, *criteria): return "OK", [b"1"]
+        def fetch(self, *_): return "NO", []
+
+    config = SimpleNamespace(account="a@example.test", oauth_token=tmp_path / "token.json", client_secret=tmp_path / "client.json")
+    provider = GmailMailProvider(config, imap_factory=FetchFailingImap, sleep=lambda _: None)
+    monkeypatch.setattr(provider, "_credentials", lambda: SimpleNamespace(token="token", to_json=lambda: "{}"))
+    provider.connect()
+
+    with pytest.raises(MailProtocolError, match="requested message"):
+        provider.get_mail("99")
 
 
 def test_gmail_get_mail_rejects_invalid_or_unknown_message_ids(tmp_path, monkeypatch):

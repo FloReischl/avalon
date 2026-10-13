@@ -1,5 +1,6 @@
 """MCP server construction for the integrated Avalon backend."""
 
+import logging
 from typing import Any
 
 from mcp_types import CallToolResult
@@ -32,11 +33,14 @@ from app.mail.manager import MailProviderManager
 from app.mail.providers import MailConnectionError
 from app.state import get_avalon_state
 
+logger = logging.getLogger(__name__)
 
 class AuthorizedMcpServer(MCPServer):
     """Central agent-based discovery and authorization for MCP tools."""
 
     async def list_tools(self):
+        logger.info("list_tools")
+
         tools = await super().list_tools()
         agent_id = current_agent_id.get()
         if agent_id is None:
@@ -56,6 +60,8 @@ class AuthorizedMcpServer(MCPServer):
 
     async def call_tool(self, name: str, arguments: dict[str, Any], context=None):
         """Authorize every HTTP MCP capability call before delegation."""
+        logger.info(f"call_tool: '{name}'. arguments: {str(arguments)}")
+
         agent_id = current_agent_id.get()
         if agent_id is None:
             return await super().call_tool(name, arguments, context)
