@@ -97,7 +97,7 @@ def gmail_connect() -> imaplib.IMAP4_SSL:
 
     return client
 
-@pytest.mark.skip(reason="works")
+# @pytest.mark.skip(reason="works")
 def test_read_latest_10_gmail_headers() -> None:
     client = gmail_connect()
 
