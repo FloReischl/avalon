@@ -389,6 +389,7 @@ class GmailMailProvider:
                         mime_type=part.get_content_type(),
                     )
                 )
+                continue
             if part.is_multipart():
                 continue
             if part.get_content_type() not in {"text/plain", "text/html"}:

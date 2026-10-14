@@ -228,6 +228,32 @@ def test_gmail_get_attachment_uses_get_mail_attachment_ids_and_preserves_bytes(t
     assert attachment == MailAttachmentContent("bytes.bin", "application/octet-stream", b"\x00\xff\x80AB\x00\xff")
 
 
+def test_gmail_get_mail_excludes_text_attachments_from_the_body(tmp_path, monkeypatch):
+    class AttachmentImap(FakeImap):
+        def search(self, _, *criteria): return "OK", [b"1"]
+
+        def fetch(self, identifier, query):
+            metadata = b'1 (X-GM-MSGID 99 FLAGS () INTERNALDATE "01-Jan-2026 12:00:00 +0000")'
+            raw_message = (
+                b"Content-Type: multipart/mixed; boundary=outer\r\n\r\n"
+                b"--outer\r\nContent-Type: text/plain\r\n\r\nMail body\r\n"
+                b"--outer\r\nContent-Type: text/plain\r\n"
+                b"Content-Disposition: attachment; filename=notes.txt\r\n\r\nAttachment body\r\n"
+                b"--outer--\r\n"
+            )
+            return "OK", [(metadata, raw_message)]
+
+    config = SimpleNamespace(account="a@example.test", oauth_token=tmp_path / "token.json", client_secret=tmp_path / "client.json")
+    provider = GmailMailProvider(config, imap_factory=AttachmentImap, sleep=lambda _: None)
+    monkeypatch.setattr(provider, "_credentials", lambda: SimpleNamespace(token="token", to_json=lambda: "{}"))
+    provider.connect()
+
+    mail = provider.get_mail("99")
+
+    assert (mail.body_mime_type, mail.body_content) == ("text/plain", "Mail body")
+    assert [(item.name, item.mime_type) for item in mail.attachments] == [("notes.txt", "text/plain")]
+
+
 def test_gmail_get_attachment_resolves_all_ids_in_nested_mime_parts(tmp_path, monkeypatch):
     class AttachmentImap(FakeImap):
         def search(self, _, *criteria): return "OK", [b"1"]
