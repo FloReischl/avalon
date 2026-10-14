@@ -6,7 +6,7 @@ import logging
 from collections.abc import AsyncIterator, Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Protocol
+from typing import Protocol
 from zoneinfo import ZoneInfo
 
 
@@ -46,26 +46,13 @@ class MailHeader:
 
     @classmethod
     def from_result(cls, value: Mapping[str, object]) -> "MailHeader":
-        message_id = value.get("message_id")
-        internal_date = _parse_datetime(value.get("internal_date"))
-        if not isinstance(message_id, str) or not message_id:
-            raise ValueError("Mail header has no valid message_id.")
-        if internal_date is None:
-            raise ValueError("Mail header has no valid internal_date.")
-
-        thread_id = value.get("thread_id")
-        if not isinstance(thread_id, str) or not thread_id:
-            thread_id = None
-        subject = value.get("subject")
-        sender = value.get("sender")
-        is_read = value.get("is_read")
         return cls(
-            message_id=message_id,
-            thread_id=thread_id,
-            internal_date=internal_date,
-            subject=subject if isinstance(subject, str) else "",
-            sender=sender if isinstance(sender, str) else "",
-            is_read=is_read if isinstance(is_read, bool) else False,
+            message_id=value["message_id"],  # type: ignore[arg-type]
+            thread_id=value["thread_id"],  # type: ignore[arg-type]
+            internal_date=_parse_datetime(value["internal_date"]),
+            subject=value["subject"],  # type: ignore[arg-type]
+            sender=value["sender"],  # type: ignore[arg-type]
+            is_read=value["is_read"],  # type: ignore[arg-type]
         )
 
 
@@ -102,15 +89,10 @@ class InboxThreadCollector:
         )
         await self._client.set_mail_provider("gmail")
         stats = await self._client.get_mail_provider_stats()
-        if not isinstance(stats, Mapping):
-            raise ValueError("Mail provider returned invalid statistics.")
-        inbox_count = _inbox_count(stats)
-        if inbox_count == 0:
+        if stats["inbox_messages_count"] == 0:
             return
 
-        oldest = _parse_datetime(stats.get("oldest_message_date"))
-        if oldest is None:
-            raise ValueError("Mail provider reported inbox messages without oldest_message_date.")
+        oldest = _parse_datetime(stats["oldest_message_date"])
         start = oldest.astimezone(self._timezone)
         end = workflow_now.astimezone(self._timezone)
         if start >= end:
@@ -123,41 +105,24 @@ class InboxThreadCollector:
         while window_start < end:
             window_end = min(_next_month_start(window_start, self._timezone), end)
             month = _month_key(window_start)
-            try:
-                messages = await self._client.get_mail_messages(
-                    "INBOX", since=window_start, before=window_end
-                )
-                if not isinstance(messages, list):
-                    raise ValueError("Mail provider returned invalid inbox messages.")
-            except Exception:
-                logger.exception("Could not collect inbox messages for month %s.", month)
-                raise
+            messages = await self._client.get_mail_messages(
+                "INBOX", since=window_start, before=window_end
+            )
 
             for raw_message in messages:
-                try:
-                    inbox_header = MailHeader.from_result(raw_message)
-                    thread_id = inbox_header.thread_id
-                    if thread_id is None:
-                        raise ValueError("Inbox message has no thread_id.")
-                    if thread_id in processed_thread_ids:
-                        continue
-                    processed_thread_ids.add(thread_id)
+                inbox_header = MailHeader.from_result(raw_message)
+                thread_id = inbox_header.thread_id
+                if thread_id in processed_thread_ids:
+                    continue
+                processed_thread_ids.add(thread_id)
 
-                    headers = tuple(
-                        MailHeader.from_result(header)
-                        for header in await self._client.get_mail_messages_by_thread(thread_id)
-                    )
-                    if not headers:
-                        raise ValueError("Thread has no message headers.")
-                    newest = max(header.internal_date for header in headers)
-                    target_month = _month_key(newest.astimezone(self._timezone))
-                    pending.setdefault(target_month, {})[thread_id] = headers
-                except Exception:
-                    logger.exception(
-                        "Skipping unreadable mail thread %s while collecting month %s.",
-                        _thread_id_for_log(raw_message),
-                        month,
-                    )
+                headers = tuple(
+                    MailHeader.from_result(header)
+                    for header in await self._client.get_mail_messages_by_thread(thread_id)
+                )
+                newest = max(header.internal_date for header in headers)
+                target_month = _month_key(newest.astimezone(self._timezone))
+                pending.setdefault(target_month, {})[thread_id] = headers
 
             for thread_id, headers in pending.pop(month, {}).items():
                 yield CollectedThread(thread_id=thread_id, headers=headers)
@@ -175,25 +140,11 @@ class InboxThreadCollector:
                     yield CollectedThread(thread_id=thread_id, headers=headers)
 
 
-def _inbox_count(stats: Mapping[str, object]) -> int:
-    value = stats.get("inbox_messages_count")
-    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
-        raise ValueError("Mail provider returned an invalid inbox_messages_count.")
-    return value
-
-
-def _parse_datetime(value: object) -> datetime | None:
-    if value is None:
-        return None
-    if isinstance(value, datetime):
-        return _require_aware(value, "Mail timestamp must be timezone-aware.")
-    if not isinstance(value, str):
-        raise ValueError("Mail timestamp must be an ISO-8601 string.")
-    try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError as exc:
-        raise ValueError("Mail timestamp must be ISO-8601.") from exc
-    return _require_aware(parsed, "Mail timestamp must be timezone-aware.")
+def _parse_datetime(value: object) -> datetime:
+    return _require_aware(
+        datetime.fromisoformat(value.replace("Z", "+00:00")),  # type: ignore[union-attr]
+        "Mail timestamp must be timezone-aware.",
+    )
 
 
 def _require_aware(value: datetime, message: str) -> datetime:
@@ -211,7 +162,3 @@ def _next_month_start(value: datetime, timezone: ZoneInfo) -> datetime:
 
 def _month_key(value: datetime) -> str:
     return f"{value.year:04d}-{value.month:02d}"
-
-
-def _thread_id_for_log(value: Any) -> object:
-    return value.get("thread_id") if isinstance(value, Mapping) else "<invalid>"

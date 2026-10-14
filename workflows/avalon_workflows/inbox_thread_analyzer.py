@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import base64
+import binascii
 import io
 import json
 import logging
 import subprocess
 import tempfile
 import zipfile
-from collections.abc import AsyncIterable, Callable, Iterable, Mapping
+from collections.abc import AsyncIterable, Callable, Iterable
 from pathlib import Path
 from typing import Protocol
 from xml.etree import ElementTree
@@ -30,6 +31,10 @@ _PROMPT_PREFIX = (
     'Gib nur JSON {"categories":["Bereich/Typ"]}. '
     "Keine technischen Kategorien oder Erklärungen.\nThread:\n"
 )
+
+
+class DocumentExtractionError(Exception):
+    """A supported attachment could not be read as text."""
 
 
 class ThreadAnalysisClient(Protocol):
@@ -74,23 +79,21 @@ class InboxThreadAnalyzer:
         return proposals
 
     async def analyze_thread(self, thread: CollectedThread) -> list[str] | None:
-        """Return categories for one thread, or ``None`` when it must be skipped."""
+        """Return categories, skipping only a thread with a broken document."""
         try:
             headers = tuple(
                 sorted(thread.headers, key=lambda header: header.internal_date)
             )
-            if not headers:
-                raise ValueError("Collected thread has no headers.")
-
             evidence, has_attachments = await self._load_evidence(headers)
-            technical = [f"Jahr/{max(header.internal_date for header in headers).year}"]
-            if has_attachments:
-                technical.append("has-attachments")
-            categories = await self._suggest_categories(evidence)
-            return _deduplicate([*technical, *(categories or ["Nicht kategorisiert"])])
-        except Exception:
-            logger.exception("Skipping thread %s during content analysis.", thread.thread_id)
+        except DocumentExtractionError:
+            logger.exception("Document error while analyzing thread %s.", thread.thread_id)
             return None
+
+        technical = [f"Jahr/{max(header.internal_date for header in headers).year}"]
+        if has_attachments:
+            technical.append("has-attachments")
+        categories = await self._suggest_categories(evidence)
+        return _deduplicate([*technical, *(categories or ["Nicht kategorisiert"])])
 
     async def _load_evidence(self, headers: tuple[MailHeader, ...]) -> tuple[str, bool]:
         evidence_budget = max(0, self._input_budget_chars - len(_PROMPT_PREFIX))
@@ -104,73 +107,74 @@ class InboxThreadAnalyzer:
             headers, header_pieces, message_budgets, strict=True
         ):
             mail = await self._client.get_mail(header.message_id)
-            if not isinstance(mail, Mapping):
-                raise ValueError("Mail capability returned an invalid mail.")
-            body = mail.get("body_content")
-            subject = mail.get("subject")
-            if not isinstance(body, str) or not isinstance(subject, str):
-                raise ValueError("Mail capability returned unreadable message content.")
-
-            del subject  # The collector's subject keeps all thread headers ordered.
+            body = mail["body_content"]
             message_pieces.append(header_piece)
             message_pieces.append(body[:body_budget])
             if body_budget:
                 message_pieces.append("\n")
-            attachments = mail.get("attachments")
-            if not isinstance(attachments, list):
-                raise ValueError("Mail capability returned invalid attachments.")
+            attachments = mail["attachments"]
             has_attachments = has_attachments or bool(attachments)
 
             for attachment in attachments:
                 if attachment_remaining <= 0:
                     break
-                if not isinstance(attachment, Mapping):
-                    continue
                 attachment_text = await self._attachment_text(
                     header.message_id, attachment, attachment_remaining
                 )
                 if attachment_text:
-                    name = attachment.get("name")
-                    label = name if isinstance(name, str) and name else "Anhang"
                     attachment_remaining = _append_budgeted(
                         attachment_pieces,
                         attachment_remaining,
-                        f"Anhang {label}:\n{attachment_text}\n",
+                        f"Anhang {attachment['name']}:\n{attachment_text}\n",
                     )
         return "".join([*message_pieces, *attachment_pieces]), has_attachments
 
     async def _attachment_text(
-        self, message_id: str, attachment: Mapping[str, object], max_chars: int
+        self, message_id: str, attachment: dict[str, object], max_chars: int
     ) -> str:
-        name = attachment.get("name")
-        attachment_id = attachment.get("id")
-        mime_type = attachment.get("mime_type")
-        if not isinstance(name, str) or not isinstance(attachment_id, str):
-            return ""
-        kind = _supported_attachment_kind(name, mime_type)
+        name = attachment["name"]
+        attachment_id = attachment["id"]
+        kind = _supported_attachment_kind(name, attachment["mime_type"])
         if kind is None:
             return ""
+
+        result = await self._client.get_mail_attachment(message_id, attachment_id)
+        encoded = result["content_base64"]
         try:
-            result = await self._client.get_mail_attachment(message_id, attachment_id)
-            encoded = result.get("content_base64") if isinstance(result, Mapping) else None
-            if not isinstance(encoded, str):
-                raise ValueError("Attachment capability returned no Base64 content.")
             if len(encoded) > _max_base64_length(self._max_attachment_bytes):
-                logger.warning("Skipping oversized attachment %s on mail %s.", name, message_id)
-                return ""
+                raise DocumentExtractionError("Attachment exceeds the download limit.")
             content = base64.b64decode(encoded, validate=True)
             if kind == "pdf":
-                return self._pdf_text_extractor(content, max_chars)
-            if kind == "docx":
-                return _extract_docx_text(content, max_chars)
-            return _extract_doc_text(content, name, max_chars)
-        except Exception:
-            logger.exception("Skipping unreadable attachment %s on mail %s.", name, message_id)
-            return ""
+                text = self._pdf_text_extractor(content, max_chars)
+            elif kind == "docx":
+                text = _extract_docx_text(content, max_chars)
+            else:
+                text = _extract_doc_text(content, name, max_chars)
+            if not text:
+                raise DocumentExtractionError("No text could be extracted from document.")
+        # Download failures have already escaped above.  Everything from this
+        # local decode/extraction step describes this specific document.
+        except (
+            binascii.Error,
+            DocumentExtractionError,
+            ElementTree.ParseError,
+            KeyError,
+            OSError,
+            subprocess.SubprocessError,
+            ValueError,
+            zipfile.BadZipFile,
+        ) as exc:
+            logger.exception(
+                "Document error in thread attachment: attachment_id=%s filename=%s message_id=%s",
+                attachment_id,
+                name,
+                message_id,
+            )
+            raise DocumentExtractionError(str(exc)) from exc
+        return text
 
     async def _suggest_categories(self, evidence: str) -> list[str] | None:
         prompt = _category_prompt(evidence, self._input_budget_chars)
-        invalid_response = False
         for attempt in range(_LLM_ATTEMPTS):
             try:
                 response = await self._client.llm(
@@ -182,21 +186,19 @@ class InboxThreadAnalyzer:
                         "Keine technischen Kategorien und keine Begründungen."
                     ),
                 )
-            except Exception:
-                logger.exception("LLM failed while analyzing a mail thread.")
+            except Exception as exc:
+                if attempt == 0 and _is_context_limit_error(exc):
+                    prompt = _category_prompt(evidence, len(prompt) // 2)
+                    logger.warning("LLM context limit reached; retrying with a smaller prompt.")
+                    continue
                 raise
             categories = _parse_categories(response)
             if categories is not None:
                 return categories
-            invalid_response = True
-            logger.warning(
-                "LLM returned invalid category JSON (attempt %d/%d).",
-                attempt + 1,
-                _LLM_ATTEMPTS,
-            )
-        if invalid_response:
+            if attempt == 0:
+                logger.warning("LLM returned invalid category JSON; retrying once.")
+                continue
             raise ValueError("LLM returned invalid category JSON repeatedly.")
-        return None
 
 
 def _append_budgeted(pieces: list[str], remaining: int, value: str) -> int:
@@ -246,6 +248,13 @@ def _max_base64_length(max_bytes: int) -> int:
     return ((max_bytes + 2) // 3) * 4
 
 
+def _is_context_limit_error(error: Exception) -> bool:
+    message = str(error).lower()
+    return "context" in message and any(
+        marker in message for marker in ("limit", "length", "exceed", "maximum")
+    )
+
+
 def _supported_attachment_kind(name: str, mime_type: object) -> str | None:
     suffix = Path(name).suffix.lower()
     normalized_mime = mime_type.lower() if isinstance(mime_type, str) else ""
@@ -280,24 +289,21 @@ def _extract_pdf_text(content: bytes, max_chars: int) -> str:
 
 
 def _extract_docx_text(content: bytes, max_chars: int) -> str:
-    try:
-        with zipfile.ZipFile(io.BytesIO(content)) as archive:
-            document = archive.open("word/document.xml")
-            parts: list[str] = []
-            remaining = max_chars
-            for event, node in ElementTree.iterparse(document, events=("end",)):
-                if node.tag == f"{_WORDPROCESSING_NS}t" and node.text and remaining:
-                    value = node.text[:remaining]
-                    parts.append(value)
-                    remaining -= len(value)
-                elif node.tag == f"{_WORDPROCESSING_NS}p" and parts and remaining:
-                    parts.append("\n")
-                    remaining -= 1
-                node.clear()
-                if remaining == 0:
-                    break
-    except (KeyError, OSError, ValueError, zipfile.BadZipFile, ElementTree.ParseError):
-        return ""
+    with zipfile.ZipFile(io.BytesIO(content)) as archive:
+        document = archive.open("word/document.xml")
+        parts: list[str] = []
+        remaining = max_chars
+        for _, node in ElementTree.iterparse(document, events=("end",)):
+            if node.tag == f"{_WORDPROCESSING_NS}t" and node.text and remaining:
+                value = node.text[:remaining]
+                parts.append(value)
+                remaining -= len(value)
+            elif node.tag == f"{_WORDPROCESSING_NS}p" and parts and remaining:
+                parts.append("\n")
+                remaining -= 1
+            node.clear()
+            if remaining == 0:
+                break
     return "".join(parts).rstrip()
 
 

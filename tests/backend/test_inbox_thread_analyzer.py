@@ -9,6 +9,8 @@ import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).parents[2] / "workflows"))
 
 from avalon_workflows.inbox_thread_analyzer import (
@@ -141,7 +143,7 @@ def test_tight_header_budget_keeps_the_newest_subject() -> None:
     assert pieces == ["", "Betreff: new-subject\n"]
 
 
-def test_oversized_attachment_is_skipped_before_decoding_or_extraction() -> None:
+def test_oversized_attachment_marks_the_thread_as_a_document_error(caplog) -> None:
     thread = CollectedThread("thread-1", (header("one", "2025-01-01T00:00:00"),))
     client = FakeClient(
         {"one": {"subject": "S", "body_content": "Body", "attachments": [attachment("large.pdf", "large", "application/pdf")]}},
@@ -155,30 +157,35 @@ def test_oversized_attachment_is_skipped_before_decoding_or_extraction() -> None
             max_attachment_bytes=2,
             pdf_text_extractor=lambda *_: (_ for _ in ()).throw(AssertionError),
         ).analyze(items(thread))
-    ) == {"thread-1": ["Jahr/2025", "has-attachments", "Nicht kategorisiert"]}
+    ) == {}
+    assert "thread-1" in caplog.text
+    assert "large" in caplog.text
+    assert "large.pdf" in caplog.text
+    assert "download limit" in caplog.text
 
 
 def test_docx_text_extraction_stops_at_the_requested_attachment_budget() -> None:
     assert _extract_docx_text(docx("x" * 1_000), 37) == "x" * 37
 
 
-def test_invalid_llm_output_retries_then_skips_but_empty_valid_list_falls_back() -> None:
+def test_invalid_llm_output_retries_once_then_aborts_but_empty_valid_list_falls_back() -> None:
     thread = CollectedThread("thread-1", (header("one", "2025-01-01T00:00:00"),))
     mail = {"one": {"subject": "S", "body_content": "Body", "attachments": []}}
     invalid = FakeClient(mail, {}, ["not json", "[]"])
     fallback = FakeClient(mail, {}, [json.dumps({"categories": ["Jahr/2025", "has-attachments"]})])
 
-    assert asyncio.run(InboxThreadAnalyzer(invalid).analyze(items(thread))) == {}
+    with pytest.raises(ValueError, match="invalid category JSON repeatedly"):
+        asyncio.run(InboxThreadAnalyzer(invalid).analyze(items(thread)))
     assert len(invalid.llm_prompts) == 2
     assert asyncio.run(InboxThreadAnalyzer(fallback).analyze(items(thread))) == {"thread-1": ["Jahr/2025", "Nicht kategorisiert"]}
 
 
-def test_scanned_pdf_and_llm_technical_failure_are_not_misclassified_as_uncategorized() -> None:
+def test_empty_pdf_text_marks_the_thread_as_a_document_error() -> None:
     thread = CollectedThread("thread-1", (header("one", "2025-01-01T00:00:00"),))
     client = FakeClient(
         {"one": {"subject": "S", "body_content": "Body", "attachments": [attachment("scan.pdf", "scan", "application/pdf")]}},
         {("one", "scan"): {"content_base64": base64.b64encode(b"not OCR text").decode()}},
-        [RuntimeError("LLM unavailable")],
+        [],
     )
 
     assert asyncio.run(
@@ -186,7 +193,7 @@ def test_scanned_pdf_and_llm_technical_failure_are_not_misclassified_as_uncatego
     ) == {}
 
 
-def test_unreadable_attachment_is_skipped_without_losing_the_thread() -> None:
+def test_attachment_download_error_aborts_analysis() -> None:
     thread = CollectedThread("thread-1", (header("one", "2025-01-01T00:00:00"),))
     client = FakeClient(
         {"one": {"subject": "S", "body_content": "Body", "attachments": [attachment("broken.pdf", "broken", "application/pdf"), attachment("good.docx", "good", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")] }},
@@ -194,13 +201,23 @@ def test_unreadable_attachment_is_skipped_without_losing_the_thread() -> None:
         [json.dumps({"categories": ["Reisen/Buchungen"]})],
     )
 
-    assert asyncio.run(InboxThreadAnalyzer(client).analyze(items(thread))) == {
-        "thread-1": ["Jahr/2025", "has-attachments", "Reisen/Buchungen"]
-    }
-    assert "Reisebuchung" in client.llm_prompts[0]
+    with pytest.raises(RuntimeError, match="download failed"):
+        asyncio.run(InboxThreadAnalyzer(client).analyze(items(thread)))
 
 
-def test_unreadable_message_or_llm_failure_skips_only_that_thread_and_keeps_no_content_state() -> None:
+def test_attachment_contract_violation_aborts_analysis() -> None:
+    thread = CollectedThread("thread-1", (header("one", "2025-01-01T00:00:00"),))
+    client = FakeClient(
+        {"one": {"subject": "S", "body_content": "Body", "attachments": [attachment("broken.pdf", "broken", "application/pdf")]}},
+        {("one", "broken"): {}},
+        [],
+    )
+
+    with pytest.raises(KeyError, match="content_base64"):
+        asyncio.run(InboxThreadAnalyzer(client).analyze(items(thread)))
+
+
+def test_unreadable_message_aborts_analysis() -> None:
     bad = CollectedThread("bad", (MailHeader("bad", "bad", datetime(2025, 1, 1, tzinfo=timezone.utc), "", "", True),))
     good = CollectedThread("good", (MailHeader("good", "good", datetime(2025, 1, 2, tzinfo=timezone.utc), "", "", True),))
     client = FakeClient(
@@ -210,10 +227,27 @@ def test_unreadable_message_or_llm_failure_skips_only_that_thread_and_keeps_no_c
     )
     analyzer = InboxThreadAnalyzer(client)
 
-    assert asyncio.run(analyzer.analyze(items(bad, good))) == {"good": ["Jahr/2025", "Reisen/Buchungen"]}
+    with pytest.raises(RuntimeError, match="unreadable"):
+        asyncio.run(analyzer.analyze(items(bad, good)))
     assert set(analyzer.__dict__) == {
         "_client",
         "_input_budget_chars",
         "_max_attachment_bytes",
         "_pdf_text_extractor",
     }
+
+
+def test_context_limit_retries_once_with_a_smaller_prompt() -> None:
+    thread = CollectedThread("thread-1", (header("one", "2025-01-01T00:00:00"),))
+    client = FakeClient(
+        {"one": {"subject": "S", "body_content": "x" * 800, "attachments": []}},
+        {},
+        [RuntimeError("context length exceeded"), json.dumps({"categories": ["Reisen/Buchungen"]})],
+    )
+
+    assert asyncio.run(InboxThreadAnalyzer(client, input_budget_chars=1_000).analyze(items(thread))) == {
+        "thread-1": ["Jahr/2025", "Reisen/Buchungen"]
+    }
+    assert len(client.llm_prompts) == 2
+    assert all(len(prompt) <= 1_000 for prompt in client.llm_prompts)
+    assert len(client.llm_prompts[1]) < len(client.llm_prompts[0])

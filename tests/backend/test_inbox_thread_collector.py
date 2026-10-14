@@ -138,17 +138,15 @@ def test_single_thread_is_deduplicated_and_no_body_or_attachment_capability_exis
     assert {call[0] for call in client.calls} == {"set_provider", "stats", "messages", "thread"}
 
 
-def test_skips_an_unreadable_thread_but_continues_the_month(caplog) -> None:
+def test_thread_lookup_error_aborts_collection() -> None:
     client = FakeClient(
         oldest="2025-01-01 00:00",
         inbox={("2025-01-01 00:00", "2025-01-02 00:00"): [header("bad", "bad-thread", "2025-01-01 01:00"), header("good", "good-thread", "2025-01-01 02:00")]},
         threads={"bad-thread": RuntimeError("unreadable"), "good-thread": [header("good", "good-thread", "2025-01-01 02:00")]},
     )
 
-    result = asyncio.run(collected(client, "2025-01-02 00:00"))
-
-    assert [item.thread_id for item in result] == ["good-thread"]
-    assert "bad-thread" in caplog.text
+    with pytest.raises(RuntimeError, match="unreadable"):
+        asyncio.run(collected(client, "2025-01-02 00:00"))
 
 
 def test_month_query_error_is_not_misreported_as_an_empty_month() -> None:
@@ -163,16 +161,15 @@ def test_month_query_error_is_not_misreported_as_an_empty_month() -> None:
         asyncio.run(collected(client, "2025-01-02 00:00"))
 
 
-def test_invalid_header_is_skipped_without_losing_other_threads() -> None:
+def test_invalid_header_aborts_collection() -> None:
     client = FakeClient(
         oldest="2025-01-01 00:00",
         inbox={("2025-01-01 00:00", "2025-01-02 00:00"): [{"message_id": "invalid"}, header("good", "good-thread", "2025-01-01 02:00")]},
         threads={"good-thread": [header("good", "good-thread", "2025-01-01 02:00")]},
     )
 
-    result = asyncio.run(collected(client, "2025-01-02 00:00"))
-
-    assert [item.thread_id for item in result] == ["good-thread"]
+    with pytest.raises(KeyError, match="thread_id"):
+        asyncio.run(collected(client, "2025-01-02 00:00"))
 
 
 def test_uses_berlin_month_boundaries_for_a_dst_transition() -> None:

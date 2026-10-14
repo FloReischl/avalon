@@ -42,6 +42,7 @@ data/agent-instructions.md
 data/agent-findings.md
 data/agent-output.md
 data/diff.patch
+data/diff.txt
 
 # secure!
 spikes/imaplib/env_vars.sh
