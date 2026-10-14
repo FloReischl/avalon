@@ -11,12 +11,16 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parents[2] / "workflows"))
 
-from avalon_workflows.inbox_thread_analyzer import InboxThreadAnalyzer
+from avalon_workflows.inbox_thread_analyzer import (
+    InboxThreadAnalyzer,
+    _extract_docx_text,
+    _header_pieces,
+)
 from avalon_workflows.inbox_thread_collector import CollectedThread, MailHeader
 
 
-def header(message_id: str, when: str) -> MailHeader:
-    return MailHeader(message_id, "thread-1", datetime.fromisoformat(when).replace(tzinfo=timezone.utc), "ignored", "sender", True)
+def header(message_id: str, when: str, subject: str = "ignored") -> MailHeader:
+    return MailHeader(message_id, "thread-1", datetime.fromisoformat(when).replace(tzinfo=timezone.utc), subject, "sender", True)
 
 
 def attachment(name: str, attachment_id: str, mime_type: str) -> dict[str, str]:
@@ -74,7 +78,7 @@ def test_analyzes_complete_thread_chronologically_with_technical_and_document_ca
         {("old", "pdf"): {"content_base64": pdf}, ("new", "word"): {"content_base64": word}},
         [json.dumps({"categories": ["Finanzen/Rechnungen", "Finanzen/Rechnungen"]})],
     )
-    analyzer = InboxThreadAnalyzer(client, pdf_text_extractor=lambda _: "Rechnung 42")
+    analyzer = InboxThreadAnalyzer(client, pdf_text_extractor=lambda _, _limit: "Rechnung 42")
     thread = CollectedThread("thread-1", (header("new", "2025-02-01T10:00:00"), header("old", "2024-12-31T10:00:00")))
 
     result = asyncio.run(analyzer.analyze(items(thread)))
@@ -98,6 +102,66 @@ def test_budget_limits_mail_and_attachment_content_and_skips_unsupported_files()
     assert len(client.llm_prompts[0]) <= 200
 
 
+def test_tight_budget_keeps_each_message_in_order_and_prefers_the_newest_body() -> None:
+    headers = (
+        header("old", "2025-01-01T00:00:00", "Old subject"),
+        header("middle", "2025-01-02T00:00:00", "Middle subject"),
+        header("new", "2025-01-03T00:00:00", "New subject"),
+    )
+    client = FakeClient(
+        {
+            "old": {"subject": "Old subject", "body_content": "OLD-BODY-" + "x" * 500, "attachments": []},
+            "middle": {"subject": "Middle subject", "body_content": "MIDDLE-BODY-" + "x" * 500, "attachments": []},
+            "new": {"subject": "New subject", "body_content": "NEWEST-BODY-" + "x" * 500, "attachments": []},
+        },
+        {},
+        [json.dumps({"categories": []})],
+    )
+
+    assert asyncio.run(
+        InboxThreadAnalyzer(client, input_budget_chars=320).analyze(
+            items(CollectedThread("thread-1", headers))
+        )
+    ) == {"thread-1": ["Jahr/2025", "Nicht kategorisiert"]}
+    prompt = client.llm_prompts[0]
+    assert "Old subject" in prompt and "Middle subject" in prompt and "New subject" in prompt
+    assert "NEWEST-BODY" in prompt
+    assert prompt.index("Old subject") < prompt.index("Middle subject") < prompt.index("New subject")
+
+
+def test_tight_header_budget_keeps_the_newest_subject() -> None:
+    headers = (
+        header("old", "2025-01-01T00:00:00", "old-subject-" + "x" * 100),
+        header("new", "2025-01-02T00:00:00", "new-subject"),
+    )
+
+    pieces, remaining = _header_pieces(headers, len("Betreff: new-subject\n"))
+
+    assert remaining == 0
+    assert pieces == ["", "Betreff: new-subject\n"]
+
+
+def test_oversized_attachment_is_skipped_before_decoding_or_extraction() -> None:
+    thread = CollectedThread("thread-1", (header("one", "2025-01-01T00:00:00"),))
+    client = FakeClient(
+        {"one": {"subject": "S", "body_content": "Body", "attachments": [attachment("large.pdf", "large", "application/pdf")]}},
+        {("one", "large"): {"content_base64": "!" * 8}},
+        [json.dumps({"categories": []})],
+    )
+
+    assert asyncio.run(
+        InboxThreadAnalyzer(
+            client,
+            max_attachment_bytes=2,
+            pdf_text_extractor=lambda *_: (_ for _ in ()).throw(AssertionError),
+        ).analyze(items(thread))
+    ) == {"thread-1": ["Jahr/2025", "has-attachments", "Nicht kategorisiert"]}
+
+
+def test_docx_text_extraction_stops_at_the_requested_attachment_budget() -> None:
+    assert _extract_docx_text(docx("x" * 1_000), 37) == "x" * 37
+
+
 def test_invalid_llm_output_retries_then_skips_but_empty_valid_list_falls_back() -> None:
     thread = CollectedThread("thread-1", (header("one", "2025-01-01T00:00:00"),))
     mail = {"one": {"subject": "S", "body_content": "Body", "attachments": []}}
@@ -118,7 +182,7 @@ def test_scanned_pdf_and_llm_technical_failure_are_not_misclassified_as_uncatego
     )
 
     assert asyncio.run(
-        InboxThreadAnalyzer(client, pdf_text_extractor=lambda _: "").analyze(items(thread))
+        InboxThreadAnalyzer(client, pdf_text_extractor=lambda _, _limit: "").analyze(items(thread))
     ) == {}
 
 
@@ -147,4 +211,9 @@ def test_unreadable_message_or_llm_failure_skips_only_that_thread_and_keeps_no_c
     analyzer = InboxThreadAnalyzer(client)
 
     assert asyncio.run(analyzer.analyze(items(bad, good))) == {"good": ["Jahr/2025", "Reisen/Buchungen"]}
-    assert not any("body" in name or "attachment" in name for name in analyzer.__dict__)
+    assert set(analyzer.__dict__) == {
+        "_client",
+        "_input_budget_chars",
+        "_max_attachment_bytes",
+        "_pdf_text_extractor",
+    }
