@@ -4,13 +4,15 @@ from __future__ import annotations
 
 import json
 from collections import Counter
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from typing import Protocol
 
 
 DEFAULT_INPUT_BUDGET_CHARS = 8_000 * 3
 _LLM_ATTEMPTS = 2
 _UNCATEGORIZED = "Nicht kategorisiert"
+_RETRY_FEEDBACK_RESERVE_CHARS = 256
+_MAX_RETRY_FEEDBACK_CHARS = 160
 
 
 class TaxonomyNormalizationClient(Protocol):
@@ -35,8 +37,8 @@ class InboxTaxonomyNormalizer:
         *,
         input_budget_chars: int = DEFAULT_INPUT_BUDGET_CHARS,
     ) -> None:
-        if input_budget_chars < 256:
-            raise ValueError("input_budget_chars must be at least 256.")
+        if input_budget_chars < 512:
+            raise ValueError("input_budget_chars must be at least 512.")
         self._client = client
         self._input_budget_chars = input_budget_chars
 
@@ -47,16 +49,56 @@ class InboxTaxonomyNormalizer:
         if not frequencies:
             return _copy_proposals(proposals)
 
-        mapping: dict[str, str] = {}
-        for sources in _batches(
-            frequencies, existing, self._input_budget_chars
-        ):
-            mapping.update(await self._normalize_batch(sources, frequencies, existing))
+        mapping, batch_count = await self._map_categories(frequencies, existing)
         # This guards batching mistakes as well as an LLM response that happened
         # to be individually valid but did not cover the global input.
         if set(mapping) != set(frequencies):
             raise ValueError("Taxonomy normalization did not map every source category.")
+        if batch_count > 1:
+            target_mapping = await self._consolidate_targets(mapping, frequencies, existing)
+            mapping = {source: target_mapping[target] for source, target in mapping.items()}
         return _rewrite_proposals(proposals, mapping)
+
+    async def _map_categories(
+        self, frequencies: Counter[str], existing: list[str]
+    ) -> tuple[dict[str, str], int]:
+        batches = _batches(frequencies, existing, self._input_budget_chars)
+        mapping: dict[str, str] = {}
+        for sources in batches:
+            mapping.update(await self._normalize_batch(sources, frequencies, existing))
+        return mapping, len(batches)
+
+    async def _consolidate_targets(
+        self,
+        source_mapping: Mapping[str, str],
+        source_frequencies: Counter[str],
+        existing: list[str],
+    ) -> dict[str, str]:
+        """Build one hierarchy of batch targets before rewriting source proposals."""
+        current = Counter[str]()
+        for source, target in source_mapping.items():
+            current[target] += source_frequencies[source]
+        lineage = {target: target for target in current}
+
+        seen_states: set[tuple[str, ...]] = {tuple(sorted(current))}
+        for _ in range(8):
+            mapping, batch_count = await self._map_categories(current, existing)
+            lineage = {
+                original: mapping[target] for original, target in lineage.items()
+            }
+            if batch_count == 1:
+                return lineage
+            next_frequencies: Counter[str] = Counter()
+            for source, target in mapping.items():
+                next_frequencies[target] += current[source]
+            state = tuple(sorted(next_frequencies))
+            if state in seen_states:
+                raise ValueError(
+                    "Global taxonomy normalization entered a category-mapping cycle."
+                )
+            seen_states.add(state)
+            current = next_frequencies
+        raise ValueError("Global taxonomy exceeded the bounded consolidation stages.")
 
     async def _existing_categories(self) -> list[str]:
         values = await self._client.get_mail_categories()
@@ -96,7 +138,9 @@ class InboxTaxonomyNormalizer:
             try:
                 return _validate_mapping(response, sources)
             except ValueError as exc:
-                feedback = str(exc)
+                feedback = _bounded_retry_feedback(
+                    str(exc), sources, frequencies, existing, self._input_budget_chars
+                )
                 if attempt + 1 == _LLM_ATTEMPTS:
                     raise ValueError(
                         "LLM returned an invalid taxonomy mapping repeatedly."
@@ -111,12 +155,18 @@ def _category_frequencies(proposals: Mapping[str, list[str]]) -> Counter[str]:
             raise ValueError("Proposal has no valid thread ID.")
         if not isinstance(categories, list) or not all(isinstance(value, str) for value in categories):
             raise ValueError("Proposal categories must be lists of strings.")
+        seen_in_thread: set[str] = set()
         for category in categories:
             value = category.strip()
             if not value:
                 raise ValueError("Proposal contains an empty category.")
-            if not _is_technical_category(value) and value != _UNCATEGORIZED:
+            if (
+                value not in seen_in_thread
+                and not _is_technical_category(value)
+                and value != _UNCATEGORIZED
+            ):
                 frequencies[value] += 1
+            seen_in_thread.add(value)
     return frequencies
 
 
@@ -129,7 +179,10 @@ def _batches(
     current: list[str] = []
     for source in sources:
         candidate = [*current, source]
-        if len(_normalization_prompt(candidate, frequencies, existing, None)) <= budget:
+        if (
+            len(_normalization_prompt(candidate, frequencies, existing, None))
+            <= budget - _RETRY_FEEDBACK_RESERVE_CHARS
+        ):
             current = candidate
             continue
         if not current:
@@ -138,7 +191,10 @@ def _batches(
             )
         batches.append(current)
         current = [source]
-        if len(_normalization_prompt(current, frequencies, existing, None)) > budget:
+        if (
+            len(_normalization_prompt(current, frequencies, existing, None))
+            > budget - _RETRY_FEEDBACK_RESERVE_CHARS
+        ):
             raise ValueError(
                 "Taxonomy normalization input budget is too small for one category."
             )
@@ -173,6 +229,24 @@ def _normalization_prompt(
         "Gib nur das verlangte JSON zurück.\n"
         + json.dumps(request, ensure_ascii=False, separators=(",", ":"))
     )
+
+
+def _bounded_retry_feedback(
+    error: str,
+    sources: list[str],
+    frequencies: Counter[str],
+    existing: list[str],
+    budget: int,
+) -> str:
+    """Keep concrete retry feedback within the prompt budget even for long keys."""
+    feedback = error[:_MAX_RETRY_FEEDBACK_CHARS]
+    while feedback and len(
+        _normalization_prompt(sources, frequencies, existing, feedback)
+    ) > budget:
+        feedback = feedback[:-1]
+    if not feedback:
+        raise ValueError("Taxonomy retry feedback does not fit the input budget.")
+    return feedback
 
 
 def _validate_mapping(response: object, sources: list[str]) -> dict[str, str]:
@@ -227,7 +301,10 @@ def _rewrite_proposals(
 def _copy_proposals(proposals: Mapping[str, list[str]]) -> dict[str, list[str]]:
     # Validate even when no LLM call is necessary.
     _category_frequencies(proposals)
-    return {thread_id: list(categories) for thread_id, categories in proposals.items()}
+    return {
+        thread_id: _deduplicate(category.strip() for category in categories)
+        for thread_id, categories in proposals.items()
+    }
 
 
 def _is_technical_category(value: str) -> bool:
@@ -260,3 +337,13 @@ def _is_valid_target(value: str) -> bool:
         and value != _UNCATEGORIZED
         and not _is_system_category(value)
     )
+
+
+def _deduplicate(values: Iterable[str]) -> list[str]:
+    result: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        if value not in seen:
+            result.append(value)
+            seen.add(value)
+    return result
