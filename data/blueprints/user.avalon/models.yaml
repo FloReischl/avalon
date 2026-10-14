@@ -1,12 +1,12 @@
 models:
 - key: standard
-  model: gemma4:e4b-it-q4_K_M-ctx16k
+  model: gemma4:e4b-it-q4_K_M-ctx32k
   tool_support: true
 - key: gemma
-  model: gemma4:e4b-it-q4_K_M-ctx16k
+  model: gemma4:e4b-it-q4_K_M-ctx32k
   tool_support: true
 - key: gemma-small
-  model: gemma4:e4b-it-q4_K_M-ctx16k
+  model: gemma4:e4b-it-q4_K_M-ctx32k
   tool_support: true
 - key: gemma-large
   model: gemma4:12b-it-q4_K_M-ctx16k

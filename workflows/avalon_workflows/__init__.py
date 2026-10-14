@@ -4,6 +4,7 @@ from .inbox_thread_analyzer import InboxThreadAnalyzer
 from .inbox_thread_collector import CollectedThread, InboxThreadCollector, MailHeader
 from .inbox_taxonomy_normalizer import InboxTaxonomyNormalizer
 from .inbox_organizer import InboxOrganizer
+from .inbox_confirmation import ProposedThread
 
 __all__ = [
     "AvalonWorkflowClient",
@@ -14,6 +15,7 @@ __all__ = [
     "InboxThreadAnalyzer",
     "InboxTaxonomyNormalizer",
     "InboxOrganizer",
+    "ProposedThread",
     "MailHeader",
 ]
 

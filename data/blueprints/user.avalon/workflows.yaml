@@ -5,3 +5,5 @@ workflows:
   file_path: /home/flo/dev/avalon/workflows/create-podcast-list.py
 - key: confirmation-test
   file_path: /home/flo/dev/avalon/workflows/confirmation-test.py
+- key: gmail-inbox-organizer
+  file_path: /home/flo/dev/avalon/workflows/gmail-inbox-organizer.py
