@@ -97,6 +97,9 @@ class InboxThreadCollector:
 
     async def collect(self) -> AsyncIterator[CollectedThread]:
         """Select Gmail and yield collected threads in chronological months."""
+        workflow_now = _require_aware(
+            self._clock(), "Workflow clock returned a naive datetime."
+        )
         await self._client.set_mail_provider("gmail")
         stats = await self._client.get_mail_provider_stats()
         if not isinstance(stats, Mapping):
@@ -108,7 +111,6 @@ class InboxThreadCollector:
         oldest = _parse_datetime(stats.get("oldest_message_date"))
         if oldest is None:
             raise ValueError("Mail provider reported inbox messages without oldest_message_date.")
-        workflow_now = _require_aware(self._clock(), "Workflow clock returned a naive datetime.")
         start = oldest.astimezone(self._timezone)
         end = workflow_now.astimezone(self._timezone)
         if start >= end:
@@ -160,6 +162,17 @@ class InboxThreadCollector:
             for thread_id, headers in pending.pop(month, {}).items():
                 yield CollectedThread(thread_id=thread_id, headers=headers)
             window_start = window_end
+
+        if pending:
+            logger.warning(
+                "Yielding %d thread(s) assigned after workflow snapshot %s: %s.",
+                sum(len(bucket) for bucket in pending.values()),
+                end.isoformat(),
+                ", ".join(sorted(pending)),
+            )
+            for target_month in sorted(pending):
+                for thread_id, headers in pending[target_month].items():
+                    yield CollectedThread(thread_id=thread_id, headers=headers)
 
 
 def _inbox_count(stats: Mapping[str, object]) -> int:

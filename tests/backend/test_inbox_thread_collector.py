@@ -200,5 +200,62 @@ def test_uses_berlin_month_boundaries_for_a_dst_transition() -> None:
     ]
 
 
+def test_thread_after_the_workflow_snapshot_is_yielded_and_reported(caplog) -> None:
+    client = FakeClient(
+        oldest="2025-01-01 00:00",
+        inbox={("2025-01-01 00:00", "2025-01-02 00:00"): [header("one", "thread-1", "2025-01-01 01:00")]},
+        threads={"thread-1": [header("one", "thread-1", "2025-02-01 01:00")]},
+    )
+
+    result = asyncio.run(collected(client, "2025-01-02 00:00"))
+
+    assert [item.thread_id for item in result] == ["thread-1"]
+    assert "after workflow snapshot" in caplog.text
+    assert "2025-02" in caplog.text
+
+
+def test_workflow_snapshot_is_fixed_before_provider_initialization() -> None:
+    class Clock:
+        current = datetime.fromisoformat(stamp("2025-01-02 00:00"))
+
+        def __call__(self) -> datetime:
+            return self.current
+
+    class AdvancingClient(FakeClient):
+        async def set_mail_provider(self, provider: str) -> None:
+            await super().set_mail_provider(provider)
+            clock.current = datetime.fromisoformat(stamp("2025-01-03 00:00"))
+
+    clock = Clock()
+    client = AdvancingClient(
+        oldest="2025-01-01 00:00",
+        inbox={("2025-01-01 00:00", "2025-01-02 00:00"): []},
+        threads={},
+        inbox_count=1,
+    )
+    collector = InboxThreadCollector(client, clock=clock, timezone=ZoneInfo("UTC"))
+
+    assert asyncio.run(_collect(collector)) == []
+    assert ("messages", ("2025-01-01 00:00", "2025-01-02 00:00")) in client.calls
+
+
+def test_identical_header_timestamps_are_collected_once() -> None:
+    client = FakeClient(
+        oldest="2025-01-01 00:00",
+        inbox={("2025-01-01 00:00", "2025-01-02 00:00"): [header("one", "thread-1", "2025-01-01 01:00")]},
+        threads={
+            "thread-1": [
+                header("one", "thread-1", "2025-01-01 01:00"),
+                header("two", "thread-1", "2025-01-01 01:00"),
+            ]
+        },
+    )
+
+    result = asyncio.run(collected(client, "2025-01-02 00:00"))
+
+    assert [item.thread_id for item in result] == ["thread-1"]
+    assert [header.message_id for header in result[0].headers] == ["one", "two"]
+
+
 async def _collect(collector: InboxThreadCollector) -> list:
     return [item async for item in collector.collect()]

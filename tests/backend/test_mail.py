@@ -781,6 +781,28 @@ def test_gmail_stats_uses_special_use_all_mail_and_empty_mailbox(tmp_path, monke
     assert stats == MailProviderStats(2, 2, 1, datetime(2026, 1, 1, 12, tzinfo=timezone.utc), datetime(2026, 1, 1, 12, 0, 1, tzinfo=timezone.utc))
 
 
+def test_gmail_search_and_get_messages_process_a_large_complete_imap_result(tmp_path, monkeypatch):
+    class LargeSearchImap(FakeImap):
+        def search(self, _, *criteria):
+            self.calls.append(("search", criteria))
+            if criteria == ("ALL",):
+                return "OK", [b" ".join(str(value).encode() for value in range(1, 1002))]
+            return super().search(_, *criteria)
+
+    config = SimpleNamespace(account="a@example.test", oauth_token=tmp_path / "token.json", client_secret=tmp_path / "client.json")
+    fake = LargeSearchImap()
+    provider = GmailMailProvider(config, imap_factory=lambda *_: fake, sleep=lambda _: None)
+    monkeypatch.setattr(provider, "_credentials", lambda: SimpleNamespace(token="token", to_json=lambda: "{}"))
+    provider.connect()
+
+    messages = provider.get_messages("INBOX", None, None)
+
+    assert len(messages) == 1001
+    assert [call[1] for call in fake.calls if isinstance(call, tuple) and call[0] == "fetch"] == [
+        str(value).encode() for value in range(1, 1002)
+    ]
+
+
 def test_mail_mcp_validates_dates_before_provider_access():
     state = SimpleNamespace(active_mail_provider=None)
     manager = MailProviderManager(lambda: state, {})
