@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import json
 import sys
-from typing import Any, Optional
+from datetime import datetime
+from typing import Any, Literal, Optional, cast
 
 import httpx2
 from mcp import Client
@@ -74,7 +75,100 @@ class AvalonWorkflowClient:
 
         return self._tool_result(result)
 
-    
+    async def set_mail_provider(self, provider: Literal["gmail", "mailbox"]) -> None:
+        await self.call_tool("mail.set_provider", {"provider": provider})
+
+    async def get_mail_provider_stats(self) -> dict[str, object]:
+        return cast(
+            dict[str, object],
+            await self.call_tool("mail.get_provider_stats", {}),
+        )
+
+    async def get_mail_messages(
+        self,
+        category: str,
+        *,
+        since: datetime | None = None,
+        before: datetime | None = None,
+    ) -> list[dict[str, object]]:
+        return cast(
+            list[dict[str, object]],
+            await self.call_tool(
+                "mail.get_messages",
+                {"category": category, "since": since, "before": before},
+            ),
+        )
+
+    async def get_mail_messages_by_thread(
+        self,
+        thread_id: str,
+    ) -> list[dict[str, object]]:
+        return cast(
+            list[dict[str, object]],
+            await self.call_tool(
+                "mail.get_messages_by_thread",
+                {"thread_id": thread_id},
+            ),
+        )
+
+    async def get_mail(
+        self,
+        message_id: str,
+        *,
+        as_text: bool = True,
+    ) -> dict[str, object]:
+        return cast(
+            dict[str, object],
+            await self.call_tool(
+                "mail.get_mail",
+                {"message_id": message_id, "as_text": as_text},
+            ),
+        )
+
+    async def get_mail_attachment(
+        self,
+        message_id: str,
+        attachment_id: str,
+    ) -> dict[str, str]:
+        return cast(
+            dict[str, str],
+            await self.call_tool(
+                "mail.get_attachment",
+                {"message_id": message_id, "attachment_id": attachment_id},
+            ),
+        )
+
+    async def get_mail_categories(self) -> list[str]:
+        return cast(
+            list[str],
+            await self.call_tool("mail.get_categories", {}),
+        )
+
+    async def create_mail_categories(self, categories: list[str]) -> None:
+        await self.call_tool("mail.create_categories", {"categories": categories})
+
+    async def set_mail_categories(
+        self,
+        message_id: str,
+        categories: list[str],
+        *,
+        archive: bool = False,
+    ) -> None:
+        await self.call_tool(
+            "mail.set_categories",
+            {"message_id": message_id, "categories": categories, "archive": archive},
+        )
+
+    async def unset_mail_categories(
+        self,
+        message_id: str,
+        categories: list[str],
+    ) -> None:
+        await self.call_tool(
+            "mail.unset_categories",
+            {"message_id": message_id, "categories": categories},
+        )
+
     async def llm(
         self,
         prompt: str,

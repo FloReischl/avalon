@@ -2,9 +2,11 @@
 
 import asyncio
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
+from mcp import types as mcp_types
 
 sys.path.insert(0, str(Path(__file__).parents[2] / "workflows"))
 
@@ -154,3 +156,117 @@ def test_confirm_propagates_transport_errors_without_retry(monkeypatch) -> None:
         asyncio.run(workflow_client().confirm(CONFIRMATION)
 )
     assert attempts == 1
+
+
+def test_mail_methods_delegate_to_the_matching_mcp_capability(monkeypatch) -> None:
+    calls: list[tuple[str, dict[str, object]]] = []
+    results: dict[str, object] = {
+        "mail.get_provider_stats": {"all_messages_count": 3},
+        "mail.get_messages": [{"message_id": "message-1"}],
+        "mail.get_messages_by_thread": [{"message_id": "message-1"}],
+        "mail.get_mail": {"message_id": "message-1"},
+        "mail.get_attachment": {"content_base64": "Ynl0ZXM="},
+        "mail.get_categories": ["Project"],
+    }
+
+    async def fake_call_tool(name: str, arguments: dict[str, object]) -> object:
+        calls.append((name, arguments))
+        return results.get(name)
+
+    client = workflow_client()
+    monkeypatch.setattr(client, "call_tool", fake_call_tool)
+    timestamp = datetime(2026, 10, 1, tzinfo=timezone.utc)
+
+    assert asyncio.run(client.set_mail_provider("gmail")) is None
+    assert asyncio.run(client.get_mail_provider_stats()) == {"all_messages_count": 3}
+    assert asyncio.run(
+        client.get_mail_messages("INBOX", since=timestamp, before=None)
+    ) == [{"message_id": "message-1"}]
+    assert asyncio.run(client.get_mail_messages_by_thread("thread-1")) == [
+        {"message_id": "message-1"}
+    ]
+    assert asyncio.run(client.get_mail("message-1", as_text=False)) == {
+        "message_id": "message-1"
+    }
+    assert asyncio.run(client.get_mail_attachment("message-1", "attachment-1")) == {
+        "content_base64": "Ynl0ZXM="
+    }
+    assert asyncio.run(client.get_mail_categories()) == ["Project"]
+    assert asyncio.run(client.create_mail_categories(["Project"])) is None
+    assert asyncio.run(
+        client.set_mail_categories("message-1", ["Project"], archive=True)
+    ) is None
+    assert asyncio.run(client.unset_mail_categories("message-1", ["Project"])) is None
+
+    assert calls == [
+        ("mail.set_provider", {"provider": "gmail"}),
+        ("mail.get_provider_stats", {}),
+        ("mail.get_messages", {"category": "INBOX", "since": timestamp, "before": None}),
+        ("mail.get_messages_by_thread", {"thread_id": "thread-1"}),
+        ("mail.get_mail", {"message_id": "message-1", "as_text": False}),
+        ("mail.get_attachment", {"message_id": "message-1", "attachment_id": "attachment-1"}),
+        ("mail.get_categories", {}),
+        ("mail.create_categories", {"categories": ["Project"]}),
+        ("mail.set_categories", {"message_id": "message-1", "categories": ["Project"], "archive": True}),
+        ("mail.unset_categories", {"message_id": "message-1", "categories": ["Project"]}),
+    ]
+
+
+def test_mail_methods_preserve_mcp_errors(monkeypatch) -> None:
+    async def failing_call_tool(_name: str, _arguments: dict[str, object]) -> object:
+        raise RuntimeError("MCP denied the call")
+
+    client = workflow_client()
+    monkeypatch.setattr(client, "call_tool", failing_call_tool)
+
+    with pytest.raises(RuntimeError, match="MCP denied the call"):
+        asyncio.run(client.get_mail_categories())
+
+
+def test_mail_method_optional_parameters_use_the_mcp_defaults(monkeypatch) -> None:
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    async def fake_call_tool(name: str, arguments: dict[str, object]) -> object:
+        calls.append((name, arguments))
+        return [] if name == "mail.get_messages" else {}
+
+    client = workflow_client()
+    monkeypatch.setattr(client, "call_tool", fake_call_tool)
+
+    assert asyncio.run(client.get_mail_messages("INBOX")) == []
+    assert asyncio.run(client.get_mail("message-1")) == {}
+    assert asyncio.run(client.set_mail_categories("message-1", ["Project"])) is None
+
+    assert calls == [
+        ("mail.get_messages", {"category": "INBOX", "since": None, "before": None}),
+        ("mail.get_mail", {"message_id": "message-1", "as_text": True}),
+        (
+            "mail.set_categories",
+            {"message_id": "message-1", "categories": ["Project"], "archive": False},
+        ),
+    ]
+
+
+def test_mcp_serializes_mail_message_datetime_arguments_as_json() -> None:
+    since = datetime(2026, 10, 1, 12, 30, tzinfo=timezone.utc)
+    request = mcp_types.CallToolRequest(
+        params=mcp_types.CallToolRequestParams(
+            name="mail.get_messages",
+            arguments={"category": "INBOX", "since": since, "before": None},
+        )
+    )
+
+    assert request.model_dump(
+        by_alias=True,
+        mode="json",
+        exclude_unset=True,
+    ) == {
+        "params": {
+            "name": "mail.get_messages",
+            "arguments": {
+                "category": "INBOX",
+                "since": "2026-10-01T12:30:00Z",
+                "before": None,
+            },
+        }
+    }
