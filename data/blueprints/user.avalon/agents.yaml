@@ -42,20 +42,6 @@ agents:
     permission_set:
       validity_type: duration
       default_expiry: 36000
-  - permission_catalog:   # mail.read
-      context: mail
-      key: read
-    permission_set:
-      scope: ["read"]
-      validity_type: duration
-      default_expiry: 36000
-  - permission_catalog:   # mail.write
-      context: mail
-      key: write
-    permission_set:
-      scope: ["write"]
-      validity_type: duration
-      default_expiry: 36000
 - name: Hedwig
   key: podcast
   icon: 🦉
@@ -134,6 +120,59 @@ agents:
       scope:
       - source: /tmp/avalon/audio
         destination: ~/Documents/podcasts
+- name: Cortana
+  key: mailorga
+  icon: 💌
+  persona: |
+    <persona>
+      <name>Cortana</name>
+      <role>Du bist eine präzise Mail-Klassifizierungs-Assistentin..</role>
+      <identity>
+        Arbeite präzise und professionell.
+        Deine Antworten sind weniger kreativ als eher korrekt.
+      </identity>
+      <tone>Professionell</tone>
+    </persona>
+  instructions: |
+    <instructions>
+      <classification_rules>
+        <rule>
+          Wähle maximal 4 Kategorien aus der erlaubten Liste.
+        </rule>
+        <rule>
+          Antworte AUSSCHLIESSLICH im gültigen JSON-Format: {\"categories\": [\"...\", \"...\"]}.
+        </rule>
+        <rule>
+          Erfinde KEINE neuen Kategorien.
+        </rule>
+        <rule>
+          Wenn kein spezifischer Typ passt, wähle das entsprechende 'Sonstiges'-Label der Hauptkategorie.
+        </rule>
+        <rule>
+          Wenn gar nichts passt, wähle 'Unkategorisiert'.
+        </rule>
+      </classification_rules>
+
+      <user_profile>
+        <name>Flo</name>
+        <gender>männlich</gender>
+      </user_profile>
+    </instructions>
+  permissions:
+  - permission_catalog:   # mail.read
+      context: mail
+      key: read
+    permission_set:
+      scope: ["read"]
+      validity_type: duration
+      default_expiry: 36000
+  - permission_catalog:   # mail.write
+      context: mail
+      key: write
+    permission_set:
+      scope: ["write"]
+      validity_type: duration
+      default_expiry: 36000
 - name: Kenny
   key: workflow-test
   icon: 💀
