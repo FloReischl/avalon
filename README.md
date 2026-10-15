@@ -1,49 +1,73 @@
 # Avalon
 
-Lokales Entwicklungsgerüst für Avalon. Produktidee, Arbeitsweise und Architekturentscheidungen stehen unter [`docs/`](docs/).
+Artificial virtual assistant - Local Only.
 
-## Voraussetzungen
+### Your personal AI. Your machine. Your rules.
 
-- Linux
-- Python 3.11 oder neuer
-- Node.js mit npm
+**Avalon** is an experimental, open-source-inspired personal AI assistant designed to run locally on your own computer.
 
-## Backend einrichten und starten
+The name draws inspiration from the legendary island of Avalon — a fitting metaphor for a private digital space where your AI assistant lives and works under your control.
 
-```bash
-python3 -m venv .venv
-./.venv/bin/pip install -e ".[dev]"
-./scripts/others/start-backend.sh
-```
+Avalon is a personal software development project, not a commercial product or hosted AI service.
 
-Der Health-Endpunkt ist danach unter `http://127.0.0.1:8095/health` erreichbar. Der Chat-Endpunkt ist absichtlich nur ein Stub und antwortet mit HTTP 501.
+## What is Avalon?
 
-## Frontend einrichten und starten
+Avalon combines local language models with a desktop interface to create a personal AI companion.
 
-In einem zweiten Terminal:
+Its goal is to make AI assistance more natural, useful, and independent of cloud infrastructure.
 
-```bash
-cd frontend
-npm install
-npm run dev
-```
+Core capabilities include:
 
-Das Frontend läuft im Entwicklungsmodus unter `http://127.0.0.1:5173`.
+- **Local AI conversations** — interact with language models running on your own hardware.
+- **Voice interaction** — speak to Avalon and receive spoken responses.
+- **Personalized assistants** — use different AI personas and specialized agents.
+- **Extensible tools** — connect assistants to local applications and explicitly authorized external services.
+- **Conversation history** — keep chats and their context locally.
 
-## Tests
+Avalon is currently developed primarily for Linux desktops.
 
-```bash
-./.venv/bin/python -m pytest
-cd frontend
-npm test
-```
+## Local First. Privacy by Design.
 
-Noch nicht implementierte Produktfunktionen sind als übersprungene Tests beziehungsweise `todo` markiert. Sie dürfen nicht als bestandene Funktionalität interpretiert werden.
+Avalon's guiding principle is simple:
 
-## Aktueller Umfang
+**Your personal AI should remain under your control.**
 
-- startbares FastAPI-Backend mit Health-Endpunkt;
-- minimale startbare Vue-Oberfläche;
-- öffentliche Stub-Verträge für Textchat, natives Audio, LLM-Runtime und TTS;
-- keine Modell-, Audio- oder TTS-Implementierung;
-- kein Tauri und kein Packaging.
+Language-model inference, conversation processing, and conversation storage are designed to operate locally.
+
+Avalon does not require a hosted AI backend for its core functionality.
+
+Some optional integrations, such as email access, communicate with external services when explicitly configured and authorized by the user.
+
+## Optional Gmail Integration
+
+Avalon supports an optional integration with Gmail using Google's OAuth 2.0 authorization mechanism.
+
+This integration allows the assistant to access selected email information on behalf of the authenticated user.
+
+The integration is designed for read-only operations, including:
+
+- Retrieving email messages
+- Reading email conversations
+- Retrieving mailbox statistics
+
+Avalon does not use this integration to send, modify, or delete emails.
+
+Gmail access requires explicit authorization by the Google account owner and can be revoked through Google Account settings.
+
+For details, please refer to the [Privacy Policy](privacy.md).
+
+## Project Status
+
+Avalon is an experimental, independently developed personal project.
+
+It is under active development, and its functionality, architecture, and supported integrations may change.
+
+There is currently no commercial offering, public hosted service, or general user registration.
+
+## Contact
+
+For questions about Avalon or its Google integration, please contact the project maintainer using the support email displayed on the Google OAuth consent screen.
+
+---
+
+*Avalon — Augmented Virtual Assistant, Local & Offline.*
