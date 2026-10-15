@@ -8,6 +8,7 @@ import sys
 from datetime import datetime
 import httpx
 import yaml
+from avalon_workflows.execution_manager import WorkflowExecutionManager
 
 from pathlib import Path
 
@@ -46,7 +47,7 @@ def run_workflow(script_path: str, avalon_args: dict | None = None, payload: lis
         return { key: avalon_args.get(key, default) }
 
     token = avalon_args["bearer_token"] if "bearer_token" in avalon_args else get_agent_token(BACKEND_URL, DEFAULT_AGENT_ID)
-
+    
     # Das Envelope, das Avalon normalerweise via stdin an den Workflow übergibt
     envelope = {
         "avalon": {
@@ -90,8 +91,12 @@ if __name__ == "__main__":
     # parser = argparse.ArgumentParser(description="Run an Avalon workflow script locally.")
     # parser.add_argument("script", help="Pfad zum Python-Workflow-Skript (z.B. organize-mail.py)")
     # args = parser.parse_args()
+    wfe = WorkflowExecutionManager()
+    invocation_id = str(datetime.now().isoformat())
+    wfe_id = wfe.create_execution("New 2026-10-15 14:12:33", "gmail-organizer", "Cortana", invocation_id)
 
     config = get_agent_config("Cortana")
+    config["workflow_execution_id"] = wfe_id
     config["bearer_token"] = get_agent_token(BACKEND_URL, 4)
     run_workflow("workflows/gmail-organizer.py", config, None)
 

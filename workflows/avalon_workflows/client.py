@@ -73,6 +73,13 @@ class AvalonWorkflowClient:
             async with Client(transport) as client:
                 result = await client.call_tool(name, arguments)
 
+        if result.is_error:
+            try:
+                scontent = str(result.content)
+            except:
+                scontent = "<unknown content>"
+            raise RuntimeError(f"Error while MCP tool call '{name}':\nResponse content: {scontent}")
+
         return self._tool_result(result)
 
     async def set_mail_provider(self, provider: Literal["gmail", "mailbox"]) -> None:

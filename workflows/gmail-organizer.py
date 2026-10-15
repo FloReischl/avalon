@@ -54,18 +54,21 @@ def _clean_json_response(raw_text: str, allowed_categories: list[str]) -> list[s
 async def main() -> None:
     workflow = AvalonWorkflowClient.from_stdin()
     workflow.model_context = None  # Kein störender Chat-Kontext
-
+    
     workflow.log("Starting Mail Organization Workflow")
     await workflow.progress("Initialisiere E-Mail-Organisations-Workflow...")
 
-    # 1. Bekannte Gmail-Labels als Taxonomie holen & System-Labels ausfiltern
+    # Bekannte Gmail-Labels als Taxonomie holen & System-Labels ausfiltern
     all_categories = await workflow.get_mail_categories()
     allowed_categories = [
         cat for cat in all_categories if cat not in SYSTEM_LABELS and not cat.startswith("[Gmail]")
     ]
     workflow.log(f"Taxonomie geladen ({len(allowed_categories)} erlaubte Labels)")
 
-    # 2. Provider Stats abrufen, um ältestes E-Mail-Datum zu ermitteln
+    # Provider Gmail
+    await workflow.set_mail_provider("gmail")
+
+    # Provider Stats abrufen, um ältestes E-Mail-Datum zu ermitteln
     stats = await workflow.get_mail_provider_stats()
     oldest_date_str = stats.get("oldest_message_date")
     
@@ -82,7 +85,7 @@ async def main() -> None:
     processed_threads: set[str] = set()
     total_messages_processed = 0
 
-    # 3. Monatsweise Iteration von alt nach neu
+    # Monatsweise Iteration von alt nach neu
     while current_batch_start < until:
         batch_end = min(current_batch_start + relativedelta(months=1), until)
         month_label = current_batch_start.strftime("%Y-%m")

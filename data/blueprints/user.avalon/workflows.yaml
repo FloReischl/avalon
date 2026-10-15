@@ -7,3 +7,5 @@ workflows:
   file_path: /home/flo/dev/avalon/workflows/confirmation-test.py
 - key: gmail-inbox-organizer
   file_path: /home/flo/dev/avalon/workflows/gmail-inbox-organizer.py
+- key: gmail-organizer
+  file_path: /home/flo/dev/avalon/workflows/gmail-organizer.py
