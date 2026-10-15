@@ -1,7 +1,9 @@
 import asyncio
+import imaplib
 import os
 import time
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -11,7 +13,7 @@ import app.mail.gmail as gmail_module
 from app.mail.body import looks_like_html, render_body, select_preferred_body
 from app.mail.manager import MailProviderManager
 from app.mail.models import Mail, MailAttachmentContent, MailMessage, MailProviderStats, MailSender
-from app.mail.providers import MailAuthenticationError, MailProtocolError, NoActiveMailProviderError, UnsupportedMailProviderError
+from app.mail.providers import MailAuthenticationError, MailConnectionError, MailProtocolError, NoActiveMailProviderError, UnsupportedMailProviderError
 from app.mcp.mail import register_mail_tools
 import app.mcp.mail as mcp_mail_module
 from app.mcp.server import AuthorizedMcpServer
@@ -20,6 +22,13 @@ from mcp.server.mcpserver.exceptions import ToolError
 from app.authorization.guard import PermissionGuard
 from app.authorization.permissions import build_permission_registry
 from app.authorization.requests import AuthorizationRequestManager
+
+
+@pytest.fixture(autouse=True)
+def gmail_app_password_file(tmp_path, monkeypatch):
+    path = tmp_path / "gmail.json"
+    path.write_text('{"account": "a@example.test", "password": "app-password"}', encoding="utf-8")
+    monkeypatch.setattr(gmail_module, "_GMAIL_CREDENTIALS_PATH", path)
 
 
 class FakeProvider:
@@ -104,7 +113,7 @@ def test_provider_manager_requires_active_and_rejects_unknown():
 
 class FakeImap:
     def __init__(self, *_): self.calls = []
-    def authenticate(self, *_): self.calls.append("authenticate"); return "OK", []
+    def login(self, account, password): self.calls.append(("login", account, password)); return "OK", []
     def list(self): self.calls.append("list"); return "OK", [b'(\\All) "/" "[Gmail]/Alle Nachrichten"']
     def select(self, mailbox, readonly):
         self.calls.append(("select", mailbox)); return "OK", [b"2"]
@@ -126,9 +135,9 @@ def test_gmail_reads_metadata_filters_precisely_and_finds_archived_thread(tmp_pa
     config = SimpleNamespace(account="a@example.test", oauth_token=tmp_path / "token.json", client_secret=tmp_path / "client.json")
     fake = FakeImap()
     provider = GmailMailProvider(config, imap_factory=lambda *_: fake, sleep=lambda _: None)
-    credentials = SimpleNamespace(token="token", to_json=lambda: "{}")
-    monkeypatch.setattr(provider, "_credentials", lambda: credentials)
+    monkeypatch.setattr(provider, "_credentials", lambda: pytest.fail("OAuth2 must not be used"))
     provider.connect()
+    assert ("login", "a@example.test", "app-password") in fake.calls
 
     messages = provider.get_messages("INBOX", datetime(2026, 1, 1, 12, tzinfo=timezone.utc), datetime(2026, 1, 1, 12, 0, 1, tzinfo=timezone.utc))
     thread = provider.get_messages_by_thread("77")
@@ -869,14 +878,66 @@ def test_naive_dates_use_system_timezone_with_dst_for_mcp_and_gmail():
 def test_gmail_closes_client_when_authentication_is_rejected(tmp_path, monkeypatch):
     config = SimpleNamespace(account="a@example.test", oauth_token=tmp_path / "token.json", client_secret=tmp_path / "client.json")
     fake = FakeImap()
-    fake.authenticate = lambda *_: ("NO", [])
+    fake.login = lambda *_: ("NO", [])
     closed = []
     fake.logout = lambda: closed.append(True) or ("BYE", [])
     provider = GmailMailProvider(config, imap_factory=lambda *_: fake)
-    monkeypatch.setattr(provider, "_credentials", lambda: SimpleNamespace(token="token", to_json=lambda: "{}"))
     with pytest.raises(MailAuthenticationError):
         provider.connect()
     assert closed == [True]
+
+
+@pytest.mark.parametrize(
+    ("content", "message"),
+    [
+        ("not json", "invalid JSON"),
+        ("[]", "JSON object"),
+        ('{"password": "app-password"}', "invalid account"),
+        ('{"account": "a@example.test"}', "invalid password"),
+        ('{"account": 1, "password": "app-password"}', "invalid account"),
+        ('{"account": "a@example.test", "password": []}', "invalid password"),
+    ],
+)
+def test_gmail_rejects_invalid_app_password_credentials(tmp_path, monkeypatch, content, message):
+    path = tmp_path / "gmail.json"
+    path.write_text(content, encoding="utf-8")
+    monkeypatch.setattr(gmail_module, "_GMAIL_CREDENTIALS_PATH", path)
+
+    with pytest.raises(MailAuthenticationError, match=message) as error:
+        GmailMailProvider().connect()
+
+    assert "app-password" not in str(error.value)
+
+
+def test_gmail_reports_missing_or_unreadable_credential_file(tmp_path, monkeypatch):
+    path = tmp_path / "missing.json"
+    monkeypatch.setattr(gmail_module, "_GMAIL_CREDENTIALS_PATH", path)
+    with pytest.raises(MailAuthenticationError, match="missing"):
+        GmailMailProvider().connect()
+
+    monkeypatch.setattr(Path, "read_text", lambda *_args, **_kwargs: (_ for _ in ()).throw(PermissionError()))
+    with pytest.raises(MailAuthenticationError, match="could not be read"):
+        GmailMailProvider().connect()
+
+
+def test_gmail_converts_imap_connection_and_login_failures_without_secret_leaks():
+    def unavailable(*_):
+        raise OSError("network unavailable")
+
+    with pytest.raises(MailConnectionError, match="Could not connect"):
+        GmailMailProvider(imap_factory=unavailable).connect()
+
+    fake = FakeImap()
+    fake.login = lambda *_: (_ for _ in ()).throw(OSError("network unavailable"))
+    with pytest.raises(MailConnectionError, match="Could not connect") as error:
+        GmailMailProvider(imap_factory=lambda *_: fake).connect()
+    assert "app-password" not in str(error.value)
+
+    fake = FakeImap()
+    fake.login = lambda *_: (_ for _ in ()).throw(imaplib.IMAP4.error("rejected"))
+    with pytest.raises(MailAuthenticationError, match="authentication was rejected") as error:
+        GmailMailProvider(imap_factory=lambda *_: fake).connect()
+    assert "app-password" not in str(error.value)
 
 
 def test_gmail_throttles_all_imap_commands_by_half_a_second(tmp_path):
@@ -889,13 +950,28 @@ def test_gmail_throttles_all_imap_commands_by_half_a_second(tmp_path):
     assert delays == [pytest.approx(0.4)]
 
 
+def test_gmail_throttles_login(tmp_path):
+    fake = FakeImap()
+    moments = iter([0.0, 0.1, 0.6])
+    delays = []
+    provider = GmailMailProvider(
+        imap_factory=lambda *_: fake,
+        clock=lambda: next(moments),
+        sleep=delays.append,
+    )
+    provider._command(lambda: "previous")
+
+    provider.connect()
+
+    assert delays == [pytest.approx(0.4)]
+
+
 def test_gmail_stats_handles_empty_mailbox(tmp_path, monkeypatch):
     class EmptyImap(FakeImap):
         def select(self, mailbox, readonly): return "OK", [b"0"]
         def search(self, *_): return "OK", [b""]
     config = SimpleNamespace(account="a@example.test", oauth_token=tmp_path / "token.json", client_secret=tmp_path / "client.json")
     provider = GmailMailProvider(config, imap_factory=EmptyImap, sleep=lambda _: None)
-    monkeypatch.setattr(provider, "_credentials", lambda: SimpleNamespace(token="token", to_json=lambda: "{}"))
     provider.connect()
     assert provider.get_provider_stats() == MailProviderStats(0, 0, 0, None, None)
 
@@ -905,7 +981,6 @@ def test_gmail_converts_imap_command_failures_to_protocol_errors(tmp_path, monke
     fake = FakeImap()
     fake.search = lambda *_: ("NO", [])
     provider = GmailMailProvider(config, imap_factory=lambda *_: fake, sleep=lambda _: None)
-    monkeypatch.setattr(provider, "_credentials", lambda: SimpleNamespace(token="token", to_json=lambda: "{}"))
     provider.connect()
     with pytest.raises(MailProtocolError, match="search"):
         provider.get_messages("INBOX", None, None)

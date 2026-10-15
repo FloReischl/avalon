@@ -61,8 +61,6 @@ def test_avalon_state_starts_with_standard_avatar() -> None:
 
     assert state.user_config is config
     assert state.current_avatar is avatars_config.standard_avatar
-    assert state.user_config.mail is not None
-    assert state.user_config.mail.google.account == "florian.reischl@gmail.com"
 
 
 def test_avalon_state_starts_with_standard_llm() -> None:

@@ -30,7 +30,6 @@ from app.services.file_copy import FileCopyService
 from app.authorization.permissions import FileCopyPermission
 from app.mail.gmail import GmailMailProvider
 from app.mail.manager import MailProviderManager
-from app.mail.providers import MailConnectionError
 from app.state import get_avalon_state
 
 logger = logging.getLogger(__name__)
@@ -178,10 +177,7 @@ def create_mcp_server(
     register_file_tools(mcp, mcp._file_copy_service)  # type: ignore[attr-defined]
     if mail_manager is None:
         def gmail_provider() -> GmailMailProvider:
-            config = get_avalon_state().user_config.mail
-            if config is None:
-                raise MailConnectionError("Gmail mail configuration is missing.")
-            return GmailMailProvider(config.google)
+            return GmailMailProvider()
 
         mail_manager = MailProviderManager(get_avalon_state, {"gmail": gmail_provider})
     register_mail_tools(mcp, mail_manager)

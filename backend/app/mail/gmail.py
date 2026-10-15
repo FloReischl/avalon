@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import binascii
 import imaplib
+import json
 import os
 import re
 import time
@@ -13,6 +14,7 @@ from email import message_from_bytes
 from email.header import decode_header, make_header
 from email.policy import SMTP
 from email.utils import parseaddr, parsedate_to_datetime
+from pathlib import Path
 from typing import Callable
 
 from google.auth.transport.requests import Request
@@ -29,10 +31,10 @@ from app.mail.models import (
 )
 from app.mail.body import render_body, select_preferred_body
 from app.mail.providers import MailAuthenticationError, MailConnectionError, MailProtocolError
-from app.user_config import GoogleMailUserConfig
 
 
 _SCOPE = "https://mail.google.com/"
+_GMAIL_CREDENTIALS_PATH = Path("~/.avalon/security/gmail.json").expanduser()
 _INTERNALDATE = re.compile(rb'INTERNALDATE "([^"]+)"')
 _MESSAGE_ID = re.compile(rb"X-GM-MSGID (\d+)")
 _THREAD_ID = re.compile(rb"X-GM-THRID (\d+)")
@@ -50,11 +52,13 @@ class GmailMailProvider:
 
     def __init__(
         self,
-        config: GoogleMailUserConfig,
+        config: object | None = None,
         imap_factory: Callable[..., imaplib.IMAP4_SSL] = imaplib.IMAP4_SSL,
         clock: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], None] = time.sleep,
     ) -> None:
+        # Kept solely for the dormant OAuth2 helpers below.  Gmail connections
+        # deliberately never consult it.
         self._config = config
         self._imap_factory = imap_factory
         self._clock = clock
@@ -66,22 +70,48 @@ class GmailMailProvider:
     def connect(self) -> None:
         if self._client is not None:
             return
-        credentials = self._credentials()
-        if not credentials.token:
-            raise MailAuthenticationError("Gmail OAuth did not provide an access token.")
+        account, password = self._app_password_credentials()
         client: imaplib.IMAP4_SSL | None = None
         try:
             client = self._imap_factory("imap.gmail.com", 993)
-            auth = f"user={self._config.account}\x01auth=Bearer {credentials.token}\x01\x01"
-            status, _ = self._command(client.authenticate, "XOAUTH2", lambda _: auth.encode())
         except (imaplib.IMAP4.error, OSError) as exc:
             if client is not None:
                 self._close_client(client)
             raise MailConnectionError("Could not connect to Gmail IMAP.") from exc
+        try:
+            status, _ = self._command(client.login, account, password, wrap_errors=False)
+        except imaplib.IMAP4.error as exc:
+            self._close_client(client)
+            raise MailAuthenticationError("Gmail IMAP authentication was rejected.") from exc
+        except OSError as exc:
+            self._close_client(client)
+            raise MailConnectionError("Could not connect to Gmail IMAP.") from exc
         if status != "OK":
             self._close_client(client)
-            raise MailAuthenticationError("Gmail XOAUTH2 authentication was rejected.")
+            raise MailAuthenticationError("Gmail IMAP authentication was rejected.")
         self._client = client
+
+    @staticmethod
+    def _app_password_credentials() -> tuple[str, str]:
+        try:
+            raw = _GMAIL_CREDENTIALS_PATH.read_text(encoding="utf-8")
+        except FileNotFoundError as exc:
+            raise MailAuthenticationError("Gmail credential file is missing.") from exc
+        except (OSError, UnicodeError) as exc:
+            raise MailAuthenticationError("Gmail credential file could not be read.") from exc
+        try:
+            credentials = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise MailAuthenticationError("Gmail credential file contains invalid JSON.") from exc
+        if not isinstance(credentials, dict):
+            raise MailAuthenticationError("Gmail credential file must contain a JSON object.")
+        account = credentials.get("account")
+        password = credentials.get("password")
+        if not isinstance(account, str) or not account.strip():
+            raise MailAuthenticationError("Gmail credential file has an invalid account.")
+        if not isinstance(password, str) or not password.strip():
+            raise MailAuthenticationError("Gmail credential file has an invalid password.")
+        return account.strip(), password.strip()
 
     def disconnect(self) -> None:
         if self._client is None:
@@ -240,6 +270,8 @@ class GmailMailProvider:
         return '"' + encoded.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
     def _credentials(self) -> Credentials:
+        if self._config is None:
+            raise MailAuthenticationError("Gmail OAuth configuration is unavailable.")
         credentials: Credentials | None = None
         try:
             if self._config.oauth_token.is_file():
@@ -275,7 +307,7 @@ class GmailMailProvider:
         except (imaplib.IMAP4.error, OSError):
             pass
 
-    def _command(self, method, *args):
+    def _command(self, method, *args, wrap_errors: bool = True):
         if self._last_command_at is not None:
             delay = 0.5 - (self._clock() - self._last_command_at)
             if delay > 0:
@@ -283,6 +315,8 @@ class GmailMailProvider:
         try:
             result = method(*args)
         except (imaplib.IMAP4.error, OSError) as exc:
+            if not wrap_errors:
+                raise
             raise MailProtocolError("Gmail IMAP command failed.") from exc
         self._last_command_at = self._clock()
         return result

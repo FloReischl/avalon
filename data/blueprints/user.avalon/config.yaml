@@ -1,11 +1,6 @@
 name: Frieda
 chat:
   agent_key: default
-mail:
-  google:
-    account: florian.reischl@gmail.com
-    oauth_token: ~/.avalon/security/gmail-token.json
-    client_secret: ~/.avalon/security/google-client-secret.json
 tts:
   chatterbox:
     reference_audio: data/tts/chatterbox/frieda1.wav

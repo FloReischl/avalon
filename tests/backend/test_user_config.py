@@ -55,6 +55,15 @@ def test_loads_and_normalizes_valid_user_config(tmp_path: Path) -> None:
     assert config.tts.kokoro.model == (tmp_path / "tts" / "model.pth").resolve()
 
 
+def test_mail_section_is_no_longer_accepted(tmp_path: Path) -> None:
+    data, config_path = _valid_config(tmp_path)
+    data["mail"] = {"google": {"account": "a@example.test"}}
+    _write_config(config_path, data)
+
+    with pytest.raises(ValidationError, match="mail"):
+        load_user_config(config_path)
+
+
 def test_missing_user_config_is_fatal(tmp_path: Path) -> None:
     with pytest.raises(FileNotFoundError):
         load_user_config(tmp_path / "missing.yaml")
