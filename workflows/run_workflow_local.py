@@ -93,7 +93,7 @@ if __name__ == "__main__":
     # args = parser.parse_args()
     wfe = WorkflowExecutionManager()
     invocation_id = str(datetime.now().isoformat())
-    wfe_id = wfe.create_execution("New 2026-10-15 14:12:33", "gmail-organizer", "Cortana", invocation_id)
+    wfe_id = wfe.create_execution("New 2026-10-16 11:13:36", "gmail-organizer", "Cortana", invocation_id)
 
     config = get_agent_config("Cortana")
     config["workflow_execution_id"] = wfe_id

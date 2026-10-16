@@ -162,11 +162,11 @@ def test_mail_methods_delegate_to_the_matching_mcp_capability(monkeypatch) -> No
     calls: list[tuple[str, dict[str, object]]] = []
     results: dict[str, object] = {
         "mail.get_provider_stats": {"all_messages_count": 3},
-        "mail.get_messages": [{"message_id": "message-1"}],
-        "mail.get_messages_by_thread": [{"message_id": "message-1"}],
+        "mail.get_messages": {"result": [{"message_id": "message-1"}]},
+        "mail.get_messages_by_thread": {"result": [{"message_id": "message-1"}]},
         "mail.get_mail": {"message_id": "message-1"},
         "mail.get_attachment": {"content_base64": "Ynl0ZXM="},
-        "mail.get_categories": ["Project"],
+        "mail.get_categories": {"result": ["Project"]},
     }
 
     async def fake_call_tool(name: str, arguments: dict[str, object]) -> object:
@@ -228,7 +228,7 @@ def test_mail_method_optional_parameters_use_the_mcp_defaults(monkeypatch) -> No
 
     async def fake_call_tool(name: str, arguments: dict[str, object]) -> object:
         calls.append((name, arguments))
-        return [] if name == "mail.get_messages" else {}
+        return {"result": []} if name == "mail.get_messages" else {}
 
     client = workflow_client()
     monkeypatch.setattr(client, "call_tool", fake_call_tool)

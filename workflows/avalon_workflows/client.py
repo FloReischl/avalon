@@ -98,24 +98,22 @@ class AvalonWorkflowClient:
         since: datetime | None = None,
         before: datetime | None = None,
     ) -> list[dict[str, object]]:
-        return cast(
-            list[dict[str, object]],
+        return self._result_list(
             await self.call_tool(
                 "mail.get_messages",
                 {"category": category, "since": since, "before": before},
-            ),
+            )
         )
 
     async def get_mail_messages_by_thread(
         self,
         thread_id: str,
     ) -> list[dict[str, object]]:
-        return cast(
-            list[dict[str, object]],
+        return self._result_list(
             await self.call_tool(
                 "mail.get_messages_by_thread",
                 {"thread_id": thread_id},
-            ),
+            )
         )
 
     async def get_mail(
@@ -146,10 +144,7 @@ class AvalonWorkflowClient:
         )
 
     async def get_mail_categories(self) -> list[str]:
-        return cast(
-            list[str],
-            await self.call_tool("mail.get_categories", {}),
-        )
+        return self._result_list(await self.call_tool("mail.get_categories", {}))
 
     async def create_mail_categories(self, categories: list[str]) -> None:
         await self.call_tool("mail.create_categories", {"categories": categories})
@@ -337,3 +332,9 @@ class AvalonWorkflowClient:
                 return text
 
         return None
+
+    @staticmethod
+    def _result_list(result: object) -> list[Any]:
+        if not isinstance(result, dict) or not isinstance(result.get("result"), list):
+            raise RuntimeError("MCP tool returned an invalid list result.")
+        return result["result"]

@@ -23,18 +23,42 @@ MAX_LLM_CATEGORY_COUNT = 4
 SYSTEM_LABELS = {
     "INBOX", "SENT", "UNREAD", "SPAM", "TRASH", "DRAFT", "DRAFTS", "STARRED",
     "IMPORTANT", "CATEGORY_PERSONAL", "CATEGORY_SOCIAL",
-    "CATEGORY_PROMOTIONS", "CATEGORY_UPDATES", "CATEGORY_FORUMS", "ALL MAIL", 
+    "CATEGORY_PROMOTIONS", "CATEGORY_UPDATES", "CATEGORY_FORUMS", "ALL MAIL",
 }
 
 # Persona & Instruction Prompting für den stateless LLM Call
-CLASSIFICATION_INSTRUCTIONS = """<format_rules>
-<rule>Wähle maximal 4 Kategorien aus der übergebenen Liste ERLAUBTE KATEGORIEN.</rule>
-<rule>Antworte AUSSCHLIESSLICH im gültigen JSON-Format: {"categories": ["...", "..."]}.</rule>
-<rule>Erfinde KEINE neuen Kategorien oder Hauptpfade.</rule>
-<rule>Wenn kein spezifischer Untertyp passt, wähle das entsprechende 'Sonstiges'-Label der Hauptkategorie (z. B. 'Finanzen/Sonstiges').</rule>
-<rule>Wenn gar nichts passt, wähle ausschließlich 'Unkategorisiert'.</rule>
-</format_rules>"""
+CLASSIFICATION_INSTRUCTIONS = """<role>
+Du bist eine hochpräzise, deterministischer Mail-Klassifizierungs-Assistentin ("Cortana").
+Deine Aufgabe ist es, E-Mail-Threads exakt den passenden Kategorien aus einer vorgegebenen Liste zuzuordnen.
+</role>
 
+<classification_rules>
+1. MULTI-LABELING:
+   - Du darfst bis zu 4 Kategorien aus der Liste ERLAUBTE KATEGORIEN wählen.
+   - Wenn eine Mail mehrere Themen betrifft (z. B. eine Rechnungs-PDF einer KFZ-Versicherung), vergib alle passenden Labels (z. B. ["Versicherungen/KFZ", "Ausgaben"]).
+
+2. PARENT-FALLBACK-REGEL:
+   - Wenn eine Mail in eine Hauptkategorie passt (z. B. "Finanzen"), aber kein spezifisches Sub-Label existiert oder passt (z. B. eine neue Bank), ordne sie DIREKT der Hauptkategorie zu (z. B. "Finanzen").
+
+3. SPEZIFITÄTS-PRINZIP:
+   - Wähle immer das spezifischste passende Sub-Label (z. B. "Verträge/Office 365").
+   - Gib NICHT zusätzlich das übergeordnete Haupt-Label an, wenn du bereits ein Sub-Label gewählt hast (also NICHT ["Verträge", "Verträge/Office 365"], sondern NUR ["Verträge/Office 365"]).
+
+4. KATEGORIE "Wertlos":
+   - Mails ohne langfristigen Informationsgehalt, Test-Mails an sich selbst, reine Bestätigungen für triviale Aktionen erhalten das Label "Wertlos".
+
+5. STRIKTES CLOSED-SET:
+   - Erfinde KEINE neuen Kategorien. Nutze AUSSCHLIESSLICH Strings aus der Liste ERLAUBTE KATEGORIEN.
+   - Wenn gar keine Kategorie passt, antworte mit ["Unkategorisiert"].
+</classification_rules>
+
+<output_format>
+Antworte AUSSCHLIESSLICH mit einem validen JSON-Objekt.
+Keine Erklärungen, kein Markdown, keine Prosa.
+
+BEISPIEL-ANTWORT:
+{"categories": ["Versicherungen/KFZ", "Ausgaben"]}
+</output_format>"""
 
 def _clean_json_response(raw_text: str, allowed_categories: list[str]) -> list[str]:
     """Extrahiert sauber die Kategorien-Liste aus der LLM-Antwort."""
@@ -45,7 +69,9 @@ def _clean_json_response(raw_text: str, allowed_categories: list[str]) -> list[s
             data = json.loads(match.group(0))
             cats = data.get("categories", [])
             if isinstance(cats, list):
-                return [str(c) for c in cats if c in allowed_categories]
+                result_cats = [str(c) for c in cats if c in allowed_categories]
+                result_cats = deduplicate_hierarchical_categories(result_cats)
+                return result_cats
     except Exception:
         pass
     return [FALLBACK_CATEGORY]
@@ -54,31 +80,31 @@ def _clean_json_response(raw_text: str, allowed_categories: list[str]) -> list[s
 async def main() -> None:
     workflow = AvalonWorkflowClient.from_stdin()
     workflow.model_context = None  # Kein störender Chat-Kontext
-    
+
     workflow.log("Starting Mail Organization Workflow")
     await workflow.progress("Initialisiere E-Mail-Organisations-Workflow...")
+
+    # Set Provider Gmail
+    await workflow.set_mail_provider("gmail")
 
     # Bekannte Gmail-Labels als Taxonomie holen & System-Labels ausfiltern
     all_categories = await workflow.get_mail_categories()
     allowed_categories = [
-        cat for cat in all_categories if cat not in SYSTEM_LABELS and not cat.startswith("[Gmail]")
+        cat for cat in all_categories if cat.upper() not in SYSTEM_LABELS and not cat.startswith("[Gmail]") and not cat.startswith("Jahre/")
     ]
     workflow.log(f"Taxonomie geladen ({len(allowed_categories)} erlaubte Labels)")
-
-    # Provider Gmail
-    await workflow.set_mail_provider("gmail")
 
     # Provider Stats abrufen, um ältestes E-Mail-Datum zu ermitteln
     stats = await workflow.get_mail_provider_stats()
     oldest_date_str = stats.get("oldest_message_date")
-    
+
     if not oldest_date_str or not isinstance(oldest_date_str, str):
         await workflow.progress("Keine Mails oder kein ältestes Datum in Postbox gefunden.")
         return
 
     # UTC-Zeitstempel parsen
     current_batch_start = datetime.fromisoformat(oldest_date_str.replace("Z", "+00:00")) \
-                                  .replace(day=1, hour=0, minute=0, second=0, microsecond=0)    
+                                  .replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     until = (datetime.now(current_batch_start.tzinfo) - timedelta(days=100)) \
                      .replace(hour=0, minute=0, second=0, microsecond=0)
 
@@ -134,7 +160,7 @@ async def main() -> None:
 
             # Thread-Kontext für LLM aufbereiten
             thread_messages = await workflow.get_mail_messages_by_thread(thread_id)
-            
+
             # Thread-Inhalte zusammenstellen
             thread_summary = []
             for t_msg in thread_messages:
@@ -147,10 +173,11 @@ async def main() -> None:
             subject = msg.get("subject", "Kein Betreff")
 
             prompt = (
-                f"ERLAUBTE KATEGORIEN:\n{json.dumps(allowed_categories, indent=2)}\n\n"
-                f"E-MAIL THREAD DETAILS:\n"
-                f"Betreff: {subject}\n"
-                f"Thread-Auszug:\n{combined_thread_text}"
+                f"ERLAUBTE KATEGORIEN:\n"
+                f"{json.dumps(allowed_categories, indent=2, ensure_ascii=False)}\n\n"
+                f"ZULÄSSIGER E-MAIL THREAD (Haupt-Betreff: '{thread_root_subject}'):\n"
+                f"{combined_thread_text}\n\n----"
+                f"Welche Kategorien treffen auf diesen Thread zu?"
             )
 
             # LLM Stateless Aufruf
@@ -186,6 +213,54 @@ async def main() -> None:
         f"Mail-Organisation abgeschlossen! Insgesamt {total_messages_processed} Mails / {len(processed_threads)} Threads verarbeitet."
     )
 
+def deduplicate_hierarchical_categories(categories: list[str]) -> list[str]:
+    """
+    Entfernt Parent-Labels, wenn bereits ein spezifischeres Sub-Label
+    vorhanden ist (z. B. entfernt 'Ausgaben', wenn 'Ausgaben/Shopping' enthalten ist).
+    """
+    sorted_cats = sorted(categories, key=len, reverse=True)
+    filtered = []
+
+    for cat in sorted_cats:
+        # Ein Label wird nur behalten, wenn es kein Präfix (Parent) eines bereits gewählten spezifischeren Labels ist
+        if not any(existing.startswith(cat + "/") for existing in filtered):
+            filtered.append(cat)
+
+    return filtered
+
+
+async def create_gmail_labels() -> None:
+    taxonomy_categories = [
+        "Finanzen", "Finanzen/BMW Bank", "Finanzen/C24 Bank", "Finanzen/DKB Bank", "Finanzen/Finanzen Zero", 
+        "Finanzen/S Broker", "Finanzen/Scalable", "Finanzen/Sparkasse",
+        "Business", "Business/LinkedIn", "Business/Munich Re",
+        "Privat", "Privat/Geburtstage", "Privat/Oktoberfest", "Privat/Todesfälle",
+        "Wohnung", "Wohnung/Eigentümerversammlungen", "Wohnung/Hausverwaltung",
+        "Versicherungen", "Versicherungen/Haftpflicht", "Versicherungen/Hausrat", "Versicherungen/KFZ", "Versicherungen/Krankenversicherung",
+        "Verträge", "Verträge/ADAC", "Verträge/AI", "Verträge/Fitstar", "Verträge/Klarmobil", "Verträge/Office 365", "Verträge/Telefonika",
+        "Ausgaben", "Ausgaben/MVG", "Ausgaben/Shopping", "Ausgaben/Shopping/Amazon", "Ausgaben/Shopping/Büromaterial", "Ausgaben/Shopping/Outdoor",
+        "Urlaub", "Urlaub/Finnland 2021", "Urlaub/Finnland 2026", "Urlaub/Nepal 2020", "Urlaub/Schweden 2025", "Urlaub/Slowenien 2022",
+        "Werbung", "Werbung/Gutscheine",
+
+        # Root Fallbacks
+        "Wertlos", "Unkategorisiert",
+    ]
+
+    workflow = AvalonWorkflowClient.from_stdin()
+    workflow.model_context = None  # Kein störender Chat-Kontext
+
+    workflow.log("Starting Category Creation")
+    await workflow.progress("Initialisiere E-Mail-Organisations-Workflow...")
+
+    # Set Provider Gmail
+    await workflow.set_mail_provider("gmail")
+
+    # # Bekannte Gmail-Labels als Taxonomie holen & System-Labels ausfiltern
+    # all_categories = await workflow.get_mail_categories()
+    await workflow.create_mail_categories(taxonomy_categories)
+    workflow.log(f"Ensured existence of {len(taxonomy_categories)} categories")
+
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(create_gmail_labels())
+    # asyncio.run(main())
