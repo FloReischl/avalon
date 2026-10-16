@@ -574,8 +574,8 @@ def test_mail_mcp_registers_new_tools_and_delegates_to_manager():
         def create_categories(self, categories):
             calls.append(("create", categories))
 
-        def set_categories(self, message_id, categories, archive=False):
-            calls.append(("set", message_id, categories, archive))
+        def set_categories(self, message_id, categories, archive=False, mark_unread=None):
+            calls.append(("set", message_id, categories, archive, mark_unread))
 
         def unset_categories(self, message_id, categories):
             calls.append(("unset", message_id, categories))
@@ -587,12 +587,14 @@ def test_mail_mcp_registers_new_tools_and_delegates_to_manager():
     attachment_result = asyncio.run(mcp.call_tool("mail.get_attachment", {"message_id": "99", "attachment_id": "4"}))
     asyncio.run(mcp.call_tool("mail.get_categories", {}))
     asyncio.run(mcp.call_tool("mail.create_categories", {"categories": ["Project"]}))
-    asyncio.run(mcp.call_tool("mail.set_categories", {"message_id": "99", "categories": ["Project"], "archive": True}))
+    asyncio.run(mcp.call_tool("mail.set_categories", {"message_id": "99", "categories": ["Project"], "archive": True, "mark_unread": True}))
+    asyncio.run(mcp.call_tool("mail.set_categories", {"message_id": "100", "categories": []}))
     asyncio.run(mcp.call_tool("mail.unset_categories", {"message_id": "99", "categories": ["Project"]}))
 
     assert calls == [
         ("mail", "99", False), ("attachment", "99", "4"), ("categories",), ("create", ["Project"]),
-        ("set", "99", ["Project"], True), ("unset", "99", ["Project"]),
+        ("set", "99", ["Project"], True, True), ("set", "100", [], False, None),
+        ("unset", "99", ["Project"]),
     ]
     assert "body" not in result.structured_content
     assert result.structured_content["body_mime_type"] == "text/plain"
@@ -676,6 +678,63 @@ def test_gmail_category_mutations_validate_cache_and_archive_in_order(tmp_path, 
     assert fake.creates == ['"New"']
     assert fake.calls.count("list") == 4  # lazy validation, two All-Mail lookups, direct create
     assert provider._category_cache is None
+
+
+@pytest.mark.parametrize(
+    ("mark_unread", "operation"),
+    [(True, "-FLAGS"), (False, "+FLAGS")],
+)
+def test_gmail_set_categories_updates_seen_flag_when_requested(tmp_path, mark_unread, operation):
+    class CategoriesImap(FakeImap):
+        def __init__(self, *_):
+            super().__init__()
+            self.stores = []
+
+        def list(self):
+            return "OK", [b'(\\HasNoChildren \\All) "/" "[Gmail]/All Mail"', b'(\\HasNoChildren) "/" "Project"']
+
+        def store(self, identifier, store_operation, value):
+            self.stores.append((identifier, store_operation, value))
+            return "OK", []
+
+    config = SimpleNamespace(account="a@example.test", oauth_token=tmp_path / "token.json", client_secret=tmp_path / "client.json")
+    fake = CategoriesImap()
+    provider = GmailMailProvider(config, imap_factory=lambda *_: fake, sleep=lambda _: None)
+    provider.connect()
+
+    provider.set_categories("99", ["Project"], archive=True, mark_unread=mark_unread)
+
+    assert fake.stores == [
+        (b"1", "+X-GM-LABELS", '("Project")'),
+        (b"1", "-X-GM-LABELS", '("INBOX")'),
+        (b"1", operation, "(\\Seen)"),
+    ]
+
+
+def test_gmail_set_categories_leaves_seen_flag_unchanged_by_default(tmp_path):
+    class CategoriesImap(FakeImap):
+        def __init__(self, *_):
+            super().__init__()
+            self.stores = []
+
+        def list(self):
+            return "OK", [b'(\\HasNoChildren \\All) "/" "[Gmail]/All Mail"', b'(\\HasNoChildren) "/" "Project"']
+
+        def store(self, identifier, operation, value):
+            self.stores.append((identifier, operation, value))
+            return "OK", []
+
+    config = SimpleNamespace(account="a@example.test", oauth_token=tmp_path / "token.json", client_secret=tmp_path / "client.json")
+    fake = CategoriesImap()
+    provider = GmailMailProvider(config, imap_factory=lambda *_: fake, sleep=lambda _: None)
+    provider.connect()
+
+    provider.set_categories("99", ["Project"], archive=True)
+
+    assert fake.stores == [
+        (b"1", "+X-GM-LABELS", '("Project")'),
+        (b"1", "-X-GM-LABELS", '("INBOX")'),
+    ]
 
 
 def test_gmail_category_mutations_fully_validate_before_writing(tmp_path, monkeypatch):

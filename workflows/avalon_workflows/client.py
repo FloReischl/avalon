@@ -155,10 +155,16 @@ class AvalonWorkflowClient:
         categories: list[str],
         *,
         archive: bool = False,
+        mark_unread: bool | None = None,
     ) -> None:
         await self.call_tool(
             "mail.set_categories",
-            {"message_id": message_id, "categories": categories, "archive": archive},
+            {
+                "message_id": message_id,
+                "categories": categories,
+                "archive": archive,
+                "mark_unread": mark_unread,
+            },
         )
 
     async def unset_mail_categories(

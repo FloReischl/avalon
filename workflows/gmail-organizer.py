@@ -15,8 +15,9 @@ from avalon_workflows import AvalonWorkflowClient
 # Workflow Header Configuration
 # ------------------------------------------------------------------------------
 SOURCE_CATEGORY = "INBOX"
-ARCHIVE_AFTER_LABELING = False
 FALLBACK_CATEGORY = "Unkategorisiert"
+ARCHIVE_AFTER_LABELING = False
+MARK_UNREAD = True
 MAX_LLM_CATEGORY_COUNT = 4
 
 # Exkludierte System-Labels, die nicht als Taxonomie verwendet werden dürfen
@@ -195,6 +196,7 @@ async def main() -> None:
                     message_id=str(t_msg["message_id"]),
                     categories=chosen_categories,
                     archive=ARCHIVE_AFTER_LABELING,
+                    mark_unread=MARK_UNREAD
                 )
 
             processed_threads.add(thread_id)

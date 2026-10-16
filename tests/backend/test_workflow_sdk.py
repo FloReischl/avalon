@@ -194,7 +194,7 @@ def test_mail_methods_delegate_to_the_matching_mcp_capability(monkeypatch) -> No
     assert asyncio.run(client.get_mail_categories()) == ["Project"]
     assert asyncio.run(client.create_mail_categories(["Project"])) is None
     assert asyncio.run(
-        client.set_mail_categories("message-1", ["Project"], archive=True)
+        client.set_mail_categories("message-1", ["Project"], archive=True, mark_unread=True)
     ) is None
     assert asyncio.run(client.unset_mail_categories("message-1", ["Project"])) is None
 
@@ -207,7 +207,15 @@ def test_mail_methods_delegate_to_the_matching_mcp_capability(monkeypatch) -> No
         ("mail.get_attachment", {"message_id": "message-1", "attachment_id": "attachment-1"}),
         ("mail.get_categories", {}),
         ("mail.create_categories", {"categories": ["Project"]}),
-        ("mail.set_categories", {"message_id": "message-1", "categories": ["Project"], "archive": True}),
+        (
+            "mail.set_categories",
+            {
+                "message_id": "message-1",
+                "categories": ["Project"],
+                "archive": True,
+                "mark_unread": True,
+            },
+        ),
         ("mail.unset_categories", {"message_id": "message-1", "categories": ["Project"]}),
     ]
 
@@ -242,7 +250,12 @@ def test_mail_method_optional_parameters_use_the_mcp_defaults(monkeypatch) -> No
         ("mail.get_mail", {"message_id": "message-1", "as_text": True}),
         (
             "mail.set_categories",
-            {"message_id": "message-1", "categories": ["Project"], "archive": False},
+            {
+                "message_id": "message-1",
+                "categories": ["Project"],
+                "archive": False,
+                "mark_unread": None,
+            },
         ),
     ]
 

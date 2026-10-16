@@ -207,7 +207,13 @@ class GmailMailProvider:
         finally:
             self.invalidate_categories_cache()
 
-    def set_categories(self, message_id: str, categories: list[str], archive: bool = False) -> None:
+    def set_categories(
+        self,
+        message_id: str,
+        categories: list[str],
+        archive: bool = False,
+        mark_unread: bool | None = None,
+    ) -> None:
         if archive and "INBOX" in categories:
             raise ValueError("INBOX cannot be set while archive is true.")
         self._validate_writable_categories(categories)
@@ -216,6 +222,8 @@ class GmailMailProvider:
             self._store_labels(identifier, "+X-GM-LABELS", categories)
         if archive:
             self._store_labels(identifier, "-X-GM-LABELS", ["INBOX"])
+        if mark_unread is not None:
+            self._store_flags(identifier, "-FLAGS" if mark_unread else "+FLAGS", ["\\Seen"])
 
     def unset_categories(self, message_id: str, categories: list[str]) -> None:
         self._validate_writable_categories(categories)
@@ -258,6 +266,12 @@ class GmailMailProvider:
         status, _ = self._command(self._client_or_raise().store, identifier, operation, labels)
         if status != "OK":
             raise MailProtocolError("Could not update Gmail labels.")
+
+    def _store_flags(self, identifier: bytes, operation: str, flags: list[str]) -> None:
+        value = "(" + " ".join(flags) + ")"
+        status, _ = self._command(self._client_or_raise().store, identifier, operation, value)
+        if status != "OK":
+            raise MailProtocolError("Could not update Gmail flags.")
 
     @staticmethod
     def _is_system_mailbox(mailbox: bytes) -> bool:

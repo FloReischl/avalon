@@ -648,6 +648,18 @@ Get one mail with its preferred body, as LLM-friendly plaintext by default.
       "title": "Categories",
       "type": "array"
     },
+    "mark_unread": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Mark Unread"
+    },
     "message_id": {
       "title": "Message Id",
       "type": "string"

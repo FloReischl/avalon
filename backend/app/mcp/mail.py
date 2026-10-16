@@ -68,8 +68,13 @@ def register_mail_tools(mcp: MCPServer, manager: MailProviderManager) -> None:
         manager.create_categories(categories)
 
     @mcp.tool(name="mail.set_categories")
-    async def set_categories(message_id: str, categories: list[str], archive: bool = False) -> None:
-        manager.set_categories(message_id, categories, archive)
+    async def set_categories(
+        message_id: str,
+        categories: list[str],
+        archive: bool = False,
+        mark_unread: bool | None = None,
+    ) -> None:
+        manager.set_categories(message_id, categories, archive, mark_unread)
 
     @mcp.tool(name="mail.unset_categories")
     async def unset_categories(message_id: str, categories: list[str]) -> None:

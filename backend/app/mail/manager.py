@@ -66,8 +66,14 @@ class MailProviderManager:
     def create_categories(self, categories: list[str]) -> None:
         self._active().create_categories(categories)
 
-    def set_categories(self, message_id: str, categories: list[str], archive: bool = False) -> None:
-        self._active().set_categories(message_id, categories, archive)
+    def set_categories(
+        self,
+        message_id: str,
+        categories: list[str],
+        archive: bool = False,
+        mark_unread: bool | None = None,
+    ) -> None:
+        self._active().set_categories(message_id, categories, archive, mark_unread)
 
     def unset_categories(self, message_id: str, categories: list[str]) -> None:
         self._active().unset_categories(message_id, categories)
